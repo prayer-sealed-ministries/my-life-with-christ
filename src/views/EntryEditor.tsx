@@ -18,7 +18,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { canonBooks, findSegment, hasOutlineTitles, segmentTitle, topics, topicsById } from '../app/data';
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
-import { Button, Card, EmptyState, Field, LiveRegion, Spinner, TextArea } from '../components/ui';
+import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import { segmentRef } from '../lib/passages';
@@ -273,8 +273,6 @@ export default function EntryEditor({
    * updates what the first one wrote.
    */
   const [createdId, setCreatedId] = useState<string | null>(null);
-
-  const kindId = useId();
   const descendantsId = useId();
   const topicPickerId = useId();
   const reasonId = useId();
@@ -563,65 +561,57 @@ export default function EntryEditor({
       ) : null}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor={kindId} className={LABEL_CLASS}>
-              Kind
-            </label>
-            <select
-              id={kindId}
-              value={form.kind}
-              onChange={(event) => update('kind', event.target.value as EntryKind)}
-              className={SELECT_CLASS}
-            >
-              {KINDS.map((kind) => (
-                <option key={kind.value} value={kind.value}>
-                  {kind.label}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Both fields subgrid onto these row tracks, so the two controls sit on
+            one baseline even though only Title carries helper text. */}
+        <FieldRow>
+          <Select
+            label="Kind"
+            hint="You can change this later."
+            value={form.kind}
+            onChange={(event) => update('kind', event.target.value as EntryKind)}
+          >
+            {KINDS.map((kind) => (
+              <option key={kind.value} value={kind.value}>
+                {kind.label}
+              </option>
+            ))}
+          </Select>
           <Field
             label="Title"
             hint="Optional. Left blank, the entry is filed by its date."
             value={form.title}
             onChange={(event) => update('title', event.target.value)}
           />
+        </FieldRow>
+
+        {/* Rule 4: what was taught and what it meant to me stay separate fields.
+            The separation is carried by the labels and their helper text, which
+            say what each is for — an outer "Notes" heading above a field already
+            labelled "Notes" said the same thing twice and bought nothing, and
+            wrapping a bordered textarea in a bordered card was a box in a box. */}
+        <div ref={notesBoxRef}>
+          <TextArea
+            label="Notes"
+            hint="What was taught"
+            rows={8}
+            value={form.notes}
+            onChange={(event) => update('notes', event.target.value)}
+          />
         </div>
 
-        {/* Rule 4: what was taught and what it meant to me are separate fields,
-            separate sections, and separate on the page. */}
-        <section>
-          <h2 className={SECTION_HEADING}>
-            Notes
-          </h2>
-          <Card className="mt-2">
-            <div ref={notesBoxRef}>
-              <TextArea
-                label="Notes"
-                hint="What was taught"
-                rows={10}
-                value={form.notes}
-                onChange={(event) => update('notes', event.target.value)}
-              />
-            </div>
-          </Card>
-        </section>
-
-        <section>
-          <h2 className={SECTION_HEADING}>
-            Reflection
-          </h2>
-          <Card className="mt-2 border-l-4 border-l-slate-400 dark:border-l-slate-500">
-            <TextArea
-              label="Reflection"
-              hint="What it meant to me"
-              rows={6}
-              value={form.reflection}
-              onChange={(event) => update('reflection', event.target.value)}
-            />
-          </Card>
-        </section>
+        {/* No wrapper, no indent: every control in this column shares one left
+            edge. What separates reflection from notes is the label and its
+            helper — "what it meant to me" against "what was taught" — which say
+            it plainly, where a rule or a tinted box only gestured at it. */}
+        <div>
+          <TextArea
+            label="Reflection"
+            hint="What it meant to me"
+            rows={5}
+            value={form.reflection}
+            onChange={(event) => update('reflection', event.target.value)}
+          />
+        </div>
 
         <details
           open={detailsOpen}

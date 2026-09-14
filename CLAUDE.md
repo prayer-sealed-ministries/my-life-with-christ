@@ -125,9 +125,33 @@ are for. Round-trip, downgrade and cold-read tests are non-negotiable.
 
 ### 8. Accessibility is checked, not assumed
 
-WCAG 2.1 AA. Keyboard-operable throughout, visible focus, correct heading order,
-labelled controls, adequate contrast in both themes. `eslint-plugin-jsx-a11y`
-runs as errors, not warnings.
+WCAG 2.1 AA, enforced in CI against the built site — lint rules and code review
+are not an accessibility pass.
+
+```bash
+npm run test:a11y      # axe + keyboard + contrast
+npm run screenshots    # every view, both themes, 390px and 1280px
+npm run test:e2e       # all of the above
+```
+
+| Suite | What it holds |
+| --- | --- |
+| `a11y.spec.ts` | axe-core at WCAG 2.1 AA over 12 views × 2 themes × 2 widths; exactly one h1 per view with no skipped levels; every control labelled by a real `<label>`, never by a placeholder |
+| `keyboard.spec.ts` | the first-visit dialog traps focus and returns it; Escape dismisses; the skip link works; an entry can be written and saved with no mouse at all; no focus trap in any view |
+| `contrast.spec.ts` | computed contrast on the rendered page, both themes, including placeholder and disabled text |
+| `screenshots.spec.ts` | evidence, not assertions — output lands in `screenshots/` |
+
+Two things that cost real time to learn, so they are written down:
+
+- **Colours must be parsed by the browser, not by regex.** Tailwind v4 emits
+  `oklch()`, and `getComputedStyle` returns it verbatim. A regex for `rgb()`
+  returns null for every themed colour, the background walker falls through to
+  white, and every dark button reads as white-on-white. `contrast.spec.ts`
+  rasterises one canvas pixel instead.
+- **A check that measures nothing passes.** The contrast suite asserts it
+  actually sampled disabled controls before trusting the result.
+
+What automation cannot settle is listed at the end of this file.
 
 ---
 
@@ -254,3 +278,34 @@ src/
 Conventional commits, small and focused. Comments explain *why*, not *what*.
 Tests exercise real behaviour, not mocks — the ingest parser and the export
 round-trip are the two places where silent rot would cost the most.
+
+
+---
+
+## What the automated accessibility pass cannot tell you
+
+The suites above hold a real line, and they are not the whole of accessibility.
+Recorded so their silence is not mistaken for a clean bill of health.
+
+**axe-core catches roughly a third to a half of WCAG issues**, and only the
+machine-decidable part. It cannot judge:
+
+- **Whether the words make sense.** Every link can have an accessible name and
+  still be a page full of "read more". Only a person can say whether the name
+  describes the destination.
+- **Whether a screen reader's rendering is coherent.** Reading order, how the
+  KJV verse numbers are announced mid-sentence, whether "Notes" and
+  "Reflection" are distinguishable by ear, whether the export progress
+  announcement interrupts at a sensible moment. This needs VoiceOver, NVDA or
+  JAWS and a human listening.
+- **Whether focus lands somewhere sensible.** The tests assert focus moves and
+  is visible. They cannot tell you it landed where a person would expect.
+- **Cognitive load.** Whether the fast-capture path is genuinely fast for
+  somebody writing in a pew, on a phone, one-handed, during a sermon.
+- **Zoom and reflow.** 400% zoom and 320px reflow (1.4.10) are not covered.
+- **Voice control and switch access.** Untested entirely.
+- **Real assistive technology on real devices.** Chromium headless is not a
+  screen reader, and Playwright's accessibility tree is not what a user hears.
+
+A human with a screen reader is still required before this is put in front of
+anyone who depends on one.

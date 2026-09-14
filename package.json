@@ -16,7 +16,10 @@
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "fetch:kjv": "node scripts/fetch-kjv.mjs",
     "prepare": "git config core.hooksPath .githooks || true",
-    "gate": "npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only"
+    "gate": "npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test a11y.spec.ts keyboard.spec.ts contrast.spec.ts",
+    "screenshots": "playwright test screenshots.spec.ts"
   },
   "dependencies": {
     "dexie": "^4.4.6",
@@ -24,7 +27,9 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

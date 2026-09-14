@@ -11,3 +11,10 @@ dist/
 # Scratch probe files agents write while reviewing. Never committed.
 src/**/__*.test.ts
 src/**/__*.test.tsx
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/screenshots/
+tests/tmp/

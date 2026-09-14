@@ -88,15 +88,52 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
       </a>
 
       <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-          <Link
-            to={{ name: 'home' }}
-            className="font-serif text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            Journey
-          </Link>
-          <nav aria-label="Main" className="flex-1">
-            <ul className="flex flex-wrap gap-x-1 gap-y-1">
+        {/*
+          Two rows on a phone, one row on a desktop.
+
+          `sm:contents` dissolves the grouping wrapper at width, so brand,
+          actions and nav become siblings of the same flex row. This was one
+          flex-wrap line before; at 390px it wrapped into a ragged four-line
+          block 217px tall — a quarter of the viewport spent on chrome, above a
+          page meant for writing.
+        */}
+        <div className="mx-auto flex max-w-3xl flex-col gap-1 px-4 py-2 sm:flex-row sm:items-center sm:gap-4 sm:py-3">
+          <div className="flex items-center justify-between gap-3 sm:contents">
+            <Link
+              to={{ name: 'home' }}
+              className="font-serif text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Journey
+            </Link>
+
+            {/*
+              Export is not in the nav list and not buried in settings. Data
+              durability is the whole point of the product, so the way out of it
+              is visible on every view, always in the same place.
+            */}
+            <div className="flex items-center gap-2 sm:order-last">
+              <Link
+                to={{ name: 'data' }}
+                aria-current={route.name === 'data' ? 'page' : undefined}
+                className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                  route.name === 'data'
+                    ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span aria-hidden="true">↓</span> Export
+              </Link>
+              <ThemeToggle />
+            </div>
+          </div>
+
+          {/*
+            The nav scrolls sideways rather than wrapping if it ever outgrows a
+            narrow screen: a second ragged line is worse than a scroll, and the
+            negative margin lets it bleed to the edge so it reads as scrollable.
+          */}
+          <nav aria-label="Main" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:flex-1 sm:overflow-visible sm:px-0">
+            <ul className="flex gap-1 whitespace-nowrap">
               {NAV.map((item) => {
                 const current = isCurrent(route, item.route);
                 return (
@@ -117,23 +154,6 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
               })}
             </ul>
           </nav>
-          {/*
-            Export is not in the nav list and not buried in settings. Data
-            durability is the whole point of the product, so the way out of it
-            is visible on every single view, always in the same place.
-          */}
-          <Link
-            to={{ name: 'data' }}
-            aria-current={route.name === 'data' ? 'page' : undefined}
-            className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
-              route.name === 'data'
-                ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                : 'border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            <span aria-hidden="true">↓</span> Export
-          </Link>
-          <ThemeToggle />
         </div>
       </header>
 

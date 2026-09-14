@@ -12,9 +12,10 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   Ref,
+  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
-import { useId } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef } from 'react';
 
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
@@ -48,6 +49,64 @@ export function Button({
   );
 }
 
+const LABEL = 'text-sm font-medium text-slate-700 dark:text-slate-300';
+const HINT = 'text-xs text-slate-500 dark:text-slate-400';
+const CONTROL =
+  'block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
+
+/**
+ * The shared skeleton every field uses: label, helper, control — three grid rows.
+ *
+ * The helper row is *reserved even when empty*. That is the whole point. Two
+ * fields side by side where only one carries helper text used to leave their
+ * controls on different baselines, because each field stacked its own parts and
+ * the taller one pushed its control down. With `grid-rows-subgrid` both fields
+ * borrow the row track from the row container, so the label row, the helper row
+ * and the control row each line up across the whole row — no margin guessing,
+ * and it holds however long the helper text wraps.
+ */
+export function FieldShell({
+  label,
+  hint,
+  htmlFor,
+  hintId,
+  children,
+  className = '',
+}: {
+  label: string;
+  hint?: string;
+  htmlFor: string;
+  hintId?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`grid content-start gap-1 sm:row-span-3 sm:grid-rows-subgrid ${className}`}>
+      <label htmlFor={htmlFor} className={LABEL}>
+        {label}
+      </label>
+      {/* Empty but present: the row must exist so controls stay aligned. */}
+      {hint ? (
+        <p id={hintId} className={HINT}>
+          {hint}
+        </p>
+      ) : (
+        <div aria-hidden="true" />
+      )}
+      <div>{children}</div>
+    </div>
+  );
+}
+
+/** The row container fields sit in, supplying the tracks they subgrid onto. */
+export function FieldRow({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`grid gap-x-4 gap-y-4 sm:grid-cols-2 sm:grid-rows-[auto_auto_auto] ${className}`}>
+      {children}
+    </div>
+  );
+}
+
 /**
  * A labelled text field.
  *
@@ -64,51 +123,110 @@ export function Field({
   const hintId = `${id}-hint`;
 
   return (
-    <div className={className}>
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-        {label}
-      </label>
-      {hint ? (
-        <p id={hintId} className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          {hint}
-        </p>
-      ) : null}
+    <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
       <input
         id={id}
         aria-describedby={hint ? hintId : undefined}
-        className={`mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${FOCUS}`}
+        className={`min-h-11 ${CONTROL} ${FOCUS}`}
         {...rest}
       />
-    </div>
+    </FieldShell>
   );
 }
 
-export function TextArea({
+/** A labelled select, sharing the field skeleton so it aligns with the rest. */
+export function Select({
   label,
   hint,
   className = '',
+  children,
   ...rest
-}: { label: string; hint?: string } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+}: { label: string; hint?: string } & SelectHTMLAttributes<HTMLSelectElement>) {
   const id = useId();
   const hintId = `${id}-hint`;
 
   return (
-    <div className={className}>
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-        {label}
-      </label>
-      {hint ? (
-        <p id={hintId} className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          {hint}
-        </p>
-      ) : null}
-      <textarea
+    <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
+      <select
         id={id}
         aria-describedby={hint ? hintId : undefined}
-        className={`mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base leading-relaxed text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${FOCUS}`}
+        className={`min-h-11 ${CONTROL} ${FOCUS}`}
+        {...rest}
+      >
+        {children}
+      </select>
+    </FieldShell>
+  );
+}
+
+/**
+ * A labelled textarea that grows with what is typed.
+ *
+ * `rows` sets where it starts, not where it stops. A box that opens half a
+ * screen tall is mostly dead space on a desktop, and one that never grows makes
+ * a long note a scroll-within-a-scroll on a phone — so it begins small and
+ * follows the text.
+ *
+ * The resize handle is deliberately kept. Auto-growing overrides a manual drag
+ * on the next keystroke, which is the same trade most editors make: the handle
+ * is there for reading back a long note, and typing resumes the automatic fit.
+ */
+export function TextArea({
+  label,
+  hint,
+  className = '',
+  autoGrow = true,
+  maxRows = 24,
+  onChange,
+  value,
+  ...rest
+}: {
+  label: string;
+  hint?: string;
+  autoGrow?: boolean;
+  maxRows?: number;
+} & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const id = useId();
+  const hintId = `${id}-hint`;
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const minRows = Number(rest.rows ?? 6);
+
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (!el || !autoGrow) return;
+    const style = getComputedStyle(el);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 24;
+    const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+
+    el.style.height = 'auto';
+    const wanted = Math.max(el.scrollHeight, minRows * lineHeight + padding);
+    el.style.height = `${Math.min(wanted, maxRows * lineHeight + padding)}px`;
+  }, [autoGrow, maxRows, minRows]);
+
+  // Fit on mount and whenever the value changes from outside (loading an entry
+  // to edit), not only on keystrokes.
+  useLayoutEffect(fit, [fit, value]);
+  useEffect(() => {
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [fit]);
+
+  return (
+    <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
+      <textarea
+        ref={ref}
+        id={id}
+        value={value}
+        aria-describedby={hint ? hintId : undefined}
+        onChange={(event) => {
+          fit();
+          onChange?.(event);
+        }}
+        className={`resize-y leading-relaxed ${CONTROL} ${FOCUS}`}
         {...rest}
       />
-    </div>
+    </FieldShell>
   );
 }
 

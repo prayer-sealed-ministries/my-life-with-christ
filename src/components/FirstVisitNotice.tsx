@@ -5,16 +5,18 @@
  * their writing goes. The honest facts are also the reassuring ones — nothing is
  * uploaded, no account is needed — but one of them is a hazard: clearing browser
  * data destroys the journal, and someone who learns that on the day it happens
- * has learned it too late.
+ * has learned it too late. So it is acknowledged before anything else.
  *
- * Shown once, dismissed permanently, stored per-browser. Rendered as a real
- * dialog so it is announced and can be closed from the keyboard, but it is
- * deliberately not modal-with-no-escape: it never blocks reading.
+ * Built on the native <dialog> element with showModal(), which is what gives
+ * correct behaviour for free and without a hand-rolled trap: focus is confined
+ * while it is open, Escape closes it, it renders in the top layer above
+ * everything, and focus returns to wherever it came from on close. A hand-built
+ * "modal" out of divs gets some of that and silently misses the rest.
+ *
+ * Shown once, dismissed permanently, remembered per-browser.
  */
 
-import { useEffect, useRef, useState } from 'react';
-
-import { Button } from './ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'journey:welcomed';
 
@@ -29,35 +31,51 @@ function alreadySeen(): boolean {
 
 export function FirstVisitNotice() {
   const [open, setOpen] = useState(() => !alreadySeen());
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    if (open) closeRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!dialog || !open) return;
+    if (!dialog.open) dialog.showModal();
   }, [open]);
 
-  if (!open) return null;
-
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_KEY, '1');
     } catch {
       // Not being able to remember is not worth failing over.
     }
+    dialogRef.current?.close();
     setOpen(false);
-  };
+
+    // On a first visit nothing had focus, so there is nowhere for the browser
+    // to return it to and it would fall back to <body>. Put it on the page
+    // heading instead, which is where a keyboard user expects to resume.
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>('main [tabindex="-1"]') ?? document.querySelector('main');
+      target?.focus?.();
+    });
+  }, []);
+
+  if (!open) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="false"
+    <dialog
+      ref={dialogRef}
       aria-labelledby="welcome-heading"
-      className="print-hidden border-b border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950"
+      onCancel={(event) => {
+        // Escape fires `cancel`; treat it as a dismissal so the notice does not
+        // reappear on every navigation.
+        event.preventDefault();
+        dismiss();
+      }}
+      className="print-hidden m-auto w-[min(34rem,calc(100vw-2rem))] rounded-xl border border-amber-300 bg-amber-50 p-0 text-amber-950 backdrop:bg-slate-900/50 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-50"
     >
-      <div className="mx-auto max-w-3xl px-4 py-4">
-        <h2 id="welcome-heading" className="font-serif text-base font-semibold text-amber-900 dark:text-amber-100">
+      <div className="p-5">
+        <h2 id="welcome-heading" className="font-serif text-lg font-semibold">
           Before you start writing
         </h2>
-        <ul className="mt-2 space-y-1 text-sm text-amber-900 dark:text-amber-100">
+        <ul className="mt-3 space-y-2 text-sm leading-relaxed">
           <li>
             <strong>There is no server and no account.</strong> Nothing you write is uploaded, and
             nobody else can read it — not even whoever runs this site.
@@ -75,19 +93,23 @@ export function FirstVisitNotice() {
             text, readable without this site, yours to keep and to pass on.
           </li>
         </ul>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button ref={closeRef} variant="primary" onClick={dismiss}>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={dismiss}
+            className="inline-flex min-h-11 items-center rounded-lg bg-amber-900 px-4 py-2 text-sm font-medium text-amber-50 hover:bg-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:bg-amber-100 dark:text-amber-950 dark:hover:bg-white"
+          >
             I understand
-          </Button>
+          </button>
           <a
             href="#/data"
             onClick={dismiss}
-            className="inline-flex min-h-11 items-center rounded-lg border border-amber-400 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-amber-600 dark:text-amber-100 dark:hover:bg-amber-900"
+            className="inline-flex min-h-11 items-center rounded-lg border border-amber-700 px-4 py-2 text-sm font-medium hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-amber-400 dark:hover:bg-amber-900"
           >
             See how exporting works
           </a>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
