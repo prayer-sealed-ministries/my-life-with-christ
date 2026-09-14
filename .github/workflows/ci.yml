@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The repository is private and the outline data is purchased third-party
+# material (see DATA-LICENSE.md). Nothing here publishes a build anywhere.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build (full)
+        run: npm run build
+
+      # The DATA_PROFILE flag is not evidence. Grep the actual artefact.
+      - name: Verify full build carries the outline data
+        run: npm run verify:bundle -- --profile full
+
+      - name: Build (refs-only)
+        run: DATA_PROFILE=refs-only npm run build
+
+      - name: Verify refs-only build excludes purchased content
+        run: npm run verify:bundle -- --profile refs-only
+
+  # Re-running the ingest must reproduce exactly what is committed. If a parser
+  # change silently alters the data, this fails rather than drifting unnoticed.
+  ingest-is-reproducible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ingest
+      - name: Ingest output matches what is committed
+        run: |
+          if ! git diff --exit-code --stat -- src/data/outlines.json data/; then
+            echo "::error::Re-running the ingest changed committed data. Commit the regenerated files, or fix the parser."
+            exit 1
+          fi
