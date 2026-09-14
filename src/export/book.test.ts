@@ -210,6 +210,15 @@ describe('renderBook: the document', () => {
     }
   });
 
+  it('keeps list semantics on the lists whose markers are styled away', () => {
+    const doc = parse(renderBook(makeContext(RICH_JOURNAL)));
+    for (const selector of ['.meta', '.toc-sections', '.toc-years', '.toc-entries', '.links']) {
+      const list = doc.querySelector(selector);
+      expect(list, selector).not.toBeNull();
+      expect(list!.getAttribute('role'), selector).toBe('list');
+    }
+  });
+
   it('carries print rules for page breaks and paper colours', () => {
     const css = parse(renderBook(makeContext(RICH_JOURNAL))).querySelector('style')!.textContent!;
     expect(css).toContain('@media print');

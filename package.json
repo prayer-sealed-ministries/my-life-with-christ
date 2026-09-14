@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "ingest": "vite-node scripts/ingest-outlines.mjs",
+    "ingest": "node scripts/ingest-outlines.mjs",
     "build:refs-only": "DATA_PROFILE=refs-only npm run build",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "fetch:kjv": "node scripts/fetch-kjv.mjs"

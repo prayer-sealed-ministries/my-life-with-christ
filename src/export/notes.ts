@@ -63,7 +63,7 @@ export function formatEventDate(value: string): string {
 const foldName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 /**
- * "Matthew 5:1-12", "Mark 4", "Acts 7-8", "John 3:16", "Matt 5:1-6:2".
+ * "Matthew 5:1-12", "Mark 4", "Acts 7-8", "John 3:16", "Matthew 5:47-6:2".
  *
  * Group 1 is the book, then chapter, then optional verse, then an optional
  * range end that may or may not name its own chapter.
@@ -106,7 +106,7 @@ export function parseScriptureRef(text: string, bookNames: Map<string, string>):
   if (!counts) return null;
 
   const chapterStart = Number(chapterText);
-  let chapterEnd = chapterStart;
+  let chapterEnd: number;
   let verseStart: number;
   let verseEnd: number;
 

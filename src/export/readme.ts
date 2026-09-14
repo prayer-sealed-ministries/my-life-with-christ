@@ -178,12 +178,14 @@ export function renderReadme(ctx: ExportContext): string {
   blocks.push(
     section(
       'START HERE',
+      // Deliberately says nothing about how the book lays itself out: that is
+      // another generator's business, and a promise made here that it stops
+      // keeping is a lie told to somebody who cannot check it.
       para(
         'Open the file book/my-journey-with-God.html. Double-click it and it ' +
           'opens in whatever web browser the machine has; it is the whole ' +
-          'journal laid out to read front to back, with the scripture printed ' +
-          'alongside the writing. It needs no internet connection. Nothing in ' +
-          'it is loaded from anywhere else.',
+          'journal, laid out to read front to back. It needs no internet ' +
+          'connection, and nothing in it is loaded from anywhere else.',
       ),
       para(
         'If that file will not open — browsers change — nothing is lost. ' +
@@ -210,11 +212,12 @@ export function renderReadme(ctx: ExportContext): string {
           'passages it is about. The writing follows underneath.',
       ),
       para(
-        'In the writing you will see a few marks: a # at the start of a line ' +
-          'makes a heading, a - at the start makes a list item, and *stars* ' +
-          'around a word mean it was emphasised. They are shorthand a program ' +
-          'can turn into formatting. Read straight past them. Nothing is hidden ' +
-          'inside them and no text is missing without them.',
+        'In the writing you will see a few marks. A line that begins with a ' +
+          'number sign is a heading. A line that begins with a hyphen is an ' +
+          'item in a list. A word with a star either side of it was ' +
+          'emphasised. They are shorthand a program can turn into formatting. ' +
+          'Read straight past them: nothing is hidden inside them, and no text ' +
+          'is missing without them.',
       ),
     ),
   );
@@ -327,7 +330,16 @@ function describeContents(ctx: ExportContext, dates: string[], count: number): s
 function inventory(ctx: ExportContext): string {
   const sample = sampleNoteName(ctx);
   const width = 16;
-  const rows = [labelled('README.txt', 'This file.', width)];
+  // Every path the archive writes is listed. A folder the README does not
+  // account for is a folder the reader has to guess about.
+  const rows = [
+    labelled('README.txt', 'This file.', width),
+    labelled(
+      'MANIFEST.txt',
+      'A list of every file in this archive with its size and a checksum, so damage can be spotted. Nothing needs it to be read.',
+      width,
+    ),
+  ];
 
   if (isPartial(ctx)) {
     rows.push(
@@ -348,6 +360,11 @@ function inventory(ctx: ExportContext): string {
     labelled(
       'notes/',
       `One plain-text file per entry, named by the date it happened, so the folder reads in order: ${sample}`,
+      width,
+    ),
+    labelled(
+      'indexes/',
+      'The same entries listed several ways over — by date, by book, by topic, by speaker, by place, and the ones written for whoever came after. Each points into the notes folder.',
       width,
     ),
     labelled('data/', 'The same journal in forms a machine can read:', width),
@@ -404,8 +421,9 @@ function descendantsNote(ctx: ExportContext): string | null {
         'than kept for themselves. If you read nothing else here, read those.',
     ),
     para(
-      'You can pick them out by the for_descendants column in ' +
-        'data/entries.csv, or the forDescendants field in data/journey.json.',
+      'They are gathered together in indexes/for-descendants.md. You can also ' +
+        'pick them out by the for_descendants column in data/entries.csv, or ' +
+        'the forDescendants field in data/journey.json.',
     ),
   );
 }

@@ -91,6 +91,13 @@ function makeCtx(overrides: Partial<ExportContext> = {}): ExportContext {
 const lines = (text: string): string[] => text.split('\n');
 const longestLine = (text: string): number => Math.max(...lines(text).map((line) => line.length));
 
+/**
+ * Collapse the hard wrapping before matching prose, so that a sentence which
+ * happens to break across two lines is not read as a missing sentence. The
+ * wrapping itself is asserted separately, on the raw text.
+ */
+const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
 // ---------------------------------------------------------------------------
 // README.txt
 // ---------------------------------------------------------------------------
@@ -113,8 +120,26 @@ describe('renderReadme', () => {
     expect(text).not.toMatch(/```/);
   });
 
+  it('accounts for every path the archive writes', () => {
+    const text = flat(renderReadme(makeCtx({ excludedCount: 1, filter: { kinds: ['sermon'] } })));
+    // A folder the README skips is a folder the reader has to guess about.
+    for (const path of [
+      'MANIFEST.txt',
+      'EXPORT-NOTE.txt',
+      'book/',
+      'notes/',
+      'indexes/',
+      'data/',
+      'journey.json',
+      'schema.json',
+      'entries.csv',
+    ]) {
+      expect(text).toContain(path);
+    }
+  });
+
   it('names the first file to open and the complete data file', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('book/my-journey-with-God.html');
     expect(text).toContain('data/journey.json');
     expect(text).toContain('data/schema.json');
@@ -126,7 +151,7 @@ describe('renderReadme', () => {
   });
 
   it('explains what the KJV is and that it is public domain in the US', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('King James Version');
     expect(text).toContain('1611');
     expect(text).toMatch(/public domain/);
@@ -134,14 +159,14 @@ describe('renderReadme', () => {
   });
 
   it('explains how to read a note with only a text editor', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toMatch(/plain text/i);
     expect(text).toMatch(/text editor/i);
     expect(text).toMatch(/three dashes/);
   });
 
   it('counts the entries and gives the span of dates in words', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('2 entries');
     expect(text).toContain('3 March 2019');
     expect(text).toContain('1 September 2026');
@@ -150,7 +175,7 @@ describe('renderReadme', () => {
   });
 
   it('stamps the export date both readably and exactly', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('13 September 2026');
     expect(text).toContain('2026-09-13T14:02:11.000Z');
   });
@@ -170,33 +195,35 @@ describe('renderReadme', () => {
   });
 
   it('warns above everything else when entries were left out', () => {
-    const text = renderReadme(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } }));
+    const raw = renderReadme(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } }));
+    const text = flat(raw);
     expect(text).toContain('IMPORTANT: THIS IS A PARTIAL COPY');
     expect(text).toContain('37 entries');
     expect(text).toContain('EXPORT-NOTE.txt');
     expect(text.indexOf('PARTIAL COPY')).toBeLessThan(text.indexOf('WHAT THIS IS'));
-    expect(longestLine(text)).toBeLessThanOrEqual(76);
+    expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
   it('warns when a filter was recorded even if nothing was counted out', () => {
-    const text = renderReadme(makeCtx({ filter: { forDescendantsOnly: true } }));
+    const text = flat(renderReadme(makeCtx({ filter: { forDescendantsOnly: true } })));
     expect(text).toContain('IMPORTANT: THIS IS A PARTIAL COPY');
     expect(text).toContain('EXPORT-NOTE.txt');
   });
 
   it('gets the grammar right for a single excluded entry', () => {
-    const text = renderReadme(makeCtx({ excludedCount: 1, filter: { kinds: ['letter'] } }));
+    const text = flat(renderReadme(makeCtx({ excludedCount: 1, filter: { kinds: ['letter'] } })));
     expect(text).toContain('1 entry was left out');
   });
 
   it('reads correctly under refs-only, where no outline resolves', () => {
-    const text = renderReadme(
+    const raw = renderReadme(
       makeCtx({ profile: 'refs-only', outlineBooks: new Map(), outlineEntries: new Map() }),
     );
+    const text = flat(raw);
     expect(text).toContain('ABOUT THE PASSAGE NAMES');
     expect(text).toMatch(/book, chapter and verse/);
     expect(text).toContain('book/my-journey-with-God.html');
-    expect(longestLine(text)).toBeLessThanOrEqual(76);
+    expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
   it('leaves out the passage-names note under the full profile', () => {
@@ -204,35 +231,36 @@ describe('renderReadme', () => {
   });
 
   it('calls out the entries marked for descendants', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('WRITTEN FOR WHOEVER CAME AFTER');
     expect(text).toContain('1 entry');
+    expect(text).toContain('indexes/for-descendants.md');
     expect(text).toContain('for_descendants');
   });
 
   it('explains why private entries are in here', () => {
-    const text = renderReadme(makeCtx());
+    const text = flat(renderReadme(makeCtx()));
     expect(text).toContain('ABOUT THE PRIVATE ENTRIES');
     expect(text).toMatch(/marked private/);
   });
 
   it('omits the private and descendants notes when nothing is marked', () => {
-    const text = renderReadme(makeCtx({ entries: [makeEntry({ visibility: 'shared' })] }));
+    const text = flat(renderReadme(makeCtx({ entries: [makeEntry({ visibility: 'shared' })] })));
     expect(text).not.toContain('ABOUT THE PRIVATE ENTRIES');
     expect(text).not.toContain('WRITTEN FOR WHOEVER CAME AFTER');
   });
 
   it('survives an empty journal without pretending it holds something', () => {
-    const text = renderReadme(makeCtx({ entries: [] }));
-    expect(text).toContain('no entries');
-    expect(text).toContain('book/my-journey-with-God.html');
-    expect(longestLine(text)).toBeLessThanOrEqual(76);
+    const raw = renderReadme(makeCtx({ entries: [] }));
+    expect(flat(raw)).toContain('no entries');
+    expect(flat(raw)).toContain('book/my-journey-with-God.html');
+    expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
   it('survives an entry with an unusable date', () => {
-    const text = renderReadme(makeCtx({ entries: [makeEntry({ date: 'sometime in 1994' })] }));
-    expect(text).toContain('1 entry');
-    expect(longestLine(text)).toBeLessThanOrEqual(76);
+    const raw = renderReadme(makeCtx({ entries: [makeEntry({ date: 'sometime in 1994' })] }));
+    expect(flat(raw)).toContain('1 entry');
+    expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
   it('ends with a newline', () => {
@@ -254,28 +282,29 @@ describe('renderExportNote', () => {
   });
 
   it('returns a note whenever anything was excluded, filter or not', () => {
-    const text = renderExportNote(makeCtx({ excludedCount: 4 }));
-    expect(text).not.toBeNull();
-    expect(text).toContain('4');
+    const raw = renderExportNote(makeCtx({ excludedCount: 4 }));
+    expect(raw).not.toBeNull();
+    const text = flat(raw ?? '');
+    expect(text).toContain('4 entries');
     // No filter was recorded: say so rather than implying the copy is whole.
     expect(text).toMatch(/no record was kept/);
     expect(text).toMatch(/incomplete/);
   });
 
   it('leads with the fact that the copy is partial', () => {
-    const text = renderExportNote(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } })) ?? '';
-    expect(lines(text)[0]).toBe('EXPORT NOTE: THIS IS A PARTIAL COPY');
-    expect(text).toMatch(/does not hold the whole journal/);
+    const raw = renderExportNote(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } })) ?? '';
+    expect(lines(raw)[0]).toBe('EXPORT NOTE: THIS IS A PARTIAL COPY');
+    expect(flat(raw)).toMatch(/does not hold the whole journal/);
   });
 
   it('counts what is in and what is out', () => {
-    const text = renderExportNote(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } })) ?? '';
+    const text = flat(renderExportNote(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } })) ?? '');
     expect(text).toMatch(/Entries included:\s+2/);
     expect(text).toMatch(/Entries left out:\s+37/);
   });
 
   it('states every limit the filter recorded, in human names', () => {
-    const text =
+    const text = flat(
       renderExportNote(
         makeCtx({
           excludedCount: 12,
@@ -288,7 +317,8 @@ describe('renderExportNote', () => {
             forDescendantsOnly: true,
           },
         }),
-      ) ?? '';
+      ) ?? '',
+    );
 
     expect(text).toContain('1 January 2020 through 31 December 2021');
     expect(text).toContain('Genesis and Mark');
@@ -298,30 +328,31 @@ describe('renderExportNote', () => {
   });
 
   it('prints ids it cannot resolve rather than dropping them', () => {
-    const text =
+    const text = flat(
       renderExportNote(
         makeCtx({ excludedCount: 1, filter: { books: ['habakkuk'], topics: ['fear-of-flying'] } }),
-      ) ?? '';
+      ) ?? '',
+    );
     expect(text).toContain('habakkuk');
     expect(text).toContain('fear-of-flying');
   });
 
   it('is unambiguous about an open-ended date range', () => {
-    const fromOnly = renderExportNote(makeCtx({ filter: { from: '2020-01-01' } })) ?? '';
+    const fromOnly = flat(renderExportNote(makeCtx({ filter: { from: '2020-01-01' } })) ?? '');
     expect(fromOnly).toContain('1 January 2020 onwards; nothing earlier');
 
-    const toOnly = renderExportNote(makeCtx({ filter: { to: '2020-01-01' } })) ?? '';
+    const toOnly = flat(renderExportNote(makeCtx({ filter: { to: '2020-01-01' } })) ?? '');
     expect(toOnly).toContain('up to and including 1 January 2020; nothing later');
   });
 
   it('warns when a filter recorded no limits at all', () => {
-    const text = renderExportNote(makeCtx({ filter: {} })) ?? '';
+    const text = flat(renderExportNote(makeCtx({ filter: {} })) ?? '');
     expect(text).toMatch(/named no limits/);
     expect(text).toMatch(/possibly incomplete/);
   });
 
   it('points at the machine-readable statement of the same fact', () => {
-    const text = renderExportNote(makeCtx({ filter: { kinds: ['sermon'] } })) ?? '';
+    const text = flat(renderExportNote(makeCtx({ filter: { kinds: ['sermon'] } })) ?? '');
     expect(text).toContain('data/journey.json');
     expect(text).toContain('"filter"');
   });
@@ -629,13 +660,13 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-const body = (csv: string): string[][] => parseCsv(csv.replace(/^﻿/, '')).slice(1);
+const body = (csv: string): string[][] => parseCsv(csv.replace(/^\uFEFF/, '')).slice(1);
 
 describe('renderCsv', () => {
   it('opens with a UTF-8 BOM so Excel reads the accents', () => {
-    const csv = renderCsv(makeCtx());
-    expect(csv.startsWith('﻿')).toBe(true);
-    expect(csv).toContain('Naïve');
+    const csv = renderCsv(makeCtx({ entries: [makeEntry({ place: 'Café Céleste' })] }));
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('Café Céleste');
   });
 
   it('separates records with CRLF and nothing else', () => {
@@ -646,7 +677,7 @@ describe('renderCsv', () => {
   });
 
   it('writes the agreed header, in the agreed order', () => {
-    const rows = parseCsv(renderCsv(makeCtx()).replace(/^﻿/, ''));
+    const rows = parseCsv(renderCsv(makeCtx()).replace(/^\uFEFF/, ''));
     expect(rows[0]).toEqual(HEADER);
   });
 
@@ -730,6 +761,6 @@ describe('renderCsv', () => {
 
   it('writes a header and nothing else for an empty journal', () => {
     const csv = renderCsv(makeCtx({ entries: [] }));
-    expect(csv).toBe(`﻿${HEADER.join(',')}\r\n`);
+    expect(csv).toBe(`\uFEFF${HEADER.join(',')}\r\n`);
   });
 });

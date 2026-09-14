@@ -359,7 +359,7 @@ function renderMeta(entry: Entry): string {
   if (entry.place?.trim()) items.push(escapeHtml(entry.place.trim()));
   if (entry.speaker?.trim()) items.push(`Speaker: ${escapeHtml(entry.speaker.trim())}`);
   if (entry.sermonSeries?.trim()) items.push(`Series: ${escapeHtml(entry.sermonSeries.trim())}`);
-  return `<ul class="meta">${items.map((item) => `<li>${item}</li>`).join('')}</ul>`;
+  return `<ul class="meta" role="list">${items.map((item) => `<li>${item}</li>`).join('')}</ul>`;
 }
 
 /**
@@ -454,7 +454,7 @@ function renderLinks(links: EntryLink[]): string {
     return `<li>${shown}<br>${url}${captured}</li>`;
   });
 
-  return `<h4>Links</h4>\n<ul class="links">${items.join('')}</ul>`;
+  return `<h4>Links</h4>\n<ul class="links" role="list">${items.join('')}</ul>`;
 }
 
 /**
@@ -616,7 +616,7 @@ function renderContents(ctx: ExportContext, hasLegacy: boolean, bodyIds: Map<str
   const parts: string[] = [
     '<nav class="contents" id="contents" aria-labelledby="contents-heading">',
     '<h2 id="contents-heading">Contents</h2>',
-    '<ul class="toc-sections">',
+    '<ul class="toc-sections" role="list">',
   ];
 
   if (hasLegacy) parts.push('<li><a href="#for-those-who-come-after">For those who come after</a></li>');
@@ -637,9 +637,9 @@ function renderContents(ctx: ExportContext, hasLegacy: boolean, bodyIds: Map<str
       else groups.push({ year, entries: [entry] });
     }
 
-    parts.push('<ol class="toc-years">');
+    parts.push('<ol class="toc-years" role="list">');
     for (const group of groups) {
-      parts.push(`<li><span class="toc-year">${escapeHtml(group.year)}</span><ol class="toc-entries">`);
+      parts.push(`<li><span class="toc-year">${escapeHtml(group.year)}</span><ol class="toc-entries" role="list">`);
       for (const entry of group.entries) {
         const id = bodyIds.get(entry.id) ?? '';
         parts.push(
@@ -790,6 +790,8 @@ section, .contents, .colophon { margin-bottom: 3.5rem; }
 }
 .entry:first-of-type { border-top: 0; padding-top: 0; }
 
+/* Safari drops list semantics from a list whose marker is removed, so every
+   list styled this way carries an explicit role="list" in the markup. */
 .meta {
   list-style: none;
   padding: 0;
@@ -882,7 +884,7 @@ blockquote { margin: 0 0 0.9rem; padding-left: 1.1rem; border-left: 1px solid va
 
   .skip { display: none; }
   .title-page { padding: 25mm 0 0; border-bottom: 0; break-after: page; }
-  .legacy, .contents, .colophon { break-before: page; }
+  .legacy, .contents, .journal, .colophon { break-before: page; }
   .contents a { text-decoration: none; }
 
   /* Keep an entry on one page where it fits. Browsers ignore this for anything
