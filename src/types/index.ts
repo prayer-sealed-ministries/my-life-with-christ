@@ -45,8 +45,19 @@ export interface OutlineEntry {
   displayTitle: string;
   classicStory: boolean;
   series: string | null;
-  /** Present when a hand adjudication changed the reference. */
-  adjudicated?: { from: string; confidence: string };
+  /**
+   * Present when a hand adjudication changed the reference.
+   *
+   * `alternatives` records readings that were weighed and not taken. Where the
+   * source was ambiguous rather than simply wrong, the choice is visible on the
+   * entry itself rather than buried in the overrides file.
+   */
+  adjudicated?: {
+    from: string;
+    confidence: string;
+    reason?: string;
+    alternatives?: { ref: string; rationale: string }[];
+  };
   /** Present when the source reference is impossible and awaits a decision. */
   unresolved?: { confidence: string; candidates: { ref: string; rationale: string }[] };
 }
