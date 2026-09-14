@@ -256,6 +256,14 @@ function frontMatter(entry: Entry, ctx: ExportContext): string {
   scalar('visibility', entry.visibility);
   scalar('createdAt', entry.createdAt);
   scalar('updatedAt', entry.updatedAt);
+  // Fields written by a version this build does not understand. They are
+  // carried as a JSON string rather than mapped into YAML, because their shape
+  // is by definition unknown and a guess at it could lose or reshape them.
+  // JSON inside YAML is still readable by hand and by any parser; dropping the
+  // field, in the file the family is meant to keep, would not be.
+  if (entry._unmigrated && Object.keys(entry._unmigrated).length > 0) {
+    lines.push(`_unmigrated: ${yamlString(JSON.stringify(entry._unmigrated))}`);
+  }
 
   lines.push('---');
   return lines.join('\n');

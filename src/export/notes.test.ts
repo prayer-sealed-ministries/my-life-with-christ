@@ -3,25 +3,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { describeRef, formatEventDate, parseScriptureRef, renderNote } from './notes';
 import { refKey, type ExportContext } from './context';
 import { loadPassage, type PassageVerse } from '../lib/bible';
-import versification from '../data/kjv/versification.json';
+import { BOOK_NAMES as CANON_NAMES, BOOK_ORDER } from '../lib/canon';
+import { SERMON } from './fixtures';
 import type { Entry, EntryAnchor, ScriptureRef } from '../types';
 
-const counts = versification as Record<string, number[]>;
-
-/**
- * "song-of-solomon" -> "Song of Solomon".
- *
- * The real context gets display names from the canon data; a test only needs
- * them to be the names a person would type, so that the free-text reference
- * parser is exercised against something realistic.
- */
-const prettyName = (id: string): string =>
-  id
-    .split('-')
-    .map((part) => (/^\d+$/.test(part) ? part : part[0].toUpperCase() + part.slice(1)))
-    .join(' ');
-
-const BOOK_NAMES = new Map(Object.keys(counts).map((id) => [id, prettyName(id)]));
+/** The real canon names, exactly as the export builder supplies them. */
+const BOOK_NAMES = new Map(Object.entries(CANON_NAMES));
 
 const ref = (
   book: string,
@@ -34,12 +21,13 @@ const ref = (
 const MATTHEW_5 = ref('matthew', 5, 1, 5, 12);
 const ACROSS_CHAPTERS = ref('matthew', 5, 47, 6, 2);
 const JOHN_3_16 = ref('john', 3, 16);
+const PSALM_37_11 = ref('psalms', 37, 11);
 
 /** Real KJV text, loaded the same way the export builder loads it. */
 const passages = new Map<string, PassageVerse[]>();
 
 beforeAll(async () => {
-  for (const target of [MATTHEW_5, ACROSS_CHAPTERS, JOHN_3_16]) {
+  for (const target of [MATTHEW_5, ACROSS_CHAPTERS, JOHN_3_16, PSALM_37_11]) {
     passages.set(refKey(target), await loadPassage(target));
   }
 });
@@ -51,7 +39,7 @@ function context(overrides: Partial<ExportContext> = {}): ExportContext {
     exportedAt: '2026-09-13T12:00:00.000Z',
     profile: 'full',
     bookNames: BOOK_NAMES,
-    bookOrder: new Map(Object.keys(counts).map((id, index) => [id, index + 1])),
+    bookOrder: new Map(Object.entries(BOOK_ORDER)),
     outlineBooks: new Map(),
     outlineEntries: new Map(),
     topics: new Map([
@@ -129,7 +117,7 @@ function parseFrontMatter(markdown: string): Record<string, YamlValue> {
   for (const line of lines.slice(1, end)) {
     if (line.includes('\t')) throw new Error(`tab in front matter: ${line}`);
 
-    const top = /^([A-Za-z][A-Za-z0-9]*): ?(.*)$/.exec(line);
+    const top = /^([A-Za-z_][A-Za-z0-9_]*): ?(.*)$/.exec(line);
     if (top && !line.startsWith(' ')) {
       const [, key, value] = top;
       if (value === '') {
@@ -147,12 +135,12 @@ function parseFrontMatter(markdown: string): Record<string, YamlValue> {
 
     const item = /^ {2}- (.*)$/.exec(line);
     if (item) {
-      const field = /^([A-Za-z][A-Za-z0-9]*): (.*)$/.exec(item[1]);
+      const field = /^([A-Za-z_][A-Za-z0-9_]*): (.*)$/.exec(item[1]);
       list.push(field ? { [field[1]]: parseScalar(field[2]) } : parseScalar(item[1]));
       continue;
     }
 
-    const continuation = /^ {4}([A-Za-z][A-Za-z0-9]*): (.*)$/.exec(line);
+    const continuation = /^ {4}([A-Za-z_][A-Za-z0-9_]*): (.*)$/.exec(line);
     if (!continuation) throw new Error(`unreadable line: ${line}`);
     const last = list[list.length - 1];
     if (typeof last !== 'object' || Array.isArray(last)) throw new Error(`orphan field: ${line}`);
@@ -424,6 +412,50 @@ describe('under the refs-only profile', () => {
   });
 });
 
+describe('a real journal entry', () => {
+  it('renders the shared sermon fixture whole', () => {
+    const note = renderNote(SERMON, context());
+
+    const front = parseFrontMatter(note);
+    expect(front.id).toBe(SERMON.id);
+    expect(front.speaker).toBe('Pastor James Whitfield');
+    expect(front.scriptureRefs).toEqual(['Matthew 5:1-12', 'Psalm 37:11']);
+
+    expect(note).toContain('# The Beatitudes');
+    expect(note).toContain('## Notes');
+    expect(note).toContain('## Reflection');
+    expect(note).toContain('## Prayer');
+    expect(note).toContain('## Links');
+
+    // The anchor and the cited reference name the same passage; it prints once.
+    expect(note.match(/### Matthew 5:1-12/g)).toHaveLength(1);
+    expect(note).toContain('**3** Blessed are the poor in spirit');
+    // "Psalm 37:11" is how it was written; "Psalms" is how the canon spells it.
+    expect(note).toContain('### Psalms 37:11');
+    expect(note).toContain('**11** But the meek shall inherit the earth');
+
+    // Markdown in the writing is passed through untouched, italics and all.
+    expect(note).toContain('"Blessed" is nearer to *congratulations* than to *lucky*.');
+  });
+
+  it('keeps fields a future version wrote rather than dropping them', () => {
+    const note = renderNote(
+      entry({ _unmigrated: { mood: 'unsettled', weather: { rain: true } } }),
+      context(),
+    );
+
+    const front = parseFrontMatter(note);
+    expect(JSON.parse(String(front._unmigrated))).toEqual({
+      mood: 'unsettled',
+      weather: { rain: true },
+    });
+  });
+
+  it('says nothing about _unmigrated when there is nothing to say', () => {
+    expect(parseFrontMatter(renderNote(entry(), context()))).not.toHaveProperty('_unmigrated');
+  });
+});
+
 describe('parseScriptureRef', () => {
   it('reads the forms a person actually writes', () => {
     expect(parseScriptureRef('Matthew 5:1-12', BOOK_NAMES)).toEqual(MATTHEW_5);
@@ -431,6 +463,11 @@ describe('parseScriptureRef', () => {
     expect(parseScriptureRef('Matthew 5:47-6:2', BOOK_NAMES)).toEqual(ACROSS_CHAPTERS);
     expect(parseScriptureRef('1 John 4', BOOK_NAMES)).toEqual(ref('1-john', 4, 1, 4, 21));
     expect(parseScriptureRef('Song of Solomon 2', BOOK_NAMES)).toEqual(ref('song-of-solomon', 2, 1, 2, 17));
+  });
+
+  it('accepts "Psalm 23", which is how everyone writes it', () => {
+    expect(parseScriptureRef('Psalm 23', BOOK_NAMES)).toEqual(ref('psalms', 23, 1, 23, 6));
+    expect(parseScriptureRef('Psalms 23:1', BOOK_NAMES)).toEqual(ref('psalms', 23, 1));
   });
 
   it('treats a bare range as chapters, not verses', () => {
