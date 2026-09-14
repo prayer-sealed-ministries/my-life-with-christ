@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { Entry, EntryAnchor, OutlineBook, OutlineEntry, Topic } from '../types';
 
 import { renderIndexes } from './indexes';
 import { buildNoteFilenames, type ExportContext } from './context';
-import type { Entry, EntryAnchor, Topic } from '../types';
+import { ALL_ENTRIES } from './fixtures';
+import { ALL_ENTRIES } from './fixtures';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -50,16 +52,59 @@ function at(book: string, chapterStart: number, verseStart: number, chapterEnd =
   return { kind: 'scripture', book, chapterStart, verseStart, chapterEnd, verseEnd };
 }
 
+/**
+ * A populated outline layer, as the `full` profile carries one.
+ *
+ * Built with titles and an intro that would be unmistakable in the output, so
+ * the refs-only comparison below is a real test: if any index ever started
+ * consulting the outline, these strings would appear on one side and not the
+ * other and the byte comparison would fail.
+ */
+function outlineLayer(): { books: Map<string, OutlineBook>; entries: Map<string, OutlineEntry> } {
+  const made: OutlineEntry[] = BOOKS.map(([id, name], index) => ({
+    id: `${id}-1`,
+    ref: `${name} 1`,
+    sourceRef: `${name} 1`,
+    book: id,
+    chapterStart: 1,
+    chapterEnd: 1,
+    title: `OUTLINE TITLE ${index}`,
+    displayTitle: `OUTLINE DISPLAY TITLE ${index}`,
+    classicStory: false,
+    series: null,
+  }));
+
+  return {
+    books: new Map(
+      BOOKS.map(([id, name], index) => [
+        id,
+        {
+          id,
+          name: `OUTLINE BOOK NAME ${name}`,
+          testament: index > 2 ? 'NT' : 'OT',
+          order: index + 1,
+          intro: `OUTLINE INTRO for ${name}.`,
+          entries: made.filter((outline) => outline.book === id),
+        } satisfies OutlineBook,
+      ]),
+    ),
+    entries: new Map(made.map((outline) => [outline.id, outline])),
+  };
+}
+
 interface CtxOptions {
   profile?: 'full' | 'refs-only';
   topics?: Topic[];
   /** Entry ids to leave out of the filename map, to test the no-link path. */
   withoutFilenames?: string[];
+  /** Populate the outline layer, as the `full` profile does. */
+  withOutline?: boolean;
 }
 
 function makeCtx(entries: Entry[], options: CtxOptions = {}): ExportContext {
   const filenames = buildNoteFilenames(entries);
   for (const id of options.withoutFilenames ?? []) filenames.delete(id);
+  const outline = options.withOutline ? outlineLayer() : { books: new Map(), entries: new Map() };
 
   return {
     entries,
@@ -69,8 +114,8 @@ function makeCtx(entries: Entry[], options: CtxOptions = {}): ExportContext {
     bookNames: new Map(BOOKS.map(([id, name]) => [id, name])),
     bookOrder: new Map(BOOKS.map(([id, , order]) => [id, order])),
     // Empty under refs-only, and this module must never read them either way.
-    outlineBooks: new Map(),
-    outlineEntries: new Map(),
+    outlineBooks: outline.books,
+    outlineEntries: outline.entries,
     topics: new Map((options.topics ?? TOPICS).map((topic) => [topic.id, topic])),
     passages: new Map(),
     noteFilenames: filenames,
@@ -90,6 +135,18 @@ const PATHS = [
 function links(markdown: string): string[] {
   return [...markdown.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
 }
+
+/** Only the links that point at an entry's note file. */
+function noteLinks(markdown: string): string[] {
+  return links(markdown).filter((href) => href.includes('/notes/'));
+}
+
+/** Every file in the archive an index is allowed to link to besides a note. */
+const NAVIGATION = new Set([
+  ...PATHS.map((path) => path.replace('indexes/', '')),
+  '../README.txt',
+  '../book/my-journey-with-God.html',
+]);
 
 /** The headings at one level, in the order they appear. */
 function headings(markdown: string, level: number): string[] {
@@ -132,12 +189,26 @@ describe('renderIndexes', () => {
     let total = 0;
     for (const [path, content] of Object.entries(files)) {
       for (const href of links(content)) {
-        expect(expected.has(href), `${path} -> ${href}`).toBe(true);
-        expect(href.startsWith('../notes/'), href).toBe(true);
-        total += 1;
+        // Every link is either a note the archive holds or a file in the fixed
+        // archive layout. Nothing else — a link out of the zip is a dead link.
+        const known = expected.has(href) || NAVIGATION.has(href);
+        expect(known, `${path} -> ${href}`).toBe(true);
+        if (href.includes('/notes/')) total += 1;
       }
     }
     expect(total).toBeGreaterThan(0);
+  });
+
+  it('ends every index with a way back to the rest of the archive', () => {
+    const files = renderIndexes(makeCtx([entry('a')]));
+    for (const [path, content] of Object.entries(files)) {
+      const others = PATHS.filter((other) => other !== path).map((other) => other.replace('indexes/', ''));
+      for (const sibling of others) expect(content, `${path} -> ${sibling}`).toContain(`](${sibling})`);
+      // A file must not link to itself, or the reader goes in a circle.
+      expect(content, path).not.toContain(`](${path.replace('indexes/', '')})`);
+      expect(content, path).toContain('](../README.txt)');
+      expect(content, path).toContain('`notes` folder');
+    }
   });
 
   it('produces byte-identical indexes under the refs-only profile', () => {
@@ -145,14 +216,35 @@ describe('renderIndexes', () => {
       entry('a', { anchors: [at('genesis', 35, 1, 35, 15)], speaker: 'Rev. Ames' }),
       entry('b', { date: '2021-03-04', anchors: [{ kind: 'topic', topicId: 'money' }], place: 'back porch' }),
     ];
-    // Under refs-only the outline layer is gone; the indexes must not notice.
-    expect(renderIndexes(makeCtx(entries, { profile: 'refs-only' }))).toEqual(renderIndexes(makeCtx(entries)));
+    // The full profile carries an outline layer, refs-only carries none. If any
+    // index ever read it, the loud outline strings would show up on one side.
+    const full = renderIndexes(makeCtx(entries, { withOutline: true }));
+    const refsOnly = renderIndexes(makeCtx(entries, { profile: 'refs-only' }));
+
+    expect(refsOnly).toEqual(full);
+    for (const content of Object.values(full)) expect(content).not.toContain('OUTLINE');
+  });
+
+  it('never touches the outline layer, however much of it is loaded', () => {
+    // The whole-archive shape a refs-only import produces: outline maps empty,
+    // every anchor still a resolved scripture range.
+    const entries = [entry('a', { anchors: [at('genesis', 1, 1, 1, 31), { kind: 'book', book: 'john' }] })];
+    const files = renderIndexes(makeCtx(entries, { profile: 'refs-only' }));
+
+    expect(files['indexes/by-book.md']).toContain('Genesis 1');
+    expect(files['indexes/by-book.md']).toContain('John (whole book)');
+    expect(Object.keys(files)).toHaveLength(6);
   });
 
   it('lists an entry without a link rather than pointing at a file that is not there', () => {
-    const files = renderIndexes(makeCtx([entry('a', { title: 'Orphaned' })], { withoutFilenames: ['a'] }));
-    expect(files['indexes/by-date.md']).toContain('Orphaned — note file not in this archive');
-    expect(links(files['indexes/by-date.md'])).toEqual([]);
+    const files = renderIndexes(
+      makeCtx([entry('a', { title: 'Orphaned', date: '2020-04-09' })], { withoutFilenames: ['a'] }),
+    );
+    const content = files['indexes/by-date.md'];
+    // The missing file joins the run of facts rather than splitting the line
+    // across two em dashes.
+    expect(content).toContain('- Orphaned — April 9 · Sermon · note file not in this archive');
+    expect(noteLinks(content)).toEqual([]);
   });
 
   it('escapes brackets in a title so the link survives', () => {
@@ -164,6 +256,64 @@ describe('renderIndexes', () => {
   it('leaves emphasis characters alone, so plain text stays readable', () => {
     const content = renderIndexes(makeCtx([entry('a', { speaker: 'Pastor D. Marsh_Jr' })]))['indexes/by-speaker.md'];
     expect(content).toContain('## Pastor D. Marsh_Jr');
+  });
+
+  it('survives an entry with nothing filled in but the fields that are required', () => {
+    const bare = entry('bare', {
+      title: '',
+      date: '',
+      place: '',
+      speaker: '',
+      anchors: [],
+      scriptureRefs: [],
+      notes: '',
+      reflection: '',
+      links: [],
+      tags: [],
+    });
+
+    const files = renderIndexes(makeCtx([bare]));
+    for (const [path, content] of Object.entries(files)) {
+      expect(content, path).toContain('# ');
+      expect(content.endsWith('\n'), path).toBe(true);
+      // Nothing renders as a literal "undefined", and no heading is left blank.
+      expect(content, path).not.toContain('undefined');
+      expect(content.split('\n'), path).not.toContain('## ');
+    }
+    expect(files['indexes/by-date.md']).toContain('(untitled)');
+    expect(files['indexes/by-date.md']).toContain('Date not recorded');
+  });
+
+  it('titles a punctuation-only entry as it was written, and still links it', () => {
+    const ctx = makeCtx([entry('a', { title: '??? — !!!' })]);
+    const content = renderIndexes(ctx)['indexes/by-date.md'];
+    // slugify has nothing to work with, so the file is "untitled" — the index
+    // must take that name from ctx.noteFilenames, never re-derive it.
+    expect(ctx.noteFilenames.get('a')).toBe('notes/2020-01-01--sermon--untitled.md');
+    expect(content).toContain(`[??? — !!!](../${ctx.noteFilenames.get('a')})`);
+  });
+
+  it('reads the real fixture journal without dropping or mangling an entry', () => {
+    const ctx = makeCtx(ALL_ENTRIES, { withOutline: true });
+    const files = renderIndexes(ctx);
+    const byDate = files['indexes/by-date.md'];
+
+    // Every entry reaches by-date.md, each linked to its own file.
+    expect(noteLinks(byDate).sort()).toEqual([...ctx.noteFilenames.values()].map((p) => `../${p}`).sort());
+    expect(noteLinks(byDate)).toHaveLength(ALL_ENTRIES.length);
+    // The two entries that collide on filename keep separate links.
+    expect(new Set(noteLinks(byDate)).size).toBe(ALL_ENTRIES.length);
+    expect(files['indexes/for-descendants.md']).toContain('The Beatitudes');
+  });
+
+  it('percent-encodes a note path that carries link-breaking characters', () => {
+    const ctx = makeCtx([entry('a', { title: 'Hash' })]);
+    // buildNoteFilenames cannot produce these today. The encoding is here so a
+    // later change to the naming rules cannot break every link at once.
+    ctx.noteFilenames.set('a', 'notes/odd name (1)#2?.md');
+
+    const content = renderIndexes(ctx)['indexes/by-date.md'];
+    expect(content).toContain('(../notes/odd%20name%20%281%29%232%3F.md)');
   });
 });
 
@@ -308,6 +458,68 @@ describe('by-book.md', () => {
     const content = renderIndexes(ctx)['indexes/by-book.md'];
     expect(headings(content, 2)).toEqual(['Genesis', 'enoch']);
   });
+
+  it('keeps the chapter and verse of a reference it cannot place', () => {
+    // A book outside the vendored canon. The formatter can only give back the
+    // name, and printing that alone would silently lose what the writer wrote.
+    const content = renderIndexes(
+      makeCtx([
+        entry('a', { title: 'Early', anchors: [at('enoch', 12, 3, 12, 9)] }),
+        entry('b', { title: 'Later', anchors: [at('enoch', 40, 1, 40, 2)] }),
+      ]),
+    )['indexes/by-book.md'];
+
+    expect(content).toContain('enoch 12:3-9 (as recorded; no such passage in this Bible)');
+    expect(content).toContain('enoch 40:1-2 (as recorded; no such passage in this Bible)');
+  });
+
+  it('keeps a chapter number the book does not have, and says so', () => {
+    const content = renderIndexes(
+      makeCtx([entry('a', { anchors: [at('genesis', 99, 1, 99, 4)] })]),
+    )['indexes/by-book.md'];
+
+    expect(content).toContain('Genesis 99:1-4 (as recorded; no such passage in this Bible)');
+    // And it cannot be read as an entry about the whole book.
+    expect(content).not.toContain('— Genesis · ');
+  });
+
+  it('writes an unplaceable single verse and a cross-chapter span readably', () => {
+    const content = renderIndexes(
+      makeCtx([
+        entry('a', { title: 'One verse', anchors: [at('enoch', 3, 7)] }),
+        entry('b', { title: 'Across chapters', anchors: [at('enoch', 8, 2, 9, 4)] }),
+      ]),
+    )['indexes/by-book.md'];
+
+    expect(content).toContain('enoch 3:7 (as recorded');
+    expect(content).toContain('enoch 8:2-9:4 (as recorded');
+  });
+
+  it('sorts an undated entry to the end of its book, as every other index does', () => {
+    // Both anchor the same passage, so only the date tie-break decides. An empty
+    // date string sorts before every real one, which would put it first.
+    const content = renderIndexes(
+      makeCtx([
+        entry('undated', { title: 'No date on this one', date: '', anchors: [at('genesis', 1, 1, 1, 31)] }),
+        entry('dated', { title: 'Has a date', date: '2019-01-01', anchors: [at('genesis', 1, 1, 1, 31)] }),
+      ]),
+    )['indexes/by-book.md'];
+
+    expect(content.indexOf('Has a date')).toBeLessThan(content.indexOf('No date on this one'));
+  });
+
+  it('names the translation the chapter and verse numbers belong to', () => {
+    const content = renderIndexes(
+      makeCtx([entry('a', { anchors: [at('genesis', 1, 1, 1, 31)] })]),
+    )['indexes/by-book.md'];
+    expect(content).toContain('King James Version');
+  });
+
+  it('does not count books that are not there when the archive is empty', () => {
+    const content = renderIndexes(makeCtx([]))['indexes/by-book.md'];
+    expect(content).toContain('— no entries.');
+    expect(content).not.toContain('0 books');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -359,6 +571,24 @@ describe('by-topic.md', () => {
     )['indexes/by-topic.md'];
 
     expect(content.match(/Doubled/g)).toHaveLength(1);
+  });
+
+  it('does not let an asterisk in a description break the emphasis around it', () => {
+    const content = renderIndexes(
+      makeCtx([entry('a', { anchors: [{ kind: 'topic', topicId: 'star' }] })], {
+        topics: [{ id: 'star', name: 'Money*', description: 'Earning it, *owing* it, and giving it away.', refs: [] }],
+      }),
+    )['indexes/by-topic.md'];
+
+    // One emphasis run over the whole line, not three that close each other.
+    expect(content).toContain('*Earning it, \\*owing\\* it, and giving it away.*');
+    expect(headings(content, 2)).toEqual(['Money*']);
+  });
+
+  it('does not count topics that are not there when the archive is empty', () => {
+    const content = renderIndexes(makeCtx([]))['indexes/by-topic.md'];
+    expect(content).toContain('— no entries.');
+    expect(content).not.toContain('0 topics');
   });
 
   it('runs chronologically within a topic', () => {
@@ -428,6 +658,29 @@ describe('by-speaker.md and by-place.md', () => {
     expect(headings(content, 2)).toEqual(['Not recorded']);
   });
 
+  it('keeps a speaker actually called "Not recorded" apart from the ones that are not', () => {
+    const content = renderIndexes(
+      makeCtx([
+        entry('a', { title: 'Named that', speaker: 'Not recorded' }),
+        entry('b', { title: 'Has none' }),
+      ]),
+    )['indexes/by-speaker.md'];
+
+    // Two identical headings would make it impossible to tell which was which.
+    const h2 = headings(content, 2);
+    expect(new Set(h2).size).toBe(h2.length);
+    expect(h2).toEqual(['Not recorded', 'Not recorded — nothing was written here']);
+  });
+
+  it('says plainly when nothing in the archive records the field at all', () => {
+    const content = renderIndexes(
+      makeCtx([entry('a'), entry('b')]),
+    )['indexes/by-place.md'];
+
+    expect(content).toContain('2 entries, and they do not record where it happened.');
+    expect(content).not.toContain('0 places');
+  });
+
   it('does not merge names that differ only in case', () => {
     const content = renderIndexes(
       makeCtx([entry('a', { speaker: 'de Vries' }), entry('b', { speaker: 'De Vries' })]),
@@ -467,7 +720,9 @@ describe('for-descendants.md', () => {
     expect(content).toContain('none were marked');
     expect(content).toContain('That is not the same');
     expect(content).not.toContain('\n- ');
-    expect(links(content)).toEqual([]);
+    // No entry is linked, but the reader is still shown the way on.
+    expect(noteLinks(content)).toEqual([]);
+    expect(content).toContain('](by-date.md)');
   });
 
   it('says so for an archive with no entries at all', () => {
