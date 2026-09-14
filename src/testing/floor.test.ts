@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { examinedAtLeast, sentinelFound } from '/path/redacted';
+import { examinedAtLeast, sentinelFound } from './floor';
 
 describe('the floors themselves fail when they should', () => {
   it('examinedAtLeast throws on zero', () => {
