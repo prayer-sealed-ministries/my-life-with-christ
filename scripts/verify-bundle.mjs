@@ -96,6 +96,7 @@ const FORBIDDEN_PATTERNS = [
 
 async function main() {
   const { profile, dist, acceptSmaller } = parseArgs(process.argv.slice(2));
+  const PUBLISHABLE = new Set(['refs-only', 'public']);
   const distDir = resolve(ROOT, dist);
 
   if (!existsSync(distDir)) {
@@ -107,8 +108,23 @@ async function main() {
   const books = JSON.parse(await readFile(join(ROOT, 'src/data/outlines.json'), 'utf8'));
   const { topics } = JSON.parse(await readFile(join(ROOT, 'src/data/topics.json'), 'utf8'));
 
-  const prose = proseProbes(books);
-  const divisions = divisionProbes(books, topics);
+  const sectionsPath = join(ROOT, 'src/data/sections.json');
+  const sections = existsSync(sectionsPath) ? JSON.parse(await readFile(sectionsPath, 'utf8')) : [];
+
+  /**
+   * Which divisions to probe for depends on what the build is allowed to ship.
+   *
+   *   refs-only  ships NO divisions, so ANY purchased division is a leak.
+   *              Probed against the whole set — nothing here relaxes.
+   *   public     legitimately ships the BSB sections, 425 of which happen to
+   *              coincide with a purchased span. Probed against the divisions
+   *              UNIQUE to the purchased set, which is the part that could only
+   *              have come from it.
+   */
+  const publishesOwnedDivisions = profile === 'public';
+  const owned = publishesOwnedDivisions ? sections : [];
+  const prose = proseProbes(books, owned);
+  const divisions = divisionProbes(books, topics, owned);
 
   // ---- 0. The gate must not have weakened since it was last frozen. ----
   // Probes are derived from the outline data, so a shrunken dataset means a
@@ -171,7 +187,10 @@ async function main() {
   console.log(`Verifying DATA_PROFILE=${profile} against ${dist}/`);
   console.log(`  ${files.length} files (${textFiles.length} searchable)`);
   console.log(`  ${prose.size} prose probes (every title and intro in the compilation)`);
-  console.log(`  ${divisions.size} division probes (every verse-span boundary, minus our own)\n`);
+  console.log(
+    `  ${divisions.size} division probes (verse-span boundaries` +
+      `${publishesOwnedDivisions ? ' unique to the purchased set' : ', minus our own'})\n`,
+  );
 
   /** @type {Array<{assertion: string, detail: string}>} */
   const failures = [...erosion];
@@ -258,7 +277,7 @@ async function main() {
     }
   }
 
-  if (profile === 'refs-only') {
+  if (PUBLISHABLE.has(profile)) {
     for (const hit of proseHits) {
       failures.push({
         assertion: 'NO_OUTLINE_PROSE',
@@ -274,7 +293,7 @@ async function main() {
   }
 
   // ---- Report. ----
-  if (profile === 'refs-only') {
+  if (PUBLISHABLE.has(profile)) {
     if (failures.length > 0) {
       const byAssertion = new Map();
       for (const failure of failures) {
@@ -302,7 +321,12 @@ async function main() {
     console.log('  NO_SOURCE_FILES       no PDFs, reports, or outlines.json in the build');
     console.log('  NO_SOURCE_MAPS        no .map files that could carry the original modules');
     console.log(`  NO_OUTLINE_PROSE      none of ${prose.size} titles or intro passages present`);
-    console.log(`  NO_OUTLINE_DIVISIONS  none of ${divisions.size} verse-span divisions present`);
+    console.log(
+      `  NO_OUTLINE_DIVISIONS  none of ${divisions.size} verse-span divisions present` +
+        (publishesOwnedDivisions
+          ? ` (purchased-only; ${sections.reduce((n, b) => n + b.entries.length, 0)} BSB sections are ours to ship)`
+          : ''),
+    );
     console.log('\nThis build is publishable.');
     return;
   }

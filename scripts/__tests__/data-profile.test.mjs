@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { OUTLINE_FREE, outlinesForProfile, resolveProfile } from '../vite-plugin-data-profile.mjs';
+import {
+  DIVISION_SOURCE,
+  OUTLINE_FREE,
+  outlinesForProfile,
+  resolveProfile,
+  withIntros,
+} from '../vite-plugin-data-profile.mjs';
+import sections from '../../src/data/sections.json';
 import books from '../../src/data/outlines.json';
 import topicsFile from '../../src/data/topics.json';
 import frozen from '../probe-baseline.json';
@@ -13,14 +20,24 @@ describe('resolveProfile', () => {
     expect(resolveProfile(undefined)).toBe('full');
   });
 
-  it('accepts the two known profiles', () => {
+  it('accepts the three known profiles', () => {
     expect(resolveProfile('full')).toBe('full');
+    expect(resolveProfile('public')).toBe('public');
     expect(resolveProfile('refs-only')).toBe('refs-only');
   });
 
   it('refuses anything else rather than guessing', () => {
-    expect(() => resolveProfile('public')).toThrow(/must be one of/);
+    expect(() => resolveProfile('publik')).toThrow(/must be one of/);
+    expect(() => resolveProfile('all')).toThrow(/must be one of/);
     expect(() => resolveProfile('')).toThrow(/must be one of/);
+  });
+
+  it('names where each profile draws its divisions from', () => {
+    expect(DIVISION_SOURCE).toEqual({
+      full: 'outlines',
+      public: 'sections',
+      'refs-only': 'none',
+    });
   });
 });
 
@@ -61,6 +78,28 @@ describe('outlinesForProfile', () => {
         if (entry.title.length >= 24) expect(serialized).not.toContain(entry.title);
       }
     }
+  });
+});
+
+describe('the public profile ships owned content only', () => {
+  // The whole point of the lane: a publishable build whose divisions this
+  // project owns outright, so no gate is needed for licensing reasons.
+  it('ships the BSB sections, not the purchased outlines', () => {
+    expect(sections).toHaveLength(66);
+    const total = sections.reduce((n, b) => n + b.entries.length, 0);
+    expect(total).toBeGreaterThan(2500);
+  });
+
+  it('merges hand-written intros into the sections', () => {
+    const merged = withIntros(sections, { jonah: 'Written here.' });
+    expect(merged.find((b) => b.id === 'jonah').intro).toBe('Written here.');
+    // A book with no intro written yet simply renders without one.
+    expect(merged.find((b) => b.id === 'nahum').intro).toBe('');
+  });
+
+  it('leaves the original untouched when merging', () => {
+    withIntros(sections, { jonah: 'Mutation check.' });
+    expect(sections.find((b) => b.id === 'jonah').intro).toBe('');
   });
 });
 

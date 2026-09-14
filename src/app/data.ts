@@ -1,13 +1,23 @@
 /**
  * The app's view of the static data.
  *
- * Outlines arrive through the `virtual:journey-data` module, which the build
- * generates according to DATA_PROFILE — under `refs-only` the titles and intros
- * are simply not there. Everything downstream reads `hasOutlineTitles` rather
- * than assuming.
+ * Divisions arrive through the `virtual:journey-data` module, which the build
+ * generates according to DATA_PROFILE. Three schemes can arrive there — the
+ * purchased outlines, the public-domain BSB sections, or nothing at all — and
+ * the app deliberately does not care which: a titled span of verses renders the
+ * same either way. `divisionSource` is available for the places that must say
+ * so out loud, such as attribution.
+ *
+ * Everything downstream reads `hasOutlineTitles` rather than assuming.
  */
 
-import { DATA_PROFILE, hasOutlines, hasOutlineTitles, outlines } from 'virtual:journey-data';
+import {
+  DATA_PROFILE,
+  divisionSource,
+  hasOutlines,
+  hasOutlineTitles,
+  outlines,
+} from 'virtual:journey-data';
 
 import topicsFile from '../data/topics.json';
 import versificationData from '../data/kjv/versification.json';
@@ -15,7 +25,7 @@ import { BOOK_NAMES, BOOK_ORDER, BOOK_TESTAMENT, CANON } from '../lib/canon';
 import { buildSegments } from '../lib/passages';
 import type { OutlineBook, PassageSegment, Topic } from '../types';
 
-export { DATA_PROFILE, hasOutlines, hasOutlineTitles };
+export { DATA_PROFILE, divisionSource, hasOutlines, hasOutlineTitles };
 
 export const versification: Record<string, number[]> = versificationData;
 export const topics = topicsFile.topics as Topic[];

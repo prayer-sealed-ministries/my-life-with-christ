@@ -7,9 +7,15 @@
  * is where a reader actually is.
  *
  * Built once at module load from topics.json and KJV versification, both of
- * which ship under every data profile. It has no dependency on the outline
- * layer whatsoever: under `refs-only` this IS the discovery layer, and it must
- * work there exactly as it does with outlines present.
+ * which ship under every data profile. It has no dependency on any division
+ * layer whatsoever — not the purchased outlines, not the BSB sections. Under
+ * `refs-only` this IS the discovery layer, and it must work there exactly as it
+ * does with divisions present.
+ *
+ * Because it indexes by verse span rather than by division id, it points at
+ * whichever scheme is loaded for free: `topicsForSpan` is what the passage and
+ * book views call with a segment's range, and a segment is a segment whether it
+ * came from an outline entry, a BSB section, or a whole chapter.
  */
 
 import topicsFile from '../data/topics.json';

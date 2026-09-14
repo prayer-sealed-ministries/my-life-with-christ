@@ -23,8 +23,27 @@ especially exposed: it is the author's prose, reproduced essentially verbatim.
   **including GitHub Pages**, which serves publicly even from a private repository.
 - Do not redistribute `outlines.json` or the source PDFs as standalone files.
 
-If the outline content is to be published, the options are, in order of
-preference:
+### The resolution: a scheme we own
+
+As of 2026-09-14 the project carries a second division scheme, and it is the one
+intended for publication.
+
+`src/data/sections.json` holds 3,016 section headings from the **Berean Standard
+Bible**, dedicated to the public domain on **2023-04-30**. There is no
+restriction on reproduction, adaptation, or commercial use, and no attribution
+requirement — though attribution is given anyway. See
+`src/data/sections/SOURCE.md`.
+
+This is what `DATA_PROFILE=public` ships. It resolves the problem permanently
+rather than working around it: rewording the purchased titles would never have
+cleared the rights, because the arrangement is the protected element, and
+paraphrasing the intros would have produced derivative works.
+
+The purchased outlines remain available under `DATA_PROFILE=full` for local use
+by the purchaser, behind the gate, unchanged.
+
+If the *purchased* outline content is ever to be published, the options remain,
+in order of preference:
 
 1. Obtain written permission from the rights holder to redistribute.
 2. Ship only the *references* (book, chapter, verse range). Bare scripture

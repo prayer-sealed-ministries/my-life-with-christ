@@ -8,12 +8,20 @@ declare module 'virtual:journey-data' {
 
   export const DATA_PROFILE: 'full' | 'refs-only';
   /**
-   * False under `refs-only`, where NO outline data ships — not the titles, and
-   * not the verse-span divisions, which are the author's arrangement.
+   * True when this build carries a titled division scheme, whichever one.
+   * False under `refs-only`, where no divisions ship at all.
    */
   export const hasOutlines: boolean;
   /** Kept as a narrower alias of hasOutlines for title-specific call sites. */
   export const hasOutlineTitles: boolean;
+  /**
+   * Which scheme the divisions came from.
+   *
+   *   'outlines' — the purchased [licensed content removed] (profile `full`, local only)
+   *   'sections' — BSB section headings, public domain (profile `public`)
+   *   'none'     — no divisions; whole chapters (profile `refs-only`)
+   */
+  export const divisionSource: 'outlines' | 'sections' | 'none';
   export const outlines: OutlineBook[];
   export default outlines;
 }
