@@ -1,0 +1,20 @@
+{
+  "name": "journey",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ingest": "node scripts/ingest-outlines.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38",
+    "vitest": "^2.1.9"
+  }
+}
