@@ -227,6 +227,12 @@ export interface Entry {
   visibility: Visibility;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Fields written by a version this build does not know about, preserved
+   * verbatim through a forward migration. Never dropped silently, so a journal
+   * written by a newer version and re-imported here loses nothing.
+   */
+  _unmigrated?: Record<string, unknown>;
 }
 
 /** Everything needed to create an entry; the rest is defaulted. */

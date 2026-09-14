@@ -205,3 +205,81 @@ export async function sha256(content: string | Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a ZIP archive.
+ *
+ * Only what the importer needs: locate the central directory, walk its entries,
+ * and inflate each one. Enough to read an archive this app wrote, and enough to
+ * read a plain archive anything else wrote.
+ */
+export interface ReadZipEntry {
+  path: string;
+  bytes: Uint8Array;
+}
+
+const decoder = new TextDecoder();
+
+export async function readZip(data: Uint8Array): Promise<ReadZipEntry[]> {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+
+  // The EOCD sits at the end, after an optional trailing comment, so scan back.
+  let eocd = -1;
+  for (let i = data.length - 22; i >= 0 && i >= data.length - 22 - 0xffff; i -= 1) {
+    if (view.getUint32(i, true) === SIGNATURE_EOCD) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('Not a ZIP archive: no end-of-central-directory record found.');
+
+  const count = view.getUint16(eocd + 10, true);
+  let cursor = view.getUint32(eocd + 16, true);
+
+  const entries: ReadZipEntry[] = [];
+  for (let i = 0; i < count; i += 1) {
+    if (view.getUint32(cursor, true) !== SIGNATURE_CENTRAL) {
+      throw new Error(`Corrupt ZIP: expected a central directory header at byte ${cursor}.`);
+    }
+
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const nameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const path = decoder.decode(data.subarray(cursor + 46, cursor + 46 + nameLength));
+
+    // The local header repeats the name and extra field, with its own lengths.
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const raw = data.subarray(dataStart, dataStart + compressedSize);
+
+    // Directory entries are zero-length and end in a slash; skip them.
+    if (!path.endsWith('/')) {
+      entries.push({ path, bytes: method === METHOD_DEFLATE ? await inflate(raw) : raw.slice() });
+    }
+
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+async function inflate(data: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('This browser cannot decompress the archive (no DecompressionStream).');
+  }
+  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Read one entry's bytes as UTF-8 text. */
+export function zipEntryText(entry: ReadZipEntry): string {
+  return decoder.decode(entry.bytes);
+}
