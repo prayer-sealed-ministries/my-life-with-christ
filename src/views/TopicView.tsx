@@ -1,0 +1,266 @@
+/**
+ * One topic: the passages that speak to it, and what has been written about it.
+ *
+ * The scripture list is the page. A topic carries scripture refs and nothing
+ * else, so this view works identically whether or not the outline layer is in
+ * the build — under `refs-only` the outline section simply has nothing to show
+ * and the refs still read, link and journal exactly the same.
+ *
+ * A ref is linked by resolving it to the segment that *contains* its first
+ * verse, because segments — not refs — are what the passage view addresses. A
+ * ref that lands in no segment still renders as readable text: a curated
+ * reference must never become a dead end.
+ */
+
+import { useMemo } from 'react';
+
+import {
+  findSegment,
+  outlineBooksById,
+  segmentContaining,
+  segmentTitle,
+  topicsById,
+  versification,
+} from '../app/data';
+import { Link } from '../app/router';
+import { useStorageQuery } from '../app/storage';
+import { EmptyState, Spinner, Tag } from '../components/ui';
+import { BOOK_NAMES } from '../lib/canon';
+import { formatRef, resolveTopicEntries } from '../lib/passages';
+import type { Entry, EntryKind, ScriptureRef } from '../types';
+
+const KIND_LABELS: Record<EntryKind, string> = {
+  sermon: 'Sermon',
+  reading: 'Reading',
+  service: 'Service',
+  prayer: 'Prayer',
+  reflection: 'Reflection',
+  letter: 'Letter',
+};
+
+const LINK =
+  'underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:decoration-slate-500 dark:hover:decoration-slate-100';
+
+const CARD =
+  'rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60';
+
+/**
+ * The curated one-liner topics.json keeps beside each ref.
+ *
+ * `ScriptureRef` is the portable anchor type and deliberately carries no prose,
+ * so the note is read off the object rather than widening that contract for the
+ * sake of one view.
+ */
+function refNote(ref: ScriptureRef): string | undefined {
+  // `in` narrows without a cast, so the note is read only when it is really there.
+  if (!('note' in ref)) return undefined;
+  return typeof ref.note === 'string' ? ref.note : undefined;
+}
+
+/** Human reference, e.g. "Genesis 2:18-25". */
+function refLabel(ref: ScriptureRef): string {
+  const bookName = BOOK_NAMES[ref.book] ?? ref.book;
+  const counts = versification[ref.book];
+  return counts ? formatRef(ref, bookName, counts) : bookName;
+}
+
+/** A local date rendered from its parts: `new Date('2026-03-15')` is UTC and can slip a day. */
+function formatDate(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return iso;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+function TopicNotFound({ topicId }: { topicId: string }) {
+  return (
+    <>
+      <h1 className="font-serif text-2xl font-semibold sm:text-3xl">Topic not found</h1>
+      <p className="mt-2 text-slate-600 dark:text-slate-300">
+        There is no topic called{' '}
+        {/* The id comes straight off the URL and has no spaces to wrap at, so it
+            is broken mid-word rather than pushing the page sideways on a phone. */}
+        <code className="break-words rounded bg-slate-100 px-1 dark:bg-slate-800">{topicId}</code>{' '}
+        in this build.
+      </p>
+      <p className="mt-4">
+        <Link
+          to={{ name: 'topics' }}
+          className={`inline-flex min-h-11 items-center text-slate-900 dark:text-slate-100 ${LINK}`}
+        >
+          See all topics
+        </Link>
+      </p>
+    </>
+  );
+}
+
+export default function TopicView({ topicId }: { topicId: string }) {
+  const topic = topicsById.get(topicId);
+
+  // Outline entries are the enhancement direction and only that: resolved from
+  // the topic's refs, never the other way round. Empty under `refs-only`
+  // whenever the outline layer is not in the build.
+  const outlineEntries = useMemo(
+    () => (topic ? resolveTopicEntries(topic, outlineBooksById, versification) : []),
+    [topic],
+  );
+
+  const { data: entries, loading } = useStorageQuery<Entry[]>(
+    (storage) =>
+      topic ? storage.findEntriesForAnchor({ kind: 'topic', topicId }) : Promise.resolve([]),
+    [topicId],
+    [],
+  );
+
+  if (!topic) return <TopicNotFound topicId={topicId} />;
+
+  return (
+    <>
+      <p className="mb-3">
+        <Link
+          to={{ name: 'topics' }}
+          className={`inline-flex min-h-11 items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100 ${LINK}`}
+        >
+          <span aria-hidden="true">←</span> All topics
+        </Link>
+      </p>
+
+      <h1 className="font-serif text-2xl font-semibold sm:text-3xl">{topic.name}</h1>
+      <p className="mt-2 text-slate-600 dark:text-slate-300">{topic.description}</p>
+
+      <h2 className="mt-8 font-serif text-xl font-semibold">Passages</h2>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+        {topic.refs.length} {topic.refs.length === 1 ? 'passage' : 'passages'}, with a line on why
+        each one is here.
+      </p>
+
+      <ul className="mt-4 space-y-3">
+        {topic.refs.map((ref, index) => {
+          const label = refLabel(ref);
+          // Segments are gapless within a book, so this resolves for any ref
+          // inside the book's verse count. It comes back undefined for a book
+          // this build has no versification for, which the fallback below
+          // handles rather than dropping the reference.
+          const segment = segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+          const note = refNote(ref);
+          // Under `refs-only` this is just the segment's reference; it is shown
+          // only when it says something the ref label does not.
+          const context = segment ? segmentTitle(segment) : null;
+
+          return (
+            <li
+              key={`${ref.book}-${ref.chapterStart}-${ref.verseStart}-${index}`}
+              className={CARD}
+            >
+              {segment ? (
+                <Link
+                  to={{ name: 'passage', bookId: ref.book, segmentId: segment.id }}
+                  className={`inline-flex min-h-11 items-center font-serif text-lg font-semibold text-slate-900 dark:text-slate-100 ${LINK}`}
+                >
+                  {label}
+                </Link>
+              ) : (
+                <p className="font-serif text-lg font-semibold">{label}</p>
+              )}
+
+              {note ? (
+                <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{note}</p>
+              ) : null}
+
+              {context && context !== label ? (
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Reading view: {context}
+                </p>
+              ) : null}
+
+              {/* Never a dead end: the reference still reads even with nowhere to open. */}
+              {!segment ? (
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  No reading view for this reference in this build.
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+
+      {outlineEntries.length > 0 ? (
+        <>
+          <h2 className="mt-8 font-serif text-xl font-semibold">Also in the outline</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            The outline study sections that overlap the passages above. An extra, not the point —
+            the passages stand on their own.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {outlineEntries.map((entry) => {
+              const segment = findSegment(entry.book, entry.id);
+              const label = segment ? segmentTitle(segment) : entry.ref;
+              return (
+                <li key={entry.id}>
+                  {segment ? (
+                    <Link
+                      to={{ name: 'passage', bookId: entry.book, segmentId: entry.id }}
+                      className={`inline-flex min-h-11 items-center text-slate-900 dark:text-slate-100 ${LINK}`}
+                    >
+                      {label}
+                    </Link>
+                  ) : (
+                    <p className="py-2">{label}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+
+      <h2 className="mt-8 font-serif text-xl font-semibold">Your entries on this topic</h2>
+
+      {loading ? (
+        <Spinner label="Loading your entries" />
+      ) : entries.length === 0 ? (
+        <div className="mt-4">
+          <EmptyState title={`Nothing written under ${topic.name} yet`}>
+            <p>An entry tagged with this topic will appear here.</p>
+            <p className="mt-3">
+              <Link
+                to={{ name: 'newEntry', anchor: `topic:${topic.id}` }}
+                className="inline-flex min-h-11 items-center rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                Write about {topic.name}
+              </Link>
+            </p>
+          </EmptyState>
+        </div>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {entries.map((entry) => (
+            <li key={entry.id}>
+              <Link
+                to={{ name: 'entry', id: entry.id }}
+                className={`block ${CARD} transition-colors hover:border-slate-400 focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:border-slate-500`}
+              >
+                {/* A title is whatever was typed; a long unbroken one must wrap
+                    rather than widen the page on a phone. */}
+                <span className="block break-words font-medium text-slate-900 dark:text-slate-100">
+                  {entry.title || 'Untitled entry'}
+                </span>
+                <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                  <span>{formatDate(entry.date)}</span>
+                  {/* An entry imported from a newer version can carry a kind this
+                      build has no label for. Show the raw kind rather than an
+                      empty badge, which would read as no kind at all. */}
+                  <Tag>{KIND_LABELS[entry.kind] ?? entry.kind}</Tag>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

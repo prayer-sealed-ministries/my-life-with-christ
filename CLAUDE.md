@@ -55,6 +55,7 @@ merged.
 | `src/data/title-overrides.json` | readable wording for specific outline entries |
 | `src/data/reference-overrides.json` | adjudications of bad or ambiguous references |
 | `src/data/kjv/SOURCE.md` | KJV provenance and the UK Crown-patent note |
+| `scripts/probe-baseline.json` | frozen size of the data gate — see below |
 
 Source PDFs live in `data/source/`. The ingest reads them and never writes them.
 
@@ -138,16 +139,96 @@ repository is private and must stay private.
 **GitHub Pages serves publicly even from a private repository.** Publishing a
 `full` build would republish the purchased titles and the author's intro prose.
 
+**What is protected is the selection and arrangement, not just the prose.**
+Deciding that Matthew 5 divides at 1-12 / 13-20 / 21-48 is the author's editorial
+work. Stripping the titles but keeping the divisions would publish the skeleton
+of the compilation and keep the whole risk.
+
 `DATA_PROFILE` is the gate:
 
-- `full` — outlines + intros + KJV. Private use. The default.
-- `refs-only` — chapter/verse + KJV. Titles and intros never enter the bundle.
+- `full` — the compilation entire: divisions, titles, series, intros, plus KJV.
+  Private use. The default.
+- `refs-only` — **no outline data at all.** Browsing falls back to whole chapters,
+  which come from KJV versification: canonical, factual, nobody's editorial work.
 
-It is a build-time switch implemented by generating the data module
-(`scripts/vite-plugin-data-profile.mjs`), so the protected strings cannot survive
-a missed branch. `scripts/verify-bundle.mjs` greps the built artefact with probes
-drawn from the real dataset and fails the build if any survive. **The flag is not
-evidence; the grep is.** CI runs both directions.
+Under `refs-only` the plugin does not even read `outlines.json`. Verse ranges from
+`topics.json` still ship — we authored those.
+
+`scripts/verify-bundle.mjs` proves it against the built artefact with five named
+assertions. **The flag is not evidence; the assertions are.**
+
+| Assertion | What it means |
+| --- | --- |
+| `PROBE_SET_INTACT` | the gate is at least as strong as its frozen baseline |
+| `NO_SOURCE_FILES` | no PDFs, reports or `outlines.json` in `dist/` |
+| `NO_SOURCE_MAPS` | no `.map` files — they can carry a whole module post-tree-shake |
+| `NO_OUTLINE_PROSE` | every title and intro passage absent, the complete set |
+| `NO_OUTLINE_DIVISIONS` | every verse-span division absent, minus ranges we authored |
+
+### Three ways the gate could be lost, and what stops each
+
+**1. The data shrinks.** Probes are derived from `outlines.json` at verify time,
+so if the ingest ever dropped entries the probe set would shrink with it and the
+gate would weaken while still reporting PASS.
+
+`scripts/probe-baseline.json` freezes the expected size. `PROBE_SET_INTACT` fails
+on any decrease. Accepting a smaller set takes an explicit flag:
+
+```bash
+node scripts/verify-bundle.mjs --accept-smaller-probe-set
+```
+
+which rewrites the baseline and prints exactly what shrank. **Never pass that
+flag in CI** — a policy test asserts neither workflow does. Understand why the
+data shrank first.
+
+**2. The workflow is edited.** The realistic path to an accidental publication is
+not a bug in the verifier; it is one line in `.github/workflows/pages.yml`.
+`scripts/__tests__/workflow-policy.test.mjs` parses both workflows and asserts
+the profile is pinned to `refs-only`, that no step sets it to `full`, that no
+build step omits it (which would default to `full`), that verification happens
+*before* the artefact upload, that `deploy` needs `build`, and that the deploy
+job builds nothing of its own.
+
+**3. Someone pushes past it.** `data-gate` is a standalone CI job, required by
+branch protection on `main`. It depends on no other job on purpose: chained
+behind lint or tests, an unrelated failure would leave the required check
+*pending* rather than failing, and a check that can sit pending is not a gate.
+
+> ### Residual risk — read this before you push
+>
+> Branch protection runs with **`enforce_admins: false`**. The repository owner
+> can push directly past the required check.
+>
+> **This includes you.** Coding agents push with the owner's token, so an agent
+> inherits the owner's bypass in full. **Branch protection does not constrain
+> agents at all.** If you are an agent reading this: you are not being caught by
+> branch protection, and you should not assume something upstream will stop a
+> mistake.
+>
+> Two things do constrain you, and they are the ones to respect:
+>
+> 1. **`.githooks/pre-push`** — runs the workflow-policy tests and the bundle
+>    gate locally, before a bad commit reaches history. It does not care who or
+>    what is pushing. `git push --no-verify` skips it silently; git does not run
+>    the hook at all in that case, so nothing can warn you. **Do not use
+>    `--no-verify` on this repository.** `SKIP_DATA_GATE=1` also skips it, but
+>    at least says so loudly.
+> 2. **`.github/workflows/pages.yml`** — gates what the public can actually
+>    see. Verification runs before the artefact upload and `deploy` needs
+>    `build`, so a bad commit landing on `main` still cannot reach the public
+>    site.
+>
+> That division is deliberate. Branch protection guards `main`'s *history*;
+> `pages.yml` guards the *published artefact*. For the licensing risk, the
+> second is the one that matters — admin enforcement would stop a bad commit
+> existing, whereas the deploy gate stops it being served.
+>
+> Run the gate yourself at any time with `npm run gate`.
+
+`scripts/vite-plugin-guard-public.mjs` additionally throws at `buildStart` if
+anything forbidden sits in `public/`, which Vite copies into `dist/` verbatim
+without passing it through the module graph.
 
 See `DATA-LICENSE.md`.
 

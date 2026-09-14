@@ -141,23 +141,24 @@ export function renderReadme(ctx: ExportContext): string {
   // The partial warning goes above everything, before the reader has settled
   // in. A reader who stops after one paragraph must still know it is partial.
   if (isPartial(ctx)) {
-    blocks.push(
-      [
-        'IMPORTANT: THIS IS A PARTIAL COPY',
-        '',
-        para(
-          ctx.excludedCount > 0
-            ? `This archive does not hold the whole journal. ${plural(ctx.excludedCount, 'entry', 'entries')} ` +
-                `${ctx.excludedCount === 1 ? 'was' : 'were'} left out of it when it ` +
-                'was made. The file EXPORT-NOTE.txt, next to this one, says ' +
-                'exactly what was kept and what was not.'
-            : 'This archive was made with a filter applied, so it may not hold ' +
-                'the whole journal. The file EXPORT-NOTE.txt, next to this one, ' +
-                'says what the filter was.',
-          '  ',
-        ),
-      ].join('\n'),
-    );
+    const loss =
+      ctx.excludedCount > 0
+        ? `This archive does not hold the whole journal. ${plural(ctx.excludedCount, 'entry', 'entries')} ` +
+          `${ctx.excludedCount === 1 ? 'was' : 'were'} left out of it when it was made.`
+        : 'This archive was made with a filter applied, so it may not hold the ' +
+          'whole journal.';
+
+    // Promise only what EXPORT-NOTE.txt can actually deliver. With no filter
+    // recorded it cannot name what is missing, and sending the reader to it for
+    // an answer it does not have is worse than sending them for a warning.
+    const pointer =
+      ctx.filter !== undefined
+        ? 'The file EXPORT-NOTE.txt, next to this one, says what the filter kept ' +
+          'and what it left behind.'
+        : 'The file EXPORT-NOTE.txt, next to this one, says everything that was ' +
+          'recorded about what is missing, which is not much.';
+
+    blocks.push(['IMPORTANT: THIS IS A PARTIAL COPY', '', para(`${loss} ${pointer}`, '  ')].join('\n'));
   }
 
   blocks.push(
@@ -210,6 +211,23 @@ export function renderReadme(ctx: ExportContext): string {
           'dashes. That block lists the facts of the entry: the date, what kind ' +
           'of entry it is, the title, who was speaking, where it happened, which ' +
           'passages it is about. The writing follows underneath.',
+      ),
+      // The reader has to be told which part is the writer and which part is
+      // the Bible before they read a word of either. Nothing here promises more
+      // than the note files hold: a part with nothing in it is simply absent.
+      para(
+        'Under that block the note is laid out in parts, each under its own ' +
+          'heading. "Notes" is what was said or read. "Reflection" is what it ' +
+          'meant to the writer, kept in a part of its own on purpose, because ' +
+          'what was taught and what it did to somebody are not the same thing. ' +
+          '"Prayer" and "Links" appear when the entry had them. A part with ' +
+          'nothing in it is left out rather than left standing empty.',
+      ),
+      para(
+        'Last comes "Scripture", the Bible passage the entry is about, printed ' +
+          'in full so the note can be read with no Bible to hand. That part is ' +
+          'quoted, and says so where it begins. Every word above it is the ' +
+          'writer\'s own.',
       ),
       para(
         'In the writing you will see a few marks. A line that begins with a ' +
@@ -274,6 +292,16 @@ export function renderReadme(ctx: ExportContext): string {
           'of each entry and the length of the writing, not the writing itself. ' +
           'The writing is in the notes folder and in journey.json.',
       ),
+      // The apostrophe is otherwise unexplained punctuation sitting in front of
+      // somebody's words. Say what put it there, so nobody reads it as part of
+      // what was written or strips it thinking the file is corrupt.
+      para(
+        'One oddity in that table: where a value starts with an equals sign, a ' +
+          'plus, a minus or an at sign, it is written with an apostrophe in ' +
+          'front of it. Spreadsheets read those characters as the beginning of ' +
+          'a calculation, and the apostrophe is what stops them. It is not part ' +
+          'of what was written.',
+      ),
     ),
   );
 
@@ -336,7 +364,10 @@ function inventory(ctx: ExportContext): string {
     labelled('README.txt', 'This file.', width),
     labelled(
       'MANIFEST.txt',
-      'A list of every file in this archive with its size and a checksum, so damage can be spotted. Nothing needs it to be read.',
+      // "every other file": the manifest cannot carry its own checksum, and it
+      // says so itself. Claiming it lists everything would send a reader
+      // hunting for a line that was never written.
+      'A list of every other file in this archive with its size and a checksum, so damage can be spotted. Nothing needs it to be read.',
       width,
     ),
   ];
@@ -357,11 +388,16 @@ function inventory(ctx: ExportContext): string {
       'The whole journal as one web page. Open my-journey-with-God.html in any web browser. Start here.',
       width,
     ),
-    labelled(
-      'notes/',
-      `One plain-text file per entry, named by the date it happened, so the folder reads in order: ${sample}`,
-      width,
-    ),
+    // The example goes on a line of its own. A long title makes a long
+    // filename, and a filename wrapped into the middle of a sentence is a
+    // filename the reader cannot see whole.
+    sample === null
+      ? labelled(
+          'notes/',
+          'One plain-text file per entry, named by the date it happened, so the folder reads in order. This copy holds no entries, so there is no notes folder in it.',
+          width,
+        )
+      : `${labelled('notes/', 'One plain-text file per entry, named by the date it happened, so the folder reads in order, like this one:', width)}\n${' '.repeat(width + 2)}${sample}`,
     labelled(
       'indexes/',
       'The same entries listed several ways over — by date, by book, by topic, by speaker, by place, and the ones written for whoever came after. Each points into the notes folder.',
@@ -376,13 +412,19 @@ function inventory(ctx: ExportContext): string {
   return rows.join('\n');
 }
 
-/** A genuine filename from this archive beats an invented one. */
-function sampleNoteName(ctx: ExportContext): string {
+/**
+ * A genuine filename from this archive, or null when there is none.
+ *
+ * Never an invented one: a name printed here is a name the reader will go
+ * looking for, and an archive with no entries has no notes folder to find it
+ * in. Always taken from `ctx.noteFilenames`, which is what the archive wrote.
+ */
+function sampleNoteName(ctx: ExportContext): string | null {
   for (const entry of ctx.entries) {
     const name = ctx.noteFilenames.get(entry.id);
     if (name) return name.replace(/^notes\//, '');
   }
-  return '2026-09-13--sermon--the-beatitudes.md';
+  return null;
 }
 
 /**
@@ -412,18 +454,21 @@ function refsOnlyNote(ctx: ExportContext): string | null {
 function descendantsNote(ctx: ExportContext): string | null {
   const marked = ctx.entries.filter((entry) => entry.forDescendants).length;
   if (marked === 0) return null;
+  const one = marked === 1;
   return section(
     'WRITTEN FOR WHOEVER CAME AFTER',
     para(
-      `${plural(marked, 'entry', 'entries')} in this archive ${marked === 1 ? 'is' : 'are'} ` +
+      `${plural(marked, 'entry', 'entries')} in this archive ${one ? 'is' : 'are'} ` +
         'marked "for descendants". That was a deliberate act: the writer ' +
-        'flagged these as the ones meant to be read by somebody later, rather ' +
-        'than kept for themselves. If you read nothing else here, read those.',
+        `flagged ${one ? 'it as one meant' : 'these as the ones meant'} to be ` +
+        'read by somebody later, rather than kept for themselves. If you read ' +
+        `nothing else here, read ${one ? 'that one' : 'those'}.`,
     ),
     para(
-      'They are gathered together in indexes/for-descendants.md. You can also ' +
-        'pick them out by the for_descendants column in data/entries.csv, or ' +
-        'the forDescendants field in data/journey.json.',
+      `The file indexes/for-descendants.md ${one ? 'holds that one' : 'gathers them together'}. ` +
+        `You can also pick ${one ? 'it' : 'them'} out by the for_descendants ` +
+        'column in data/entries.csv, or the forDescendants field in ' +
+        'data/journey.json.',
     ),
   );
 }
@@ -432,14 +477,16 @@ function descendantsNote(ctx: ExportContext): string | null {
 function privacyNote(ctx: ExportContext): string | null {
   const private_ = ctx.entries.filter((entry) => entry.visibility === 'private').length;
   if (private_ === 0) return null;
+  const one = private_ === 1;
   return section(
     'ABOUT THE PRIVATE ENTRIES',
     para(
-      `${plural(private_, 'entry', 'entries')} here ${private_ === 1 ? 'is' : 'are'} ` +
+      `${plural(private_, 'entry', 'entries')} here ${one ? 'is' : 'are'} ` +
         'marked private. In the app that meant the writer had not chosen to ' +
-        'show it to anybody. It is in this archive anyway, because a record ' +
-        'with the honest parts taken out is not much of a record, and because ' +
-        'this copy was made by the writer, on purpose, to be handed on.',
+        `show ${one ? 'it' : 'them'} to anybody. ${one ? 'It is' : 'They are'} ` +
+        'in this archive anyway, because a record with the honest parts taken ' +
+        'out is not much of a record, and because this copy was made by the ' +
+        'writer, on purpose, to be handed on.',
     ),
     para('Read it the way you would want yours read.'),
   );
@@ -465,7 +512,10 @@ export function renderExportNote(ctx: ExportContext): string | null {
   blocks.push(
     [
       'EXPORT NOTE: THIS IS A PARTIAL COPY',
-      `Made ${longDate(ctx.exportedAt)}`,
+      // The exact stamp as well as the readable one: it is what matches this
+      // note to the exportedAt field in data/journey.json, and tells somebody
+      // holding two partial archives which of them they are reading.
+      `Made ${longDate(ctx.exportedAt)} (${ctx.exportedAt})`,
       RULE,
     ].join('\n'),
   );
@@ -706,7 +756,10 @@ export function renderSchema(): string {
             type: 'string',
             description:
               'The date the thing happened, as YYYY-MM-DD — the Sunday of the ' +
-              'sermon, not the day the note was typed. For that, see createdAt.',
+              'sermon, not the day the note was typed. For that, see createdAt. ' +
+              'No pattern is required of it: the app kept whatever the writer ' +
+              'typed, so a value that is not a date, or an empty one, can appear ' +
+              'and means the date was never pinned down.',
             examples: ['2026-09-13'],
           },
           place: {
@@ -801,6 +854,18 @@ export function renderSchema(): string {
             description:
               'When the entry was last changed. ISO 8601. When two copies of a ' +
               'journal are merged, the later updatedAt wins.',
+          },
+          // An entry really can carry this — it is how a journal written by a
+          // newer version survives a trip through an older one. Leaving it out
+          // while additionalProperties is false would make this schema reject
+          // the very files it describes.
+          _unmigrated: {
+            type: 'object',
+            description:
+              'Fields on this entry written by a version of the app that did ' +
+              'not exist when this copy was made, kept word for word rather ' +
+              'than dropped. Normally absent. Whatever is in here was somebody\'s ' +
+              'data once: keep it if you rewrite this file.',
           },
         },
         required: [
@@ -1018,6 +1083,31 @@ const CSV_COLUMNS = [
 const CRLF = '\r\n';
 
 /**
+ * The characters a spreadsheet reads as "this cell is a calculation".
+ *
+ * Excel, Numbers and Google Sheets all treat a cell opening with =, +, - or @
+ * (or a leading tab or carriage return) as a formula rather than as text. Two
+ * things follow, and both are bad. A title the writer typed as "- and yet"
+ * opens as #NAME? and their words are gone from the table; and anything
+ * starting "=" is executed, so a journal that ever passed through somebody
+ * else's hands could open a link or call out of the sheet on a double-click.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+/**
+ * A CSV cell that a spreadsheet will show rather than run.
+ *
+ * The apostrophe is the prefix every spreadsheet understands as "the rest of
+ * this is text"; it is dropped on display and the value reads as written. It is
+ * added only where it is needed, and README.txt explains it to anyone reading
+ * the file raw, so it can never be mistaken for the writer's punctuation.
+ */
+function csvText(value: string | number | boolean | undefined): string {
+  const text = value === undefined ? '' : String(value);
+  return csvCell(FORMULA_LEAD.test(text) ? `'${text}` : text);
+}
+
+/**
  * data/entries.csv — one row per entry, for a spreadsheet.
  *
  * A summary, not the journal: it carries the facts of each entry and the size
@@ -1029,27 +1119,31 @@ export function renderCsv(ctx: ExportContext): string {
   const rows = [CSV_COLUMNS.join(',')];
 
   for (const entry of ctx.entries) {
+    // Every cell goes through csvText, not csvCell. The columns that hold what
+    // somebody typed are the ones that need the guard, but an id or a date read
+    // back from a file written by another program is no more trustworthy than a
+    // title, and a uniform rule cannot be got wrong when a column is added.
     rows.push(
       [
-        csvCell(entry.id),
-        csvCell(entry.date),
-        csvCell(entry.kind),
-        csvCell(entry.title),
-        csvCell(entry.speaker),
-        csvCell(entry.place),
-        csvCell(entry.sermonSeries),
-        csvCell(entry.anchors.map((anchor) => anchorLabel(ctx, anchor)).join('; ')),
-        csvCell(entry.scriptureRefs.join('; ')),
-        csvCell(entry.tags.join('; ')),
-        csvCell(entry.forDescendants),
-        csvCell(entry.visibility),
-        csvCell(entry.createdAt),
-        csvCell(entry.updatedAt),
-        csvCell(countCharacters(entry.notes)),
-        csvCell(countCharacters(entry.reflection)),
+        csvText(entry.id),
+        csvText(entry.date),
+        csvText(entry.kind),
+        csvText(entry.title),
+        csvText(entry.speaker),
+        csvText(entry.place),
+        csvText(entry.sermonSeries),
+        csvText(entry.anchors.map((anchor) => anchorLabel(ctx, anchor)).join('; ')),
+        csvText(entry.scriptureRefs.join('; ')),
+        csvText(entry.tags.join('; ')),
+        csvText(entry.forDescendants),
+        csvText(entry.visibility),
+        csvText(entry.createdAt),
+        csvText(entry.updatedAt),
+        csvText(countCharacters(entry.notes)),
+        csvText(countCharacters(entry.reflection)),
         // Always the filename the archive actually wrote, never a re-derived
         // one, so a link from this table can never point at a missing file.
-        csvCell(ctx.noteFilenames.get(entry.id) ?? ''),
+        csvText(ctx.noteFilenames.get(entry.id) ?? ''),
       ].join(','),
     );
   }
@@ -1078,5 +1172,24 @@ const countCharacters = (text: string): number => [...text].length;
 function anchorLabel(ctx: ExportContext, anchor: EntryAnchor): string {
   if (anchor.kind === 'topic') return `Topic: ${ctx.topics.get(anchor.topicId)?.name ?? anchor.topicId}`;
   if (anchor.kind === 'book') return `Book: ${bookLabel(ctx, anchor.book)}`;
-  return refToString(anchor, bookLabel(ctx, anchor.book));
+
+  const name = bookLabel(ctx, anchor.book);
+  const formatted = refToString(anchor, name);
+  // refToString gives back the bare book name for a reference it cannot place —
+  // a book outside the vendored canon, or a chapter that book does not have.
+  // Printing that would turn "Genesis 99:1-4" into "Genesis", which reads as an
+  // entry about the whole book and collapses two unplaceable references into one
+  // identical row. So the numbers the writer stored are printed instead, worded
+  // exactly as indexes/ words them, so the same anchor reads the same in both.
+  if (formatted !== name) return formatted;
+
+  const numbers = [anchor.chapterStart, anchor.verseStart, anchor.chapterEnd, anchor.verseEnd];
+  if (!numbers.every((value) => Number.isFinite(value))) return `${name} (reference unreadable)`;
+
+  const start = `${anchor.chapterStart}:${anchor.verseStart}`;
+  const end =
+    anchor.chapterEnd === anchor.chapterStart ? `${anchor.verseEnd}` : `${anchor.chapterEnd}:${anchor.verseEnd}`;
+  const span =
+    anchor.chapterEnd === anchor.chapterStart && anchor.verseEnd === anchor.verseStart ? start : `${start}-${end}`;
+  return `${name} ${span} (as recorded; no such passage in this Bible)`;
 }

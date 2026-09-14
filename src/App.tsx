@@ -1,32 +1,123 @@
-import { DATA_PROFILE, hasOutlineTitles, outlines } from 'virtual:journey-data';
-
 /**
- * Placeholder shell. The browse, journal, search, timeline and export views
- * land on top of this; it exists now so the data pipeline and the DATA_PROFILE
- * gate can be built and verified end to end.
+ * Route switch.
+ *
+ * Views are lazily loaded so a first paint does not pull the editor, the export
+ * machinery, and the print view along with it. The shell renders around every
+ * route and owns navigation, landmarks and post-navigation focus.
  */
+
+import { Suspense, lazy } from 'react';
+
+import { Shell } from './app/Shell';
+import { Link, useRouter } from './app/router';
+import { Spinner } from './components/ui';
+import { BOOK_NAMES } from './lib/canon';
+import { topicsById } from './app/data';
+
+const HomeView = lazy(() => import('./views/HomeView'));
+const BrowseView = lazy(() => import('./views/BrowseView'));
+const BookView = lazy(() => import('./views/BookView'));
+const PassageView = lazy(() => import('./views/PassageView'));
+const TopicsView = lazy(() => import('./views/TopicsView'));
+const TopicView = lazy(() => import('./views/TopicView'));
+const TimelineView = lazy(() => import('./views/TimelineView'));
+const SearchView = lazy(() => import('./views/SearchView'));
+const EntryEditor = lazy(() => import('./views/EntryEditor'));
+const DataView = lazy(() => import('./views/DataView'));
+const LegacyView = lazy(() => import('./views/LegacyView'));
+
+/** The document title for a route, also announced after navigation. */
+function titleFor(route: ReturnType<typeof useRouter>['route']): string {
+  switch (route.name) {
+    case 'home':
+      return 'Journey';
+    case 'browse':
+      return 'The Bible';
+    case 'book':
+      return BOOK_NAMES[route.bookId] ?? 'Book';
+    case 'passage':
+      return `${BOOK_NAMES[route.bookId] ?? 'Passage'} — reading`;
+    case 'topics':
+      return 'Topics';
+    case 'topic':
+      return topicsById.get(route.topicId)?.name ?? 'Topic';
+    case 'timeline':
+      return 'My journey';
+    case 'search':
+      return 'Search';
+    case 'entry':
+      return 'Entry';
+    case 'newEntry':
+      return 'New entry';
+    case 'data':
+      return 'Your journal';
+    case 'legacy':
+      return 'My Journey with God';
+    default:
+      return 'Not found';
+  }
+}
+
+function NotFound({ path }: { path: string }) {
+  return (
+    <>
+      <h1 className="font-serif text-2xl font-semibold">Page not found</h1>
+      <p className="mt-2 text-slate-600 dark:text-slate-300">
+        There is nothing at <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{path}</code>.
+      </p>
+      <p className="mt-4">
+        <Link to={{ name: 'home' }} className="underline focus-visible:outline-2">
+          Go back to the start
+        </Link>
+      </p>
+    </>
+  );
+}
+
+function CurrentView() {
+  const { route } = useRouter();
+
+  switch (route.name) {
+    case 'home':
+      return <HomeView />;
+    case 'browse':
+      return <BrowseView />;
+    case 'book':
+      return <BookView bookId={route.bookId} />;
+    case 'passage':
+      return <PassageView bookId={route.bookId} segmentId={route.segmentId} />;
+    case 'topics':
+      return <TopicsView />;
+    case 'topic':
+      return <TopicView topicId={route.topicId} />;
+    case 'timeline':
+      return <TimelineView />;
+    case 'search':
+      return <SearchView query={route.query} />;
+    // Keyed by target so React remounts rather than reusing the instance.
+    // The editor holds transient state — a primed delete confirmation, a save
+    // error — that must never survive a move to a different entry.
+    case 'entry':
+      return <EntryEditor key={`entry:${route.id}`} entryId={route.id} />;
+    case 'newEntry':
+      return <EntryEditor key={`new:${route.anchor ?? ''}`} anchorParam={route.anchor} />;
+    case 'data':
+      return <DataView />;
+    case 'legacy':
+      return <LegacyView />;
+    default:
+      return <NotFound path={route.path} />;
+  }
+}
+
 export default function App() {
-  const entryCount = outlines.reduce((sum, book) => sum + book.entries.length, 0);
+  const { route } = useRouter();
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-2xl font-semibold">Journey</h1>
-      <p className="mt-2 text-sm opacity-70">
-        {outlines.length} books, {entryCount} outline entries. Data profile:{' '}
-        <code>{DATA_PROFILE}</code>
-        {hasOutlineTitles ? '' : ' (outline titles and intros excluded)'}
-      </p>
-      <ul className="mt-6 space-y-1">
-        {outlines.slice(0, 5).map((book) => (
-          <li key={book.id} className="text-sm">
-            <span className="font-medium">{book.name}</span>{' '}
-            <span className="opacity-60">
-              {book.entries.length} entries
-              {book.entries[0] && hasOutlineTitles ? ` — e.g. ${book.entries[0].displayTitle}` : ''}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </main>
+    <Shell title={titleFor(route)}>
+      <Suspense fallback={<Spinner label="Loading" />}>
+        <CurrentView />
+      </Suspense>
+    </Shell>
   );
 }

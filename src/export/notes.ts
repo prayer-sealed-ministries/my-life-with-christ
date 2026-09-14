@@ -3,7 +3,7 @@
  *
  * This is the part of the export that has to stand entirely on its own. The
  * reader we are writing for is a grandchild in 2060 with a zip file, no app, no
- * account and no idea what this was, so every note carries three things:
+ * account and no idea what this was, so every note carries four things:
  *
  * 1. Front matter holding every structured field, so the file is still machine
  *    readable after `data/journey.json` is lost or unreadable.
@@ -11,6 +11,11 @@
  *    verbatim, in clearly separated sections that are never merged.
  * 3. The full KJV text of every passage the entry points at. A note that cannot
  *    be read without also owning a Bible has failed.
+ * 4. Everything in 1 that a person would actually want, said again in the body
+ *    in plain words. Front matter is for machines; most Markdown readers hide it
+ *    outright. What the entry is about, what was cited, and how it was tagged
+ *    are facts about the entry, not metadata, so they are written where a human
+ *    will see them.
  *
  * Everything here is pure and synchronous: scripture text is already loaded and
  * sitting in `ctx.passages`. Nothing in this file can fail an export.
@@ -59,6 +64,44 @@ export function formatEventDate(value: string): string {
   return `${Number(match[3])} ${month} ${match[1]}`;
 }
 
+// ---------------------------------------------------------------------------
+// Text hygiene
+//
+// Two places in this file cannot take an arbitrary run of whitespace: a YAML
+// scalar and a single-line piece of Markdown. Neither is allowed to change a
+// word — only what the writing sits on.
+// ---------------------------------------------------------------------------
+
+/**
+ * Line endings, normalised before anything is written.
+ *
+ * `yamlString` escapes a newline but not a carriage return, and YAML reads a
+ * bare CR as a line break — so a title typed on Windows would end its own quoted
+ * scalar early and come back out of a parser as something other than what went
+ * in. CRLF and CR collapse to LF, the one line ending everything downstream
+ * already handles.
+ */
+const normalizeBreaks = (value: string): string => value.replace(/\r\n?/g, '\n');
+
+/** Escape a value for YAML front matter, line endings normalised first. */
+const yaml = (value: string): string => yamlString(normalizeBreaks(value));
+
+/**
+ * Fold a value onto one line.
+ *
+ * The `#` heading and the line of facts under it are single-line by
+ * construction: a newline in a title would split the heading and leave half of
+ * it reading as body text, and a newline in a place name would break the facts
+ * line in two. Only whitespace is touched, never a word, and the value is still
+ * written verbatim in the front matter — it is simply not allowed to break the
+ * page it sits on.
+ */
+const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
+// ---------------------------------------------------------------------------
+// References
+// ---------------------------------------------------------------------------
+
 /** Collapse a name or id to comparable letters: "1 John", "1-john" -> "1john". */
 const foldName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -76,11 +119,11 @@ const REF_PATTERN = /^(.+?)\s+(\d+)(?::\s*(\d+))?(?:\s*[-–—]\s*(?:(\d+)\s*:\
  * Those are free text — whatever the writer typed while listening — so this is
  * deliberately conservative and returns null on anything it is not sure of. It
  * is only ever used as a lookup key into `ctx.passages`, so a reference it
- * cannot read simply goes unillustrated; the string itself is still preserved
- * verbatim in the note's front matter, so nothing is lost either way. That
- * failure mode is why no attempt is made at abbreviations ("Matt", "1 Cor"):
- * a wrong guess would quote the wrong scripture under the writer's words, which
- * is far worse than quoting none.
+ * cannot read simply goes unquoted; the string itself is preserved verbatim in
+ * the note's front matter and named again in the body, so nothing is lost either
+ * way. That failure mode is why no attempt is made at abbreviations ("Matt",
+ * "1 Cor"): a wrong guess would quote the wrong scripture under the writer's
+ * words, which is far worse than quoting none.
  */
 export function parseScriptureRef(text: string, bookNames: Map<string, string>): ScriptureRef | null {
   const match = REF_PATTERN.exec(text.trim().replace(/[.,;]+$/, ''));
@@ -132,18 +175,45 @@ export function parseScriptureRef(text: string, bookNames: Map<string, string>):
 /**
  * A reference as a person reads it: "Matthew 5:1-12".
  *
- * An unknown book id means this build is missing canon data, not that the
- * reference is meaningless, so the numbers are still printed rather than
- * dropped.
+ * A reference can fail to resolve two ways, and neither may be allowed to
+ * swallow the numbers. The book id may be unknown here — this build is missing
+ * canon data. Or the range may be impossible against the book it names, which is
+ * what an entry written by another build, or against outline data since
+ * adjudicated, can leave behind. `formatRef` answers both with the bare book
+ * name, so Genesis 99:1-4 would print as "Genesis" and read as the whole book.
+ * The span is therefore checked here first and anything that does not resolve is
+ * spelled out end to end. Verbose beats wrong.
  */
 export function describeRef(ref: ScriptureRef, ctx: ExportContext): string {
   const name = ctx.bookNames.get(ref.book) ?? ref.book;
   const counts = versification[ref.book];
-  if (counts) return formatRef(ref, name, counts);
+  if (counts && referenceSpan(buildIndex(counts), ref)) return formatRef(ref, name, counts);
 
   const from = `${ref.chapterStart}:${ref.verseStart}`;
   const to = `${ref.chapterEnd}:${ref.verseEnd}`;
   return from === to ? `${name} ${from}` : `${name} ${from}-${to}`;
+}
+
+/**
+ * What one anchor is, in a handful of words.
+ *
+ * Used in the body, where a reader needs to know what the entry is about before
+ * anything else. The outline layer is never consulted: it is absent entirely
+ * under `refs-only`, and a label that appeared under one profile and vanished
+ * under the other would make two copies of the same journal read differently.
+ *
+ * A topic or book this archive does not carry is still named by its id rather
+ * than dropped, so the reader can see the entry pointed somewhere rather than
+ * nowhere.
+ */
+function anchorLabel(anchor: EntryAnchor, ctx: ExportContext): string {
+  if (anchor.kind === 'scripture') return oneLine(describeRef(anchor, ctx));
+  if (anchor.kind === 'topic') {
+    const topic = ctx.topics.get(anchor.topicId);
+    return oneLine(`${topic ? topic.name : anchor.topicId} (topic)`);
+  }
+  // "(whole book)" is the wording indexes/by-book.md uses for the same thing.
+  return oneLine(`${ctx.bookNames.get(anchor.book) ?? anchor.book} (whole book)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +226,7 @@ type YamlItem = string[];
 /** A block list of scalars, or `key: []` when there is nothing to list. */
 function yamlScalarList(key: string, values: string[]): string[] {
   if (values.length === 0) return [`${key}: []`];
-  return [`${key}:`, ...values.map((value) => `  - ${yamlString(value)}`)];
+  return [`${key}:`, ...values.map((value) => `  - ${yaml(value)}`)];
 }
 
 /** A block list of maps: first line takes the dash, the rest line up under it. */
@@ -185,47 +255,56 @@ function anchorItem(anchor: EntryAnchor, ctx: ExportContext): YamlItem {
   if (anchor.kind === 'scripture') {
     const item = [
       'kind: scripture',
-      `reference: ${yamlString(describeRef(anchor, ctx))}`,
-      `book: ${yamlString(anchor.book)}`,
+      `reference: ${yaml(describeRef(anchor, ctx))}`,
+      `book: ${yaml(anchor.book)}`,
       `chapterStart: ${anchor.chapterStart}`,
       `verseStart: ${anchor.verseStart}`,
       `chapterEnd: ${anchor.chapterEnd}`,
       `verseEnd: ${anchor.verseEnd}`,
     ];
-    if (anchor.outlineEntryId) item.push(`outlineEntryId: ${yamlString(anchor.outlineEntryId)}`);
+    if (anchor.outlineEntryId) item.push(`outlineEntryId: ${yaml(anchor.outlineEntryId)}`);
     return item;
   }
 
   if (anchor.kind === 'topic') {
-    const item = ['kind: topic', `topicId: ${yamlString(anchor.topicId)}`];
+    const item = ['kind: topic', `topicId: ${yaml(anchor.topicId)}`];
     const topic = ctx.topics.get(anchor.topicId);
-    if (topic) item.push(`topic: ${yamlString(topic.name)}`);
+    if (topic) item.push(`topic: ${yaml(topic.name)}`);
     return item;
   }
 
-  const item = ['kind: book', `book: ${yamlString(anchor.book)}`];
+  const item = ['kind: book', `book: ${yaml(anchor.book)}`];
   const name = ctx.bookNames.get(anchor.book);
-  if (name) item.push(`bookName: ${yamlString(name)}`);
+  if (name) item.push(`bookName: ${yaml(name)}`);
   return item;
 }
 
 /** One link, as readable YAML. Fields absent at capture time stay absent. */
 function linkItem(link: EntryLink): YamlItem {
-  const item = [`url: ${yamlString(link.url)}`];
-  if (link.label) item.push(`label: ${yamlString(link.label)}`);
-  if (link.capturedTitle) item.push(`capturedTitle: ${yamlString(link.capturedTitle)}`);
-  if (link.capturedAt) item.push(`capturedAt: ${yamlString(link.capturedAt)}`);
+  const item = [`url: ${yaml(link.url)}`];
+  if (link.label) item.push(`label: ${yaml(link.label)}`);
+  if (link.capturedTitle) item.push(`capturedTitle: ${yaml(link.capturedTitle)}`);
+  if (link.capturedAt) item.push(`capturedAt: ${yaml(link.capturedAt)}`);
   return item;
 }
 
 /**
  * Every structured field on the entry, in a fixed order.
  *
- * Optional fields are omitted when they hold nothing rather than written out
- * empty: `speaker: ''` invites a reader to wonder who was erased, where no
- * `speaker` key plainly means nobody was recorded. Lists are always written,
- * empty ones as `[]`, because an absent `tags` key and a `tags: []` key read
- * the same to a parser but not to a person — the empty list says we looked.
+ * A field the `Entry` type requires is always written, empty or not. Leaving
+ * `title` out of an untitled entry would say the format has no such field, which
+ * is false, and would stop the front matter alone from rebuilding the entry.
+ *
+ * Optional fields are the other way round: they are omitted when they hold
+ * nothing rather than written out empty. `speaker: ''` invites a reader to
+ * wonder who was erased, where no `speaker` key plainly means nobody was
+ * recorded. They are omitted on the same test the body uses — empty once
+ * trimmed — so the two halves of the file never disagree about whether there was
+ * a speaker.
+ *
+ * Lists are always written, empty ones as `[]`, because an absent `tags` key and
+ * a `tags: []` key read the same to a parser but not to a person — the empty
+ * list says we looked.
  *
  * Links are included here as well as in the body. The body renders them for
  * reading; this renders them for a machine, and keeps the promise that a note
@@ -234,18 +313,24 @@ function linkItem(link: EntryLink): YamlItem {
 function frontMatter(entry: Entry, ctx: ExportContext): string {
   const lines: string[] = ['---'];
 
-  const scalar = (key: string, value: string | undefined): void => {
-    if (value === undefined || value === '') return;
-    lines.push(`${key}: ${yamlString(value)}`);
+  /** A field the type requires. Written verbatim, so it round-trips exactly. */
+  const required = (key: string, value: string): void => {
+    lines.push(`${key}: ${yaml(value)}`);
   };
 
-  scalar('id', entry.id);
-  scalar('title', entry.title);
-  scalar('kind', entry.kind);
-  scalar('date', entry.date);
-  scalar('place', entry.place);
-  scalar('speaker', entry.speaker);
-  scalar('sermonSeries', entry.sermonSeries);
+  /** A field the type marks optional. Absent when there is nothing in it. */
+  const optional = (key: string, value: string | undefined): void => {
+    if (value === undefined || value.trim() === '') return;
+    lines.push(`${key}: ${yaml(value)}`);
+  };
+
+  required('id', entry.id);
+  required('title', entry.title);
+  required('kind', entry.kind);
+  required('date', entry.date);
+  optional('place', entry.place);
+  optional('speaker', entry.speaker);
+  optional('sermonSeries', entry.sermonSeries);
   lines.push(...yamlScalarList('tags', entry.tags));
   lines.push(...yamlItemList('anchors', entry.anchors.map((anchor) => anchorItem(anchor, ctx))));
   lines.push(...yamlScalarList('scriptureRefs', entry.scriptureRefs));
@@ -253,16 +338,16 @@ function frontMatter(entry: Entry, ctx: ExportContext): string {
   // Booleans are written bare so they parse as booleans, not as the strings
   // "true" and "false" that yamlString would quote them into.
   lines.push(`forDescendants: ${entry.forDescendants ? 'true' : 'false'}`);
-  scalar('visibility', entry.visibility);
-  scalar('createdAt', entry.createdAt);
-  scalar('updatedAt', entry.updatedAt);
+  required('visibility', entry.visibility);
+  required('createdAt', entry.createdAt);
+  required('updatedAt', entry.updatedAt);
   // Fields written by a version this build does not understand. They are
   // carried as a JSON string rather than mapped into YAML, because their shape
   // is by definition unknown and a guess at it could lose or reshape them.
   // JSON inside YAML is still readable by hand and by any parser; dropping the
   // field, in the file the family is meant to keep, would not be.
   if (entry._unmigrated && Object.keys(entry._unmigrated).length > 0) {
-    lines.push(`_unmigrated: ${yamlString(JSON.stringify(entry._unmigrated))}`);
+    lines.push(`_unmigrated: ${yaml(JSON.stringify(entry._unmigrated))}`);
   }
 
   lines.push('---');
@@ -274,22 +359,40 @@ function frontMatter(entry: Entry, ctx: ExportContext): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Title, then one line placing the entry in the world.
+ * Title, then one line placing the entry in the world, then what it is about.
  *
  * The date is spelled out. A grandchild should not have to know that 2026-04-12
  * is a date format before they can know when this happened.
+ *
+ * The "About" line exists because the anchors are the answer to the first
+ * question anybody asks of an entry, and until now they lived only in the front
+ * matter — which many Markdown readers hide, and which nobody reads for pleasure
+ * in any case. It also means a passage whose text could not be included is still
+ * named in the body rather than vanishing from it.
  */
-function headerBlock(entry: Entry): string {
-  const title = entry.title.trim() || 'Untitled';
+function headerBlock(entry: Entry, ctx: ExportContext): string {
+  const title = oneLine(entry.title) || 'Untitled';
 
-  const parts: string[] = [KIND_LABELS[entry.kind]];
-  if (entry.date.trim()) parts.push(formatEventDate(entry.date.trim()));
-  if (entry.place?.trim()) parts.push(`at ${entry.place.trim()}`);
+  const date = oneLine(entry.date);
+  const place = oneLine(entry.place ?? '');
+  const speaker = oneLine(entry.speaker ?? '');
+  const series = oneLine(entry.sermonSeries ?? '');
+
+  const facts: string[] = [KIND_LABELS[entry.kind]];
+  if (date) facts.push(formatEventDate(date));
+  if (place) facts.push(`at ${place}`);
   // Labelled, because a bare name on a line of facts is a guess in fifty years.
-  if (entry.speaker?.trim()) parts.push(`Speaker: ${entry.speaker.trim()}`);
-  if (entry.sermonSeries?.trim()) parts.push(`Series: ${entry.sermonSeries.trim()}`);
+  if (speaker) facts.push(`Speaker: ${speaker}`);
+  if (series) facts.push(`Series: ${series}`);
 
-  return `# ${title}\n\n${parts.join(' · ')}`;
+  const blocks = [`# ${title}`, facts.join(' · ')];
+
+  // Two identical anchors say nothing twice, so the labels are de-duplicated
+  // while the anchors themselves stay exactly as written in the front matter.
+  const about = [...new Set(entry.anchors.map((anchor) => anchorLabel(anchor, ctx)))];
+  if (about.length > 0) blocks.push(`About: ${about.join(' · ')}`);
+
+  return blocks.join('\n\n');
 }
 
 /**
@@ -320,14 +423,20 @@ function linkTarget(url: string): string {
  * One link, written so it still says something once the URL dies.
  *
  * Sermon links die — a church changes its website, a video host folds — and the
- * captured title is the whole reason the note survives that. It is rendered
- * ahead of nothing and behind everything: the bullet leads with what a reader
- * can click, then says what it was and when that was true.
+ * captured title is the whole reason the note survives that. The bullet leads
+ * with what a reader can click, then says what it was and when that was true.
+ * When there is nothing to click and nothing labelled, the captured title leads
+ * instead: a bullet opening on an em dash attached to nothing reads as damage.
+ *
+ * Null when the link holds nothing a reader could use. A bullet saying only
+ * "(captured 13 April 2026)" names neither a destination nor a thing; the
+ * fields are still in the front matter, where a machine can see them.
  */
-function linkBullet(link: EntryLink): string {
+function linkBullet(link: EntryLink): string | null {
   const parts: string[] = [];
-  const url = link.url.trim();
-  const label = link.label?.trim();
+  const url = oneLine(link.url);
+  const label = oneLine(link.label ?? '');
+  const capturedTitle = oneLine(link.capturedTitle ?? '');
 
   if (url && label) {
     parts.push(`[${label.replace(/[[\]]/g, '\\$&')}](${linkTarget(url)})`);
@@ -339,10 +448,12 @@ function linkBullet(link: EntryLink): string {
     parts.push(label);
   }
 
-  const capturedTitle = link.capturedTitle?.trim();
-  if (capturedTitle) parts.push(`— "${capturedTitle}"`);
+  if (capturedTitle) {
+    parts.push(parts.length === 0 ? `"${capturedTitle}"` : `— "${capturedTitle}"`);
+  }
+  if (parts.length === 0) return null;
 
-  const capturedAt = link.capturedAt?.trim();
+  const capturedAt = oneLine(link.capturedAt ?? '');
   if (capturedAt) {
     // capturedAt is a full timestamp; the day is the part worth reading.
     const day = /^(\d{4}-\d{2}-\d{2})/.exec(capturedAt);
@@ -353,7 +464,9 @@ function linkBullet(link: EntryLink): string {
 }
 
 function linksSection(entry: Entry): string | null {
-  const bullets = entry.links.map(linkBullet).filter((bullet) => bullet !== '- ');
+  const bullets = entry.links
+    .map(linkBullet)
+    .filter((bullet): bullet is string => bullet !== null);
   return bullets.length ? `## Links\n\n${bullets.join('\n')}` : null;
 }
 
@@ -384,6 +497,18 @@ function renderVerses(verses: PassageVerse[]): string {
     .join('\n');
 }
 
+/** What the scripture pass found: text to quote, and citations it could not. */
+interface ScriptureResult {
+  /** The `## Scripture` section, or null when nothing resolved to text. */
+  section: string | null;
+  /**
+   * Free-text citations from `entry.scriptureRefs` whose text is not quoted
+   * above — unparseable, or parseable but absent from this archive. Named in
+   * the body verbatim so a reader still learns what the writer was pointing at.
+   */
+  unquoted: string[];
+}
+
 /**
  * The full text of everything this entry points at.
  *
@@ -392,11 +517,13 @@ function renderVerses(verses: PassageVerse[]): string {
  * the two collapse, so a passage that is both the anchor and the cited verse is
  * printed once.
  *
- * A reference with no text in `ctx.passages` is skipped silently rather than
- * announced. It is already listed in full in the front matter, so nothing is
- * hidden, and a heading with an apology under it is worse than no heading.
+ * A reference with no text in `ctx.passages` is not announced here — a heading
+ * with an apology under it is worse than no heading. Nothing is hidden by that:
+ * an anchor is already named on the "About" line, and a citation comes back in
+ * `unquoted` to be named in its own line. Both routes print the reference; this
+ * one is only about whether the verses themselves are available to print.
  */
-function scriptureSection(entry: Entry, ctx: ExportContext): string | null {
+function scriptureSection(entry: Entry, ctx: ExportContext): ScriptureResult {
   const refs: ScriptureRef[] = [];
   const seen = new Set<string>();
 
@@ -410,20 +537,63 @@ function scriptureSection(entry: Entry, ctx: ExportContext): string | null {
   for (const anchor of entry.anchors) {
     if (anchor.kind === 'scripture') add(anchor);
   }
-  for (const cited of entry.scriptureRefs) {
-    const parsed = parseScriptureRef(cited, ctx.bookNames);
-    if (parsed) add(parsed);
+
+  // Parsed once, and the result kept: the same list decides both what gets
+  // quoted and what has to be named as unquoted, so the two can never disagree.
+  const citations = entry.scriptureRefs
+    .map((raw) => oneLine(raw))
+    .filter((text) => text !== '')
+    .map((text) => ({ text, ref: parseScriptureRef(text, ctx.bookNames) }));
+
+  for (const citation of citations) {
+    if (citation.ref) add(citation.ref);
   }
 
+  const quoted = new Set<string>();
   const blocks: string[] = [];
   for (const ref of refs) {
-    const verses = ctx.passages.get(refKey(ref));
+    const key = refKey(ref);
+    const verses = ctx.passages.get(key);
     if (!verses || verses.length === 0) continue;
+    quoted.add(key);
     blocks.push(`### ${describeRef(ref, ctx)}\n\n${renderVerses(verses)}`);
   }
 
-  if (blocks.length === 0) return null;
-  return ['## Scripture (King James Version)', KJV_NOTE, ...blocks].join('\n\n');
+  const unquoted = [
+    ...new Set(
+      citations
+        .filter((citation) => !citation.ref || !quoted.has(refKey(citation.ref)))
+        .map((citation) => citation.text),
+    ),
+  ];
+
+  return {
+    section: blocks.length === 0 ? null : ['## Scripture (King James Version)', KJV_NOTE, ...blocks].join('\n\n'),
+    unquoted,
+  };
+}
+
+/**
+ * Scripture the writer cited that this archive does not quote.
+ *
+ * Their words, not ours, and not resolved to anything — quoting the wrong
+ * chapter under someone's notes is worse than quoting none, so a reference that
+ * could not be read with certainty is simply repeated as it was written.
+ */
+function mentionedLine(unquoted: string[]): string | null {
+  if (unquoted.length === 0) return null;
+  return `Also mentioned: ${unquoted.join('; ')}`;
+}
+
+/**
+ * The writer's own filing words.
+ *
+ * In the body as well as the front matter: a tag is how this entry was found
+ * again, which is a fact about it worth reading, not machinery.
+ */
+function tagsLine(entry: Entry): string | null {
+  const tags = entry.tags.map((tag) => oneLine(tag)).filter(Boolean);
+  return tags.length ? `Tags: ${tags.join(', ')}` : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,19 +602,25 @@ function scriptureSection(entry: Entry, ctx: ExportContext): string | null {
  * Render one journal entry as a self-contained Markdown file.
  *
  * Sections appear in a fixed order and empty ones are dropped, so two notes are
- * comparable at a glance and no note carries a heading over nothing.
+ * comparable at a glance and no note carries a heading over nothing. The writing
+ * comes first and the scripture last: the entry is the point, and the passages
+ * are there so it can be understood without a Bible, not so they can lead.
  */
 export function renderNote(entry: Entry, ctx: ExportContext): string {
+  const scripture = scriptureSection(entry, ctx);
+
   const blocks = [
     frontMatter(entry, ctx),
-    headerBlock(entry),
+    headerBlock(entry, ctx),
     section('Notes', entry.notes),
     // Never merged with Notes. What was taught and what it meant to me are
     // different things, and the separation is the point of the journal.
     section('Reflection', entry.reflection),
     section('Prayer', entry.prayer),
     linksSection(entry),
-    scriptureSection(entry, ctx),
+    mentionedLine(scripture.unquoted),
+    tagsLine(entry),
+    scripture.section,
   ].filter((block): block is string => block !== null);
 
   return `${blocks.join('\n\n')}\n`;

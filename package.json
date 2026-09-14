@@ -14,7 +14,9 @@
     "ingest": "node scripts/ingest-outlines.mjs",
     "build:refs-only": "DATA_PROFILE=refs-only npm run build",
     "verify:bundle": "node scripts/verify-bundle.mjs",
-    "fetch:kjv": "node scripts/fetch-kjv.mjs"
+    "fetch:kjv": "node scripts/fetch-kjv.mjs",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "gate": "npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only"
   },
   "dependencies": {
     "dexie": "^4.4.6",
@@ -42,6 +44,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
   }
 }

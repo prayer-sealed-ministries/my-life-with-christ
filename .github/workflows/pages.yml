@@ -1,0 +1,71 @@
+name: Deploy to GitHub Pages
+
+# The repository is private, but a GitHub Pages site is PUBLIC regardless.
+# The outline titles and the author's intro prose are purchased third-party
+# material (DATA-LICENSE.md) and must not be republished, so this workflow
+# deploys the `refs-only` profile ONLY, and refuses to deploy if the built
+# artefact turns out to contain any of the protected content.
+#
+# Changing this to `full` would publish purchased material to the open web.
+# Do not do it without resolving the rights question first.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; never cancel a run that is mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck, lint, test
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Build (refs-only)
+        env:
+          DATA_PROFILE: refs-only
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      # The gate. This greps the actual built files for the purchased titles and
+      # intro prose. If any survived, the deploy stops here.
+      - name: Verify no purchased content in the artefact
+        run: npm run verify:bundle -- --profile refs-only
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

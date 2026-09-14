@@ -713,3 +713,285 @@ describe('escapeHtml', () => {
     expect(escapeHtml('&amp;')).toBe('&amp;amp;');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scripture must never be mistaken for the writer's own words
+// ---------------------------------------------------------------------------
+
+describe('renderBook: scripture is attributed on every entry', () => {
+  it('names the King James Version above the passages of every entry that has one', () => {
+    const doc = parse(renderBook(makeContext(RICH_JOURNAL)));
+
+    const labels = [...doc.querySelectorAll('#journal .scripture-label')].map((el) => el.textContent);
+    expect(labels).toHaveLength(2);
+    for (const label of labels) expect(label).toBe('Scripture — King James Version');
+
+    // The label sits above the passage, not after it.
+    const entry = doc.querySelector('#journal .entry')!;
+    const order = [...entry.querySelectorAll('.scripture-label, .passage')].map((el) => el.className);
+    expect(order).toEqual(['scripture-label', 'passage']);
+  });
+
+  it('attributes the scripture under refs-only too, where no outline title resolves', () => {
+    const ctx = makeContext(RICH_JOURNAL, {
+      profile: 'refs-only',
+      outlineBooks: new Map(),
+      outlineEntries: new Map(),
+    });
+    const doc = parse(renderBook(ctx));
+
+    expect(doc.querySelector('#journal .scripture-label')!.textContent).toContain('King James Version');
+    expect(doc.querySelector('.outline-title')).toBeNull();
+  });
+
+  it('tells the reader in the foreword whose words the passages are', () => {
+    const foreword = parse(renderBook(makeContext(RICH_JOURNAL))).querySelector('.foreword')!;
+    expect(foreword.textContent).toContain('King James Version');
+    expect(foreword.textContent).toContain('Those words are the Bible’s');
+  });
+
+  it('gives an entry with no scripture no heading claiming otherwise', () => {
+    const entries = [makeEntry({ id: 'none', notes: 'Just a thought.' })];
+    const doc = parse(renderBook(makeContext(entries)));
+    expect(doc.querySelector('.scripture-label')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// References that do not resolve
+// ---------------------------------------------------------------------------
+
+describe('renderBook: a reference to a passage that does not exist', () => {
+  const GENESIS_99: ScriptureRef = {
+    book: 'genesis',
+    chapterStart: 99,
+    verseStart: 1,
+    chapterEnd: 99,
+    verseEnd: 4,
+  };
+
+  it('keeps the chapter and verse the writer wrote rather than the bare book name', () => {
+    const entries = [makeEntry({ id: 'gone', anchors: [{ kind: 'scripture', ...GENESIS_99 }] })];
+    const entry = parse(renderBook(makeContext(entries))).querySelector('#journal .entry')!;
+
+    // "Genesis" alone would lose the only thing the entry said about its subject.
+    expect(entry.querySelector('.scripture-heading')!.textContent).toBe('Genesis 99:1-4');
+  });
+
+  it('says the passage does not exist, not that this copy is missing it', () => {
+    const entries = [makeEntry({ id: 'gone', anchors: [{ kind: 'scripture', ...GENESIS_99 }] })];
+    const absent = parse(renderBook(makeContext(entries))).querySelector('#journal .absent')!;
+
+    expect(absent.textContent).toContain('no such passage');
+    expect(absent.textContent).not.toContain('not included');
+  });
+
+  it('still blames the copy when the reference is real but the text was left out', () => {
+    const entries = [makeEntry({ id: 'missing', anchors: [{ kind: 'scripture', ...GENESIS_1_1_3 }] })];
+    const ctx = makeContext(entries, { passages: new Map() });
+    const absent = parse(renderBook(ctx)).querySelector('#journal .absent')!;
+
+    expect(absent.textContent).toContain('not included in this copy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Entries with nothing in them
+// ---------------------------------------------------------------------------
+
+describe('renderBook: an entry with empty everything', () => {
+  const BLANK = makeEntry({
+    id: 'blank',
+    kind: 'letter',
+    title: '   ',
+    date: '',
+    notes: '',
+    reflection: '',
+    links: [{ url: '', label: '' }],
+    tags: [],
+    anchors: [],
+    scriptureRefs: [],
+  });
+
+  it('renders without crashing and names itself in words, not a trailing comma', () => {
+    const doc = parse(renderBook(makeContext([BLANK])));
+    const entry = doc.querySelector('#journal .entry')!;
+
+    expect(entry.querySelector('h3')!.textContent).toBe('Letter, undated');
+    expect(doc.body.textContent).not.toContain('undefined');
+    expect(doc.body.textContent).not.toContain('NaN');
+  });
+
+  it('leaves no empty item in the meta list, which would print a stray separator', () => {
+    const meta = parse(renderBook(makeContext([BLANK]))).querySelector('#journal .meta')!;
+    const items = [...meta.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual(['Letter']);
+  });
+
+  it('leaves no empty date beside it in the contents', () => {
+    const doc = parse(renderBook(makeContext([BLANK])));
+    const item = doc.querySelector('.toc-entries li')!;
+
+    expect(item.textContent).toBe('Letter, undated');
+    expect(item.querySelector('.toc-date')).toBeNull();
+  });
+
+  it('drops a link that carries neither an address nor a word about itself', () => {
+    const entry = parse(renderBook(makeContext([BLANK]))).querySelector('#journal .entry')!;
+
+    // A bare bullet under a Links heading reads as something lost.
+    expect(entry.querySelector('.links')).toBeNull();
+    expect([...entry.querySelectorAll('h4')].map((h) => h.textContent)).not.toContain('Links');
+  });
+
+  it('points an undated legacy entry at its body copy with words, not an empty link', () => {
+    const legacy = makeEntry({ ...BLANK, id: 'legacy-blank', forDescendants: true });
+    const doc = parse(renderBook(makeContext([legacy])));
+    const crossRef = doc.querySelector('.legacy .cross-ref a')!;
+
+    expect(crossRef.textContent).toBe('further on');
+    expect(doc.getElementById(crossRef.getAttribute('href')!.slice(1))).not.toBeNull();
+  });
+
+  it('survives a title that is nothing but punctuation', () => {
+    const entries = [makeEntry({ id: 'punct', title: '??? — !!!', date: '2026-02-02' })];
+    const doc = parse(renderBook(makeContext(entries)));
+
+    expect(doc.querySelector('#journal .entry h3')!.textContent).toBe('??? — !!!');
+    // The id is still a usable fragment, and the contents link still lands.
+    const href = doc.querySelector('.toc-entries a')!.getAttribute('href')!;
+    expect(doc.getElementById(href.slice(1))).not.toBeNull();
+    expect(href.slice(1)).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+describe('renderBook: links keep every part that still says something', () => {
+  it('keeps the captured title even when the writer also gave the link a label', () => {
+    const entries = [
+      makeEntry({
+        id: 'l',
+        links: [
+          {
+            url: 'https://example.org/s',
+            label: 'The recording',
+            capturedTitle: 'Genesis 1 — First Baptist, 4 January',
+          },
+        ],
+      }),
+    ];
+    const item = parse(renderBook(makeContext(entries))).querySelector('#journal .links li')!;
+
+    // The label is what to click; the captured title is what it pointed at.
+    expect(item.querySelector('a')!.textContent).toBe('The recording');
+    expect(item.querySelector('.captured-title')!.textContent).toBe('Genesis 1 — First Baptist, 4 January');
+    expect(item.querySelector('.url')!.textContent).toBe('https://example.org/s');
+  });
+
+  it('prints a bare address once, not twice', () => {
+    const entries = [makeEntry({ id: 'l', links: [{ url: 'https://example.org/s' }] })];
+    const html = renderBook(makeContext(entries));
+    const item = parse(html).querySelector('#journal .links li')!;
+
+    expect(item.querySelectorAll('.url')).toHaveLength(1);
+    expect(item.textContent).toBe('https://example.org/s');
+    // Once in the href, once as text. Never a third time.
+    expect([...html.matchAll(/https:\/\/example\.org\/s/g)]).toHaveLength(2);
+  });
+
+  it('still shows the address of a link whose scheme it refuses', () => {
+    const entries = [makeEntry({ id: 'l', links: [{ url: 'javascript:alert(1)' }] })];
+    const item = parse(renderBook(makeContext(entries))).querySelector('#journal .links li')!;
+
+    expect(item.querySelector('a')).toBeNull();
+    expect(item.querySelector('.url')!.textContent).toBe('javascript:alert(1)');
+  });
+
+  it('keeps a link that has only a label, with nowhere to point', () => {
+    const entries = [makeEntry({ id: 'l', links: [{ url: '', label: 'The tape in the drawer' }] })];
+    const item = parse(renderBook(makeContext(entries))).querySelector('#journal .links li')!;
+
+    expect(item.textContent).toBe('The tape in the drawer');
+    expect(item.querySelector('a')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Free-form references
+// ---------------------------------------------------------------------------
+
+describe('renderBook: references the writer cited in passing', () => {
+  it('says "also" only when a passage was printed above to be also to', () => {
+    const withScripture = makeEntry({
+      id: 'w',
+      anchors: [{ kind: 'scripture', ...GENESIS_1_1_3 }],
+      scriptureRefs: ['Ps 8:3-4'],
+    });
+    const without = makeEntry({ id: 'x', scriptureRefs: ['Psalm 23', 'the bit about the valley'] });
+
+    const a = parse(renderBook(makeContext([withScripture]))).querySelector('.mentioned')!;
+    const b = parse(renderBook(makeContext([without]))).querySelector('.mentioned')!;
+
+    expect(a.textContent).toBe('Also mentioned: Ps 8:3-4');
+    expect(b.textContent).toBe('Scripture mentioned: Psalm 23; the bit about the valley');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Markdown: a new block is never swallowed by the one above it
+// ---------------------------------------------------------------------------
+
+describe('renderMarkdown: blocks that interrupt a run', () => {
+  it('ends a bullet list at a rule instead of eating it into the last item', () => {
+    const html = renderMarkdown('- first\n- second\n---');
+    expect(html).toContain('<li>second</li>');
+    expect(html).toContain('<hr>');
+    expect(html).not.toContain('second ---');
+  });
+
+  it('ends a numbered list at a heading', () => {
+    const html = renderMarkdown('1. one\n2. two\n# After');
+    expect(html).toContain('<li>two</li>');
+    expect(html).toContain('<p class="md-heading"><strong>After</strong></p>');
+    expect(html).not.toContain('two #');
+  });
+
+  it('ends a list where a quote begins', () => {
+    const html = renderMarkdown('- point\n> he said');
+    expect(html).toContain('<li>point</li>');
+    expect(html).toContain('<blockquote><p>he said</p></blockquote>');
+  });
+
+  it('ends a quote at a rule', () => {
+    const html = renderMarkdown('> he said\n---');
+    expect(html).toBe('<blockquote><p>he said</p></blockquote>\n<hr>');
+  });
+
+  it('ends a quote where a list begins', () => {
+    const html = renderMarkdown('> he said\n- and then');
+    expect(html).toContain('<blockquote><p>he said</p></blockquote>');
+    expect(html).toContain('<ul><li>and then</li></ul>');
+  });
+
+  it('still joins a genuine wrapped line onto the item above it', () => {
+    expect(renderMarkdown('- a point that runs\n  on to the next line')).toBe(
+      '<ul><li>a point that runs on to the next line</li></ul>',
+    );
+  });
+
+  it('still reads a lazy continuation as part of the quote it follows', () => {
+    expect(renderMarkdown('> he said\nand kept saying')).toBe(
+      '<blockquote><p>he said<br>and kept saying</p></blockquote>',
+    );
+  });
+
+  it('terminates on rules and headings packed against list markers', () => {
+    // A guard against a run that neither consumes a line nor breaks.
+    const html = renderMarkdown('- a\n---\n- b\n# h\n1. c\n> q\n- d\n***\n');
+    expect(html).toContain('<hr>');
+    expect(html).toContain('<blockquote>');
+  });
+});

@@ -7,7 +7,13 @@
  * carries meaning on its own.
  */
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  Ref,
+  TextareaHTMLAttributes,
+} from 'react';
 import { useId } from 'react';
 
 const FOCUS =
@@ -16,8 +22,12 @@ const FOCUS =
 export function Button({
   variant = 'secondary',
   className = '',
+  ref,
   ...rest
-}: { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' } & ButtonHTMLAttributes<HTMLButtonElement>) {
+}: {
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  ref?: Ref<HTMLButtonElement>;
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
   const variants = {
     primary:
       'bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white',
@@ -30,6 +40,7 @@ export function Button({
 
   return (
     <button
+      ref={ref}
       type="button"
       className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS} ${variants[variant]} ${className}`}
       {...rest}

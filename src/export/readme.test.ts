@@ -263,6 +263,87 @@ describe('renderReadme', () => {
     expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
+  it('names the parts of a note and keeps notes and reflection distinct', () => {
+    // The separation between what was taught and what it meant is the point of
+    // the journal, and a stranger cannot see it unless the README says it.
+    const text = flat(renderReadme(makeCtx()));
+    expect(text).toContain('"Notes" is what was said or read');
+    expect(text).toMatch(/"Reflection" is what it meant to the writer/);
+    expect(text).toMatch(/kept in a part of its own/);
+  });
+
+  it('tells the reader which part of a note is scripture and which is the writer', () => {
+    const text = flat(renderReadme(makeCtx()));
+    expect(text).toContain('"Scripture"');
+    expect(text).toMatch(/quoted/);
+    expect(text).toMatch(/Every word above it is the writer's own/);
+  });
+
+  it('explains the apostrophe the spreadsheet file puts in front of a value', () => {
+    // Unexplained punctuation in front of somebody's words reads as corruption.
+    const text = flat(renderReadme(makeCtx()));
+    expect(text).toMatch(/apostrophe/);
+    expect(text).toMatch(/not part of what was written/);
+  });
+
+  it('promises only what EXPORT-NOTE.txt can deliver when no filter was recorded', () => {
+    const text = flat(renderReadme(makeCtx({ excludedCount: 5 })));
+    expect(text).toContain('5 entries were left out');
+    // With no filter recorded the note cannot say what was kept, so the README
+    // must not send the reader to it expecting an answer.
+    expect(text).not.toMatch(/says what the filter kept/);
+    expect(text).toMatch(/everything that was recorded about what is missing/);
+  });
+
+  it('invents no filename when the archive holds no notes', () => {
+    const text = flat(renderReadme(makeCtx({ entries: [] })));
+    // A name printed here is a name the reader goes looking for, and an empty
+    // archive has no notes folder to find it in.
+    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}--/);
+    expect(text).toMatch(/no notes folder in it/);
+  });
+
+  it('prints a long example filename whole, on a line of its own', () => {
+    // A filename broken across two lines is a filename nobody can type. It gets
+    // its own line so it stays whole without dragging the prose past 76.
+    const ctx = makeCtx({
+      entries: [makeEntry({ title: 'On the patience of God with people who keep starting over' })],
+    });
+    const name = (ctx.noteFilenames.get('e1') ?? '').replace('notes/', '');
+    const raw = renderReadme(ctx);
+
+    expect(name.length).toBeGreaterThan(60);
+    expect(raw).toContain(`\n${' '.repeat(18)}${name}\n`);
+    const rest = lines(raw).filter((line) => !line.includes(name));
+    expect(Math.max(...rest.map((line) => line.length))).toBeLessThanOrEqual(76);
+  });
+
+  it('claims only what MANIFEST.txt holds, which is not itself', () => {
+    expect(flat(renderReadme(makeCtx()))).toContain('every other file in this archive');
+  });
+
+  it('reads as English for a single private entry and a single descendant entry', () => {
+    const text = flat(
+      renderReadme(makeCtx({ entries: [makeEntry({ forDescendants: true, visibility: 'private' })] })),
+    );
+    expect(text).toContain('1 entry here is marked private');
+    expect(text).toContain('show it to anybody');
+    expect(text).toContain('It is in this archive anyway');
+    expect(text).toContain('flagged it as one meant to be read');
+    expect(text).toContain('read that one');
+    expect(text).toContain('holds that one');
+    expect(text).not.toMatch(/1 entry (here )?are/);
+  });
+
+  it('reads as English for several private entries', () => {
+    const text = flat(
+      renderReadme(makeCtx({ entries: [SERMON, makeEntry({ id: 'e3', visibility: 'private' })] })),
+    );
+    expect(text).toContain('2 entries here are marked private');
+    expect(text).toContain('show them to anybody');
+    expect(text).toContain('They are in this archive anyway');
+  });
+
   it('ends with a newline', () => {
     expect(renderReadme(makeCtx()).endsWith('\n')).toBe(true);
   });
@@ -295,6 +376,12 @@ describe('renderExportNote', () => {
     const raw = renderExportNote(makeCtx({ excludedCount: 37, filter: { kinds: ['sermon'] } })) ?? '';
     expect(lines(raw)[0]).toBe('EXPORT NOTE: THIS IS A PARTIAL COPY');
     expect(flat(raw)).toMatch(/does not hold the whole journal/);
+  });
+
+  it('stamps the exact export time, so the note can be matched to its journal', () => {
+    const raw = renderExportNote(makeCtx({ filter: { kinds: ['sermon'] } })) ?? '';
+    expect(raw).toContain('13 September 2026');
+    expect(raw).toContain('2026-09-13T14:02:11.000Z');
   });
 
   it('counts what is in and what is out', () => {
@@ -489,6 +576,9 @@ const FULL_ENTRY: Entry = {
   visibility: 'shared',
   createdAt: '2026-09-13T18:00:00.000Z',
   updatedAt: '2026-09-13T18:00:00.000Z',
+  // Written by a version this build does not know. It rides along in every
+  // export, so the schema has to describe it or it condemns its own data.
+  _unmigrated: { mood: 'unsettled' },
 };
 
 describe('renderSchema', () => {
@@ -513,10 +603,22 @@ describe('renderSchema', () => {
     const properties = Object.keys(entry.properties as Node).sort();
     expect(properties).toEqual(Object.keys(FULL_ENTRY).sort());
 
-    const optional = ['place', 'speaker', 'sermonSeries', 'prayer'];
+    const optional = ['place', 'speaker', 'sermonSeries', 'prayer', '_unmigrated'];
     expect([...(entry.required as string[])].sort()).toEqual(
       properties.filter((key) => !optional.includes(key)),
     );
+  });
+
+  it('accepts an entry carrying fields from a version it has never met', () => {
+    // The format promises never to drop what it does not understand. A schema
+    // that rejects a preserved field would tell a reader the file is broken.
+    const document: JourneyExport = {
+      format: 'journey-export',
+      version: 1,
+      exportedAt: '2026-09-13T14:02:11.000Z',
+      entries: [{ ...FULL_ENTRY, _unmigrated: { weather: 'rain', anchors: [{ kind: 'planet' }] } }],
+    };
+    expect(validate(schema, document, schema)).toEqual([]);
   });
 
   it('mirrors EntryLink: url required, the rest optional', () => {
@@ -762,5 +864,108 @@ describe('renderCsv', () => {
   it('writes a header and nothing else for an empty journal', () => {
     const csv = renderCsv(makeCtx({ entries: [] }));
     expect(csv).toBe(`\uFEFF${HEADER.join(',')}\r\n`);
+  });
+
+  it('stops a spreadsheet executing a cell that opens like a formula', () => {
+    const entry = makeEntry({
+      title: '=HYPERLINK("http://evil.example","Click me")',
+      speaker: '+Pastor Dan',
+      place: '-Tallahassee',
+      tags: ['@home', 'grace'],
+    });
+    const [row] = body(renderCsv(makeCtx({ entries: [entry] })));
+    const value = (name: string): string => row[HEADER.indexOf(name)];
+
+    // The apostrophe is the prefix every spreadsheet reads as "this is text".
+    expect(value('title')).toBe('\'=HYPERLINK("http://evil.example","Click me")');
+    expect(value('speaker')).toBe("'+Pastor Dan");
+    expect(value('place')).toBe("'-Tallahassee");
+    expect(value('tags')).toBe("'@home; grace");
+    // Nothing is lost: every character the writer typed is still in the cell.
+    for (const cell of [value('title'), value('speaker'), value('place')]) {
+      expect(cell.slice(1)).not.toContain("'");
+    }
+    expect(value('title').slice(1)).toBe(entry.title);
+  });
+
+  it('leaves an ordinary cell exactly as it was written', () => {
+    const entry = makeEntry({ title: "Won't you sit \u2014 'Morning'", speaker: "O'Brien", place: 'Home' });
+    const [row] = body(renderCsv(makeCtx({ entries: [entry] })));
+    expect(row[HEADER.indexOf('title')]).toBe("Won't you sit \u2014 'Morning'");
+    expect(row[HEADER.indexOf('speaker')]).toBe("O'Brien");
+    expect(row[HEADER.indexOf('place')]).toBe('Home');
+    expect(row[HEADER.indexOf('date')]).toBe('2026-09-13');
+  });
+
+  it('keeps the numbers of a reference no Bible can place', () => {
+    // refToString hands back a bare book name here. Printing that would read as
+    // an entry about the whole of Genesis and lose what the writer recorded.
+    const entry = makeEntry({
+      anchors: [
+        { kind: 'scripture', book: 'genesis', chapterStart: 99, verseStart: 1, chapterEnd: 99, verseEnd: 4 },
+      ],
+    });
+    const [row] = body(renderCsv(makeCtx({ entries: [entry] })));
+    const cell = row[HEADER.indexOf('anchors')];
+    expect(cell).toContain('Genesis 99:1-4');
+    expect(cell).toMatch(/no such passage/);
+  });
+
+  it('never writes NaN for a reference whose numbers are unusable', () => {
+    const entry = makeEntry({
+      anchors: [
+        {
+          kind: 'scripture',
+          book: 'genesis',
+          chapterStart: Number.NaN,
+          verseStart: Number.NaN,
+          chapterEnd: Number.NaN,
+          verseEnd: Number.NaN,
+        },
+      ],
+    });
+    const csv = renderCsv(makeCtx({ entries: [entry] }));
+    expect(csv).not.toContain('NaN');
+    expect(body(csv)[0][HEADER.indexOf('anchors')]).toBe('Genesis (reference unreadable)');
+  });
+
+  it('resolves nothing and loses nothing under refs-only', () => {
+    // outlineEntries and outlineBooks are empty here, as they always are under
+    // that profile. Every anchor must still say what it is about.
+    const entry = makeEntry({
+      anchors: [
+        {
+          kind: 'scripture',
+          book: 'genesis',
+          chapterStart: 1,
+          verseStart: 1,
+          chapterEnd: 1,
+          verseEnd: 5,
+          outlineEntryId: 'gen-1-1-5',
+        },
+        { kind: 'topic', topicId: 'grief' },
+        { kind: 'book', book: 'mark' },
+      ],
+    });
+    const ctx = makeCtx({
+      entries: [entry],
+      profile: 'refs-only',
+      outlineBooks: new Map(),
+      outlineEntries: new Map(),
+    });
+    const [row] = body(renderCsv(ctx));
+    expect(row[HEADER.indexOf('anchors')]).toBe('Genesis 1:1-5; Topic: Grief; Book: Mark');
+    expect(row[HEADER.indexOf('note_file')]).toBe(ctx.noteFilenames.get('e1'));
+  });
+
+  it('survives an entry with nothing in it but the fields it must have', () => {
+    const bare = makeEntry({ title: '??? \u2014 !!!', date: '', notes: '', reflection: '' });
+    const csv = renderCsv(makeCtx({ entries: [bare] }));
+    expect(csv).not.toContain('undefined');
+    expect(csv).not.toContain('[object Object]');
+    const [row] = body(csv);
+    expect(row).toHaveLength(HEADER.length);
+    expect(row[HEADER.indexOf('title')]).toBe('??? \u2014 !!!');
+    expect(row[HEADER.indexOf('notes_chars')]).toBe('0');
   });
 });

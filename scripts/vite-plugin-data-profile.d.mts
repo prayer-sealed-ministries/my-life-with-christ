@@ -8,10 +8,16 @@ export declare const DATA_PROFILES: DataProfile[];
 export declare function resolveProfile(value?: string): DataProfile;
 
 /**
- * Strip a full outlines dataset to bare references — exactly what a `refs-only`
- * build ships. Exported so the bundle verifier and the downgrade tests share one
- * definition of what counts as protected.
+ * What the app receives for a given profile: the compilation entire under
+ * `full`, and nothing at all under `refs-only` — not even the verse-span
+ * divisions, which are the author's arrangement.
+ *
+ * Exported so the bundle verifier and the downgrade tests share one definition
+ * of what a publishable build contains.
  */
-export declare function stripToRefs<T = unknown>(books: T[]): T[];
+export declare function outlinesForProfile<T = unknown>(books: T[], profile: DataProfile): T[];
+
+/** The empty outline set a `refs-only` build ships. */
+export declare const OUTLINE_FREE: never[];
 
 export default function dataProfilePlugin(options?: { profile?: string; root?: string }): Plugin;

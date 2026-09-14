@@ -29,8 +29,9 @@ second is the one worth handing down.
 | Scripture | done — KJV vendored, 31,102 verses, lazy-loaded per book |
 | Topics | done — 40 topics, 344 scripture refs, all machine-verified |
 | Data layer | done — types, Dexie, provider seams, DATA_PROFILE gate |
-| Export | in progress |
-| Browse / journal / search / timeline UI | not started |
+| Export | done — zip archive, lossless import, round-trip tested |
+| Publishable profile | done — refs-only ships none of the compilation, proven |
+| Browse / journal / search / timeline UI | in progress |
 
 ## Getting started
 
@@ -86,16 +87,34 @@ prose, reproduced essentially verbatim.
 contain the outline titles or the intro prose — and note that **GitHub Pages
 serves publicly even from a private repository.**
 
+**What is protected is the selection and arrangement, not only the prose.** In a
+compilation, copyright subsists in the editorial choices — deciding that Matthew 5
+divides at 1-12, then 13-20, then 21-48 is the author's work. Publishing those
+divisions while stripping the titles would republish the skeleton and retain the
+whole risk.
+
 The `DATA_PROFILE` build switch exists for exactly this:
 
 | Profile | Ships | Use |
 | --- | --- | --- |
-| `full` | outlines + intros + KJV | private use (default) |
-| `refs-only` | chapter/verse + KJV | publishable |
+| `full` | the compilation entire — divisions, titles, series, intros — plus KJV | private use (default) |
+| `refs-only` | **no outline data at all**; browsing falls back to whole chapters | publishable |
 
-Bare scripture references are facts and carry no copyright; the titles and prose
-are the author's expression. `npm run verify:bundle` greps the built artefact to
-prove the exclusion rather than trusting the flag, and CI runs both directions.
+Chapter boundaries come from KJV versification: canonical, factual, nobody's
+editorial work. Verse ranges in `src/data/topics.json` also ship, because this
+project authored them.
+
+`npm run verify:bundle -- --profile refs-only` proves the exclusion against the
+built artefact with four named assertions, rather than trusting the flag:
+
+| Assertion | Checks |
+| --- | --- |
+| `NO_SOURCE_FILES` | no PDFs, reports or `outlines.json` in `dist/` |
+| `NO_SOURCE_MAPS` | no `.map` files, which can carry a whole module post-tree-shake |
+| `NO_OUTLINE_PROSE` | all 1,323 titles and intro passages absent — the complete set |
+| `NO_OUTLINE_DIVISIONS` | all 867 verse-span divisions absent, minus ranges we authored |
+
+CI runs both directions, and the Pages workflow verifies before deploying.
 
 See `DATA-LICENSE.md`.
 

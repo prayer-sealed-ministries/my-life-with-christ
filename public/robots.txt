@@ -1,0 +1,8 @@
+# Default: ask search engines not to index this site.
+#
+# The journal itself never leaves the reader's device, so there is nothing
+# private here to crawl — but indexing is the owner's decision to make, not a
+# default to drift into. Flip this deliberately when you want the site found.
+
+User-agent: *
+Disallow: /

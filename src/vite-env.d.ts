@@ -7,7 +7,12 @@ declare module 'virtual:journey-data' {
   import type { OutlineBook } from './types';
 
   export const DATA_PROFILE: 'full' | 'refs-only';
-  /** False under `refs-only`: outline titles and intros are absent from the build. */
+  /**
+   * False under `refs-only`, where NO outline data ships — not the titles, and
+   * not the verse-span divisions, which are the author's arrangement.
+   */
+  export const hasOutlines: boolean;
+  /** Kept as a narrower alias of hasOutlines for title-specific call sites. */
   export const hasOutlineTitles: boolean;
   export const outlines: OutlineBook[];
   export default outlines;

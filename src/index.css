@@ -15,11 +15,26 @@
   color-scheme: light dark;
 }
 
-/* Visible focus everywhere, never removed. WCAG 2.1 AA, 2.4.7. */
-:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-  border-radius: 2px;
+/*
+ * Visible focus everywhere, never removed. WCAG 2.1 AA, 2.4.7.
+ *
+ * It sits in `base` deliberately. Unlayered CSS outranks every cascade layer,
+ * so written bare this rule beat all of Tailwind's `outline-*` utilities and
+ * currentColor became the only focus colour the app could ever have. That is
+ * wrong for a filled control: white text on slate-900 draws a white ring on the
+ * near-white page, and the light chip it becomes in dark mode draws a slate-900
+ * ring on the slate-900 page. Either way there is no visible focus at all.
+ *
+ * In `base` the floor is unchanged — every focusable thing still gets a ring,
+ * and nothing in the app removes one — but a control whose own ink matches the
+ * page behind it can now name a colour that does not.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
 /* Respect a user who has asked for less motion. */
@@ -31,5 +46,63 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/**
+ * Printing.
+ *
+ * The legacy view is meant to come out of the browser as a readable PDF, so the
+ * application chrome — nav, footer, skip link — is hidden at print time. The
+ * view itself marks its own controls print:hidden; this handles the shell,
+ * which a view cannot reach.
+ */
+@page {
+  margin: 18mm;
+}
+
+@media print {
+  /*
+   * The shell's chrome. Its header and footer sit two levels under <body> —
+   * #root, then the shell's own wrapper element — so the selector has to reach
+   * that far; a `body > div > header` selector matches nothing at all here.
+   * The skip link is sr-only and already clipped out of the printed page.
+   */
+  #root > div > header,
+  #root > div > footer,
+  .print-hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Black on white, whatever theme was on screen. */
+  :root,
+  [data-theme='dark'] {
+    color-scheme: light;
+  }
+
+  body,
+  main {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /*
+   * Colour utilities sit on descendants, so a colour on <main> never reaches
+   * them: printed from the dark theme, body text would come out pale grey on
+   * white. Forcing the ink here is what makes "black on white" true rather than
+   * merely intended. Nothing in the app may use colour as its only carrier of
+   * meaning, so nothing is lost by flattening it.
+   */
+  main *,
+  main *::before,
+  main *::after {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
   }
 }

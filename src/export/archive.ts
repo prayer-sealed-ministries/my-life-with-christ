@@ -19,11 +19,11 @@
  * carries EXPORT-NOTE.txt stating plainly what was left out and how much.
  */
 
-import type { Entry, ExportFilter, JourneyExport, OutlineBook, Topic } from '../types';
+import type { Entry, ExportFilter, JourneyExport, OutlineBook, ScriptureRef, Topic } from '../types';
 import { BOOK_NAMES, BOOK_ORDER } from '../lib/canon';
 import { loadPassage, type PassageVerse } from '../lib/bible';
 import { buildNoteFilenames, refKey, type ExportContext } from './context';
-import { renderNote } from './notes';
+import { parseScriptureRef, renderNote } from './notes';
 import { renderIndexes } from './indexes';
 import { renderBook } from './book';
 import { renderCsv, renderExportNote, renderReadme, renderSchema } from './readme';
@@ -73,14 +73,34 @@ export function matchesFilter(entry: Entry, filter?: ExportFilter): boolean {
   return true;
 }
 
-/** Every scripture range an entry refers to, for preloading KJV text. */
-function entryRefs(entry: Entry) {
-  return entry.anchors.flatMap((anchor) => (anchor.kind === 'scripture' ? [anchor] : []));
+/** Book display names, in the shape the note parser reads them. */
+const bookNames = new Map(Object.entries(BOOK_NAMES));
+
+/**
+ * Every scripture range an entry refers to, for preloading KJV text.
+ *
+ * Its anchors, and the references it cites in free text. Both have to be here:
+ * the note generator quotes both, and it reads scripture only out of
+ * `ctx.passages`, so a passage missing from this list is a passage a note
+ * silently cannot print. Citations are parsed by the note generator's own
+ * parser, against the same book names, so what is loaded here and what is looked
+ * up there cannot drift apart. A citation it will not read returns null and is
+ * simply not loaded; the note names it in full either way.
+ */
+function entryRefs(entry: Entry): ScriptureRef[] {
+  const refs: ScriptureRef[] = entry.anchors.flatMap((anchor) =>
+    anchor.kind === 'scripture' ? [anchor] : [],
+  );
+  for (const cited of entry.scriptureRefs) {
+    const parsed = parseScriptureRef(cited, bookNames);
+    if (parsed) refs.push(parsed);
+  }
+  return refs;
 }
 
-/** Load the KJV text for every passage any entry anchors to, once. */
+/** Load the KJV text for every passage any entry refers to, once. */
 async function loadPassages(entries: Entry[]): Promise<Map<string, PassageVerse[]>> {
-  const wanted = new Map<string, ReturnType<typeof entryRefs>[number]>();
+  const wanted = new Map<string, ScriptureRef>();
   for (const entry of entries) {
     for (const ref of entryRefs(entry)) wanted.set(refKey(ref), ref);
   }
@@ -115,6 +135,8 @@ export async function buildContext(options: BuildArchiveOptions): Promise<Export
     excludedCount: Math.max(0, (options.allEntries?.length ?? entries.length) - entries.length),
     exportedAt: now.toISOString(),
     profile: options.profile,
+    // A fresh map per context: generators only read it, but a shared instance
+    // would make one that did not a bug in every other export at once.
     bookNames: new Map(Object.entries(BOOK_NAMES)),
     bookOrder: new Map(Object.entries(BOOK_ORDER)),
     outlineBooks: new Map(options.outlineBooks.map((book) => [book.id, book])),

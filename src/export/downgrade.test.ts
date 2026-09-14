@@ -7,7 +7,7 @@ import { migrateExport } from './migrate';
 import { readZip, zipEntryText } from './zip';
 import { renderNote } from './notes';
 import { ALL_ENTRIES, AWKWARD, READING, SERMON } from './fixtures';
-import { stripToRefs } from '../../scripts/vite-plugin-data-profile.mjs';
+import { outlinesForProfile } from '../../scripts/vite-plugin-data-profile.mjs';
 import outlines from '../data/outlines.json';
 import topicsFile from '../data/topics.json';
 import versification from '../data/kjv/versification.json';
@@ -15,8 +15,13 @@ import { referenceSpan, buildIndex } from '../lib/verse-index';
 import type { Entry, OutlineBook, Topic } from '../types';
 
 const fullBooks = outlines as unknown as OutlineBook[];
-/** Exactly what a refs-only build ships: no titles, no series, no intros. */
-const refsOnlyBooks = stripToRefs(outlines) as unknown as OutlineBook[];
+/**
+ * Exactly what a refs-only build ships of the outlines: nothing.
+ *
+ * Not a stripped copy — the verse-span divisions are the author's arrangement
+ * and are as protected as the titles, so a publishable build carries none of it.
+ */
+const refsOnlyBooks = outlinesForProfile(outlines, 'refs-only') as unknown as OutlineBook[];
 const topics = topicsFile.topics as Topic[];
 const counts = versification as Record<string, number[]>;
 const NOW = new Date('2026-09-13T12:00:00.000Z');

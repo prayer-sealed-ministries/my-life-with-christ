@@ -4,7 +4,6 @@ import type { Entry, EntryAnchor, OutlineBook, OutlineEntry, Topic } from '../ty
 import { renderIndexes } from './indexes';
 import { buildNoteFilenames, type ExportContext } from './context';
 import { ALL_ENTRIES } from './fixtures';
-import { ALL_ENTRIES } from './fixtures';
 
 // ---------------------------------------------------------------------------
 // Fixtures

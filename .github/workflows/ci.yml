@@ -11,43 +11,65 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The data gate stands alone, and deliberately depends on no other job.
+  #
+  # It is the check branch protection requires by name, so it must be able to
+  # fail on its own terms. If it were chained behind lint or tests, an unrelated
+  # failure upstream would leave the required check *pending* rather than
+  # failing — and a gate that can sit pending is not a gate.
+  data-gate:
+    name: data-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      # The probe set must be as large as the frozen baseline, whichever build
+      # we are checking. A shrunken probe set means a weakened gate.
+      - name: Workflow policy and probe-set integrity
+        run: npx vitest run scripts/__tests__/
 
-      - name: Lint
-        run: npm run lint
+      - name: Build (refs-only)
+        env:
+          DATA_PROFILE: refs-only
+        run: npm run build
 
-      - name: Test
-        run: npm test
+      - name: Gate — no purchased compilation in a publishable build
+        run: npm run verify:bundle -- --profile refs-only
 
+      # The other direction: a silently empty dataset would pass the refs-only
+      # check trivially. Assert the full build really does carry the data.
       - name: Build (full)
         run: npm run build
 
-      # The DATA_PROFILE flag is not evidence. Grep the actual artefact.
-      - name: Verify full build carries the outline data
+      - name: Gate — full build still carries the compilation
         run: npm run verify:bundle -- --profile full
 
-      - name: Build (refs-only)
-        run: DATA_PROFILE=refs-only npm run build
-
-      - name: Verify refs-only build excludes purchased content
-        run: npm run verify:bundle -- --profile refs-only
+  check:
+    name: typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
 
   # Re-running the ingest must reproduce exactly what is committed. If a parser
   # change silently alters the data, this fails rather than drifting unnoticed.
   ingest-is-reproducible:
+    name: ingest is reproducible
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

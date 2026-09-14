@@ -35,6 +35,29 @@ preference:
 `scripts/ingest-outlines.mjs` is MIT-licensed like the rest of the code. It is
 the *parser*, not the data, and may be shared freely.
 
+### How the exclusion is enforced
+
+`DATA_PROFILE=refs-only` makes `scripts/vite-plugin-data-profile.mjs` generate an
+**empty** outline module — the source JSON is not even read — so nothing from the
+compilation enters the module graph.
+
+`npm run verify:bundle -- --profile refs-only` then proves it against the built
+artefact, with four assertions, each reported by name on failure:
+
+| Assertion | What it checks |
+| --- | --- |
+| `NO_SOURCE_FILES` | no PDFs, ingest/coverage reports, or `outlines.json` anywhere in `dist/` |
+| `NO_SOURCE_MAPS` | no `.map` files, which can carry an original module in full even after tree-shaking |
+| `NO_OUTLINE_PROSE` | **every** title, `displayTitle`, source reference and intro passage in the compilation is absent — the complete set, plus each intro sentence |
+| `NO_OUTLINE_DIVISIONS` | **every** verse-span division is absent, checked by entry id and by serialized tuple, excluding ranges we authored in `topics.json` |
+
+`scripts/vite-plugin-guard-public.mjs` additionally fails the build at start if
+anything forbidden is sitting in `public/`, which Vite copies into `dist/`
+verbatim without passing it through the module graph.
+
+The GitHub Pages workflow runs the verifier **before** `deploy-pages`, so a
+failing assertion stops the publish rather than being discovered afterwards.
+
 ## 2. King James Version scripture text
 
 **Files:** `src/data/kjv/` (see `src/data/kjv/SOURCE.md` for exact provenance).

@@ -16,7 +16,7 @@
 
 import type { Entry, EntryAnchor, EntryLink, EntryKind, ScriptureRef } from '../types';
 import type { PassageVerse } from '../lib/bible';
-import { formatRef } from '../lib/passages';
+import { buildIndex, formatSpan, referenceSpan } from '../lib/verse-index';
 // The JSON directly, not `bible.ts`: that module carries the lazy `import.meta.glob`
 // loader for the whole KJV, and this generator must stay pure and synchronous.
 // Verse counts are unaffected by the data profile — they ship under both.
@@ -133,6 +133,19 @@ function startsBlock(line: string): boolean {
 }
 
 /**
+ * True when a line ends a list or a block quote that is running.
+ *
+ * A rule or a heading is a new block, never a continuation. Without this a
+ * `---` typed under a list is swallowed into the last bullet and comes out as
+ * "second thing ---", and the separation the writer put there on purpose is
+ * gone. List markers are left to the callers, which have to know which kind of
+ * list started the run before they can tell a new item from a new block.
+ */
+function endsRun(line: string): boolean {
+  return BLANK.test(line) || RULE.test(line) || HEADING.test(line);
+}
+
+/**
  * Render the small subset of markdown people actually type in a journal.
  *
  * Paragraphs, line breaks, emphasis, code spans, links, bullet and numbered
@@ -173,8 +186,10 @@ export function renderMarkdown(source: string): string {
 
     if (QUOTE.test(line)) {
       const quoted: string[] = [];
-      while (i < lines.length && !BLANK.test(lines[i])) {
+      while (i < lines.length && !endsRun(lines[i])) {
         const inner = QUOTE.exec(lines[i]);
+        // A list starting here is its own block, not part of the quotation.
+        if (!inner && (BULLET.test(lines[i]) || NUMBERED.test(lines[i]))) break;
         // A lazy continuation line (no `>`) belongs to the quote it follows.
         quoted.push(inner ? inner[1] : lines[i].trim());
         i += 1;
@@ -193,13 +208,13 @@ export function renderMarkdown(source: string): string {
       const items: string[] = [ordered ? numbered![2] : bullet![1]];
       i += 1;
 
-      while (i < lines.length && !BLANK.test(lines[i])) {
+      while (i < lines.length && !endsRun(lines[i])) {
         const asBullet = BULLET.exec(lines[i]);
         const asNumbered = NUMBERED.exec(lines[i]);
         if (ordered ? asNumbered : asBullet) {
           items.push(ordered ? asNumbered![2] : asBullet![1]);
-        } else if (asBullet || asNumbered) {
-          break; // the other kind of list starts here; let the next pass take it
+        } else if (asBullet || asNumbered || QUOTE.test(lines[i])) {
+          break; // another block starts here; let the next pass take it
         } else {
           // A wrapped item: markdown joins the continuation onto the item above.
           items[items.length - 1] += ` ${lines[i].trim()}`;
@@ -296,18 +311,32 @@ function bookName(ctx: ExportContext, id: string): string {
 }
 
 /**
- * A scripture reference as a reader would say it.
+ * A scripture reference as a reader would say it, and whether it names a real
+ * passage of the KJV.
  *
- * Falls back to spelling out both ends when the book is not in the versification
- * table — an imported entry from a future version, say. Verbose beats wrong.
+ * `resolved` is false in two cases: a book the versification table does not
+ * know (an entry imported from a future version), and a range the book does not
+ * contain (Genesis 99, from a source reference nobody ever adjudicated). Both
+ * spell the reference out longhand from the raw numbers. `formatRef` collapses
+ * an unresolvable range to the bare book name, which would print "Genesis" as
+ * the whole heading and lose the only thing the entry said about its subject.
+ * Verbose beats wrong, and wrong beats nothing.
  */
-function refLabel(ctx: ExportContext, ref: ScriptureRef): string {
+function refLabel(ctx: ExportContext, ref: ScriptureRef): { label: string; resolved: boolean } {
   const name = bookName(ctx, ref.book);
   const counts = versification[ref.book];
-  if (counts) return formatRef(ref, name, counts);
-  return ref.chapterStart === ref.chapterEnd
-    ? `${name} ${ref.chapterStart}:${ref.verseStart}-${ref.verseEnd}`
-    : `${name} ${ref.chapterStart}:${ref.verseStart}-${ref.chapterEnd}:${ref.verseEnd}`;
+
+  if (counts) {
+    const index = buildIndex(counts);
+    const span = referenceSpan(index, ref);
+    if (span) return { label: formatSpan(index, name, span.start, span.end), resolved: true };
+  }
+
+  const label =
+    ref.chapterStart === ref.chapterEnd
+      ? `${name} ${ref.chapterStart}:${ref.verseStart}-${ref.verseEnd}`
+      : `${name} ${ref.chapterStart}:${ref.verseStart}-${ref.chapterEnd}:${ref.verseEnd}`;
+  return { label, resolved: false };
 }
 
 /**
@@ -336,7 +365,11 @@ function entryTitle(entry: Entry): string {
   const title = entry.title.trim();
   if (title) return title;
   // Untitled entries still need a name in the contents and at the top of a page.
-  return `${kindLabel(entry.kind)}, ${longDate(entry.date)}`;
+  // An entry with no date at all would otherwise be headed "Letter, " — a
+  // trailing comma over nothing, which reads as something lost rather than as
+  // something never written down.
+  const when = longDate(entry.date).trim();
+  return `${kindLabel(entry.kind)}, ${when || 'undated'}`;
 }
 
 /**
@@ -355,7 +388,10 @@ function entryAnchorId(ctx: ExportContext, entry: Entry, index: number, prefix: 
 
 /** The date, kind and circumstances of an entry, as an inline list. */
 function renderMeta(entry: Entry): string {
-  const items = [dateElement(entry.date), escapeHtml(kindLabel(entry.kind))];
+  // A blank date is dropped rather than left as an empty item: the separator
+  // between meta items is drawn by CSS, so an empty one prints a stray dot.
+  const items = entry.date.trim() ? [dateElement(entry.date)] : [];
+  items.push(escapeHtml(kindLabel(entry.kind)));
   if (entry.place?.trim()) items.push(escapeHtml(entry.place.trim()));
   if (entry.speaker?.trim()) items.push(`Speaker: ${escapeHtml(entry.speaker.trim())}`);
   if (entry.sermonSeries?.trim()) items.push(`Series: ${escapeHtml(entry.sermonSeries.trim())}`);
@@ -386,9 +422,16 @@ function renderPassage(verses: PassageVerse[]): string {
 /**
  * Every scripture anchor on an entry, with its KJV text.
  *
+ * The section is labelled and the translation named on every entry, not only in
+ * the colophon at the back. A reader who opens the book in the middle, or who
+ * is holding one printed page of it, has to be able to tell at a glance that
+ * these words are the Bible's and the words above them are the journal-keeper's.
+ * That is the one confusion this book cannot afford, so the label pays for
+ * itself on every page.
+ *
  * Refs are de-duplicated: an entry that anchors the same passage twice should
- * not print it twice. A passage with no loaded text still gets its heading and
- * says so plainly, because a silent gap looks like the entry had no scripture.
+ * not print it twice. A passage with no text still gets its heading and says
+ * why, because a silent gap looks like the entry had no scripture at all.
  */
 function renderScripture(ctx: ExportContext, entry: Entry): string {
   const seen = new Set<string>();
@@ -400,21 +443,31 @@ function renderScripture(ctx: ExportContext, entry: Entry): string {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const { label, resolved } = refLabel(ctx, anchor);
     const title = outlineTitle(ctx, anchor);
     const heading = title
-      ? `${escapeHtml(refLabel(ctx, anchor))} <span class="outline-title">${escapeHtml(title)}</span>`
-      : escapeHtml(refLabel(ctx, anchor));
+      ? `${escapeHtml(label)} <span class="outline-title">${escapeHtml(title)}</span>`
+      : escapeHtml(label);
 
     const verses = ctx.passages.get(key);
-    const body =
-      verses && verses.length > 0
-        ? renderPassage(verses)
-        : '<p class="absent">The text of this passage was not included in this copy of the archive.</p>';
+    let body: string;
+    if (verses && verses.length > 0) {
+      body = renderPassage(verses);
+    } else if (!resolved) {
+      // Two different absences, and telling a reader the wrong one is worse than
+      // telling them nothing: a reference to a chapter that does not exist is
+      // not a hole in this copy, it is what the writer wrote down.
+      body =
+        '<p class="absent">There is no such passage in the Bible to print. The reference is kept here exactly as it was written.</p>';
+    } else {
+      body = '<p class="absent">The text of this passage was not included in this copy of the archive.</p>';
+    }
 
-    blocks.push(`<h4 class="scripture-heading">${heading}</h4>\n${body}`);
+    blocks.push(`<h5 class="scripture-heading">${heading}</h5>\n${body}`);
   }
 
-  return blocks.join('\n');
+  if (blocks.length === 0) return '';
+  return `<h4 class="scripture-label">Scripture &mdash; King James Version</h4>\n${blocks.join('\n')}`;
 }
 
 /** Topic and book anchors, which have no other home in the entry. */
@@ -438,22 +491,44 @@ function renderSubjects(ctx: ExportContext, entry: Entry): string {
 /**
  * Links, with the URL always printed as visible text.
  *
- * Most of these will be dead by the time anyone reads this. `capturedTitle`
- * records what the link pointed at when it was saved, and that is usually the
- * only part still worth anything — so it leads, and the URL follows in full.
+ * Most of these will be dead by the time anyone reads this, so every part that
+ * still says something is kept. `capturedTitle` records what the link pointed
+ * at when it was saved and is usually the only part still worth anything — it
+ * is printed even when the writer also gave the link a label of their own,
+ * because the two say different things and dropping either loses a fact.
+ *
+ * Nothing is ever printed twice, and a link that carries neither an address nor
+ * a word about itself is dropped entirely: a bare bullet under a Links heading
+ * tells a reader something was lost when nothing was.
  */
 function renderLinks(links: EntryLink[]): string {
-  if (links.length === 0) return '';
+  const items: string[] = [];
 
-  const items = links.map((link) => {
-    const label = link.label?.trim() || link.capturedTitle?.trim() || link.url;
-    const href = safeHref(link.url);
-    const shown = href ? `<a href="${href}" rel="noreferrer">${escapeHtml(label)}</a>` : escapeHtml(label);
-    const url = `<span class="url">${escapeHtml(link.url)}</span>`;
-    const captured = link.capturedAt ? ` <span class="captured">saved ${escapeHtml(longDate(link.capturedAt.slice(0, 10)))}</span>` : '';
-    return `<li>${shown}<br>${url}${captured}</li>`;
-  });
+  for (const link of links) {
+    const url = link.url.trim();
+    const label = link.label?.trim() ?? '';
+    const capturedTitle = link.capturedTitle?.trim() ?? '';
 
+    const lead = label || capturedTitle || url;
+    if (!lead) continue;
+
+    // The address is set as an address wherever it lands, so a reader can tell
+    // it apart from prose whether it leads the bullet or follows underneath.
+    const href = url ? safeHref(url) : null;
+    const leadHtml = lead === url ? `<span class="url">${escapeHtml(lead)}</span>` : escapeHtml(lead);
+    const lines = [href ? `<a href="${href}" rel="noreferrer">${leadHtml}</a>` : leadHtml];
+    if (capturedTitle && capturedTitle !== lead) {
+      lines.push(`<span class="captured-title">${escapeHtml(capturedTitle)}</span>`);
+    }
+    if (url && url !== lead) lines.push(`<span class="url">${escapeHtml(url)}</span>`);
+
+    const captured = link.capturedAt?.trim()
+      ? ` <span class="captured">saved ${escapeHtml(longDate(link.capturedAt.trim().slice(0, 10)))}</span>`
+      : '';
+    items.push(`<li>${lines.join('<br>')}${captured}</li>`);
+  }
+
+  if (items.length === 0) return '';
   return `<h4>Links</h4>\n<ul class="links" role="list">${items.join('')}</ul>`;
 }
 
@@ -475,8 +550,11 @@ function renderEntry(ctx: ExportContext, entry: Entry, id: string, alsoAt?: stri
   if (subjects) parts.push(subjects);
 
   if (alsoAt) {
+    // An undated entry has no place in time to name, and an empty link is an
+    // invisible one. Fall back to wording that still points somewhere.
+    const when = longDate(entry.date).trim();
     parts.push(
-      `<p class="cross-ref">This entry appears again below, in its place in time: <a href="#${escapeHtml(alsoAt)}">${escapeHtml(longDate(entry.date))}</a>.</p>`,
+      `<p class="cross-ref">This entry appears again below, in its place in time: <a href="#${escapeHtml(alsoAt)}">${escapeHtml(when || 'further on')}</a>.</p>`,
     );
   }
 
@@ -501,8 +579,10 @@ function renderEntry(ctx: ExportContext, entry: Entry, id: string, alsoAt?: stri
   const mentioned = entry.scriptureRefs.map((ref) => ref.trim()).filter(Boolean);
   if (mentioned.length > 0) {
     // Free text the writer cited in passing. Not resolved to anything, and not
-    // presented as though it were — just what they wrote down.
-    parts.push(`<p class="mentioned">Also mentioned: ${escapeHtml(mentioned.join('; '))}</p>`);
+    // presented as though it were — just what they wrote down. "Also" only
+    // holds when a passage was printed above it to be also to.
+    const lead = scripture ? 'Also mentioned' : 'Scripture mentioned';
+    parts.push(`<p class="mentioned">${lead}: ${escapeHtml(mentioned.join('; '))}</p>`);
   }
 
   parts.push(renderLinks(entry.links));
@@ -596,7 +676,7 @@ function renderForeword(ctx: ExportContext, hasLegacy: boolean): string {
     '<p>This is a journal. Someone kept it a note at a time &mdash; often on a Sunday, sometimes on a back porch &mdash; while reading the Bible and listening to people preach, and this book is everything they wrote.</p>',
     '<p>It was written in a small program called Journey that ran on their own computer and sent nothing anywhere. The program is not needed to read this. There is nothing to install, nothing to sign in to, and nothing here that has to be fetched from somewhere else. What you have is the whole thing.</p>',
     '<p>Each entry keeps two kinds of writing apart on purpose. <strong>Notes</strong> are what was said &mdash; by a preacher, or by the passage itself. <strong>Reflection</strong> is what it meant to the person writing it down. They were never mixed together, and they are not mixed here. If you read only one, read the reflection.</p>',
-    '<p>The scripture each entry was about is printed with it, in full, so you never have to go and find a Bible to follow along.</p>',
+    '<p>The scripture each entry was about is printed with it, in full, so you never have to go and find a Bible to follow along. It is the King James Version, and in every entry it sits under a heading of its own that says so. Those words are the Bible&rsquo;s. Everything above them is the writer&rsquo;s.</p>',
   ];
 
   if (hasLegacy) {
@@ -642,8 +722,12 @@ function renderContents(ctx: ExportContext, hasLegacy: boolean, bodyIds: Map<str
       parts.push(`<li><span class="toc-year">${escapeHtml(group.year)}</span><ol class="toc-entries" role="list">`);
       for (const entry of group.entries) {
         const id = bodyIds.get(entry.id) ?? '';
+        // An entry with no date gets no date column rather than an empty one,
+        // which would otherwise print as a hanging gap in the contents.
+        const when = longDate(entry.date).trim();
+        const date = when ? ` <span class="toc-date">${escapeHtml(when)}</span>` : '';
         parts.push(
-          `<li><a href="#${escapeHtml(id)}">${escapeHtml(entryTitle(entry))}</a> <span class="toc-date">${escapeHtml(longDate(entry.date))}</span></li>`,
+          `<li><a href="#${escapeHtml(id)}">${escapeHtml(entryTitle(entry))}</a>${date}</li>`,
         );
       }
       parts.push('</ol></li>');
@@ -717,7 +801,7 @@ body {
   line-height: 1.65;
 }
 main { max-width: 36rem; margin: 0 auto; }
-h1, h2, h3, h4 { font-weight: normal; line-height: 1.25; }
+h1, h2, h3, h4, h5 { font-weight: normal; line-height: 1.25; }
 h1 { font-size: 2.25rem; margin: 0 0 0.75rem; letter-spacing: 0.01em; }
 h2 { font-size: 1.5rem; margin: 0 0 1rem; }
 h3 { font-size: 1.25rem; margin: 0 0 0.35rem; }
@@ -827,7 +911,13 @@ section, .contents, .colophon { margin-bottom: 3.5rem; }
   color: var(--ink-soft);
 }
 
-.scripture-heading { text-transform: none; letter-spacing: 0; font-size: 1rem; font-variant: small-caps; }
+.scripture-heading {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 1rem;
+  font-variant: small-caps;
+  margin: 1rem 0 0.4rem;
+}
 .outline-title { color: var(--ink-soft); font-variant: normal; }
 .passage {
   margin: 0 0 1.25rem;
@@ -848,7 +938,8 @@ section, .contents, .colophon { margin-bottom: 3.5rem; }
 .links { list-style: none; padding: 0; margin: 0 0 1rem; font-size: 0.9375rem; }
 .links li { margin-bottom: 0.6rem; }
 .url { font-family: ui-monospace, "Courier New", monospace; font-size: 0.8125rem; color: var(--ink-soft); word-break: break-all; }
-.captured { font-size: 0.8125rem; color: var(--ink-soft); }
+.captured-title, .captured { font-size: 0.8125rem; color: var(--ink-soft); }
+.captured-title { font-style: italic; }
 
 blockquote { margin: 0 0 0.9rem; padding-left: 1.1rem; border-left: 1px solid var(--rule); }
 .md-heading { margin-bottom: 0.35rem; }
@@ -880,7 +971,7 @@ blockquote { margin: 0 0 0.9rem; padding-left: 1.1rem; border-left: 1px solid va
   h1 { font-size: 28pt; }
   h2 { font-size: 16pt; }
   h3 { font-size: 13pt; }
-  h4 { font-size: 9pt; }
+  h4, h5 { font-size: 9pt; }
 
   .skip { display: none; }
   .title-page { padding: 25mm 0 0; border-bottom: 0; break-after: page; }
@@ -891,7 +982,7 @@ blockquote { margin: 0 0 0.9rem; padding-left: 1.1rem; border-left: 1px solid va
      taller than a page and break it normally, which is the right fallback; the
      rules below then stop a heading or a verse being orphaned at the fold. */
   .entry { break-inside: avoid; }
-  h2, h3, h4 { break-after: avoid; }
+  h2, h3, h4, h5 { break-after: avoid; }
   .meta, .subjects { break-after: avoid; }
   blockquote, li { break-inside: avoid; }
   p { orphans: 3; widows: 3; }
