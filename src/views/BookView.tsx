@@ -28,6 +28,8 @@ import {
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { EmptyState, Tag } from '../components/ui';
+import { BookTopicList } from '../components/TopicChips';
+import { topicsForBook } from '../lib/topic-index';
 import { BOOK_NAMES } from '../lib/canon';
 import { segmentRef } from '../lib/passages';
 import type { Entry, PassageSegment, ScriptureRef } from '../types';
@@ -165,6 +167,7 @@ export default function BookView({ bookId }: { bookId: string }) {
   const segments = useMemo(() => segmentsForBook(bookId), [bookId]);
   // Empty under `refs-only`, where the author's prose is not in the build.
   const intro = outlineBooksById.get(bookId)?.intro ?? '';
+  const bookTopics = useMemo(() => topicsForBook(bookId), [bookId]);
 
   // A journal that could not be opened must never be reported as an empty one;
   // private browsing and blocked site data both land here.
@@ -218,6 +221,10 @@ export default function BookView({ bookId }: { bookId: string }) {
           ))}
         </div>
       ) : null}
+
+      {/* Every topic touching any part of this book, with how much of it is
+          here. Independent of the outline layer by design. */}
+      <BookTopicList topics={bookTopics} headingId="book-topics" />
 
       <h2 className="mt-8 font-serif text-xl font-semibold">
         Passages{' '}

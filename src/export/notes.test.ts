@@ -54,7 +54,7 @@ function context(overrides: Partial<ExportContext> = {}): ExportContext {
     outlineBooks: new Map(),
     outlineEntries: new Map(),
     topics: new Map([
-      ['comfort', { id: 'comfort', name: 'Comfort in grief', description: 'When someone has died.', refs: [] }],
+      ['comfort', { id: 'comfort', name: 'Comfort in grief', description: 'When someone has died.', aliases: [], refs: [] }],
     ]),
     passages,
     noteFilenames: new Map([['e1', 'notes/2026-04-12--sermon--the-beatitudes.md']]),

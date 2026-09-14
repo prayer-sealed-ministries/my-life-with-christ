@@ -153,7 +153,7 @@ describe('SearchView', () => {
     renderSearch(provider);
 
     expect(await screen.findByText('What are you looking for?')).toBeInTheDocument();
-    const input = screen.getByLabelText(/Search your journal/);
+    const input = screen.getByLabelText(/^Search your journal, topics and the Bible/);
     expect(input).toHaveAttribute('type', 'search');
     expect(input).toHaveValue('');
   });
@@ -221,7 +221,10 @@ describe('SearchView', () => {
 
     await waitFor(() => {
       const live = document.querySelector('[aria-live="polite"]');
-      expect(live).toHaveTextContent('1 entry, 1 outline passage.');
+      // The announcement now leads with a total across every source, because
+      // topics and books are searched too.
+      expect(live).toHaveTextContent(/results?: 1 in your journal/);
+      expect(live).toHaveTextContent(/1 outline passage\./);
     });
   });
 
@@ -323,16 +326,23 @@ describe('SearchView', () => {
     expect(screen.queryByRole('link', { name: /The Prodigal Son/ })).not.toBeInTheDocument();
   });
 
-  it('does not offer to search an outline this build does not carry', async () => {
+  it('names the outline as absent rather than silently omitting it', async () => {
+    // Under refs-only there are no outline titles to search. Saying nothing
+    // would leave a reader unable to tell whether their passage is missing or
+    // was simply never searched, so the empty state lists it as unavailable.
     profile.hasOutlineTitles = false;
     const provider = freshProvider();
     await provider.open();
+    window.location.hash = '#/search?q=zzzznothing';
 
     renderSearch(provider);
 
-    const input = await screen.findByLabelText('Search your journal');
-    expect(input).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Bible outline/)).not.toBeInTheDocument();
+    await screen.findByText(/Nothing matches/);
+    expect(screen.getByText(/Outline passage titles/)).toHaveTextContent(
+      /not included in this version of the site/,
+    );
+    // And no outline results section is rendered at all.
+    expect(screen.queryByRole('heading', { name: /Bible outline/ })).not.toBeInTheDocument();
   });
 
   it('shows one empty state when nothing at all matches', async () => {

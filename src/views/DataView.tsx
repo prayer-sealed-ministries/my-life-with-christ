@@ -27,7 +27,7 @@ import {
 } from '../app/data';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
-import { Button, Card, Field, LiveRegion, Spinner } from '../components/ui';
+import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
 import { applyImport, parseImport, previewImport, type ParsedImport } from '../export/importer';
@@ -391,7 +391,10 @@ export default function DataView() {
               and the file says so inside, so nobody later mistakes it for the whole thing.
             </p>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            {/* FieldRow, not a hand-rolled grid: it supplies the row tracks
+                the fields subgrid onto, so From and To align on their controls
+                rather than on their labels. */}
+            <FieldRow>
               <Field
                 label="From"
                 hint="Earliest date to include. Leave empty for no limit."
@@ -406,7 +409,7 @@ export default function DataView() {
                 value={to}
                 onChange={(event) => setTo(event.target.value)}
               />
-            </div>
+            </FieldRow>
 
             <fieldset className="border-0 p-0">
               <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">

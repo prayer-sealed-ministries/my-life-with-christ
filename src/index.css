@@ -15,6 +15,37 @@
   color-scheme: light dark;
 }
 
+/**
+ * Long words must be able to break.
+ *
+ * WCAG 1.4.10 asks for no horizontal scrolling at 320 CSS px. A single
+ * unbreakable token defeats that on its own — "Divorce/Remarriage" is one word
+ * to a browser, since there is no break opportunity at a slash, and at 200%
+ * text it was 280px wide inside a 206px column, pushing the whole page sideways.
+ *
+ * `break-word` rather than `anywhere`: it only breaks a word that genuinely
+ * does not fit, leaving ordinary prose alone.
+ */
+body {
+  overflow-wrap: break-word;
+}
+
+/**
+ * Date and time inputs must be allowed to shrink.
+ *
+ * Chromium gives them an intrinsic minimum width from their internal
+ * day/month/year picker, which `width: 100%` does not override. Inside a grid
+ * or flex track that minimum wins, and at 200% text in a 320px viewport a
+ * single date field was 313px wide in a 256px column, taking the page with it.
+ */
+input[type='date'],
+input[type='datetime-local'],
+input[type='time'],
+input[type='month'],
+input[type='week'] {
+  min-width: 0;
+}
+
 /*
  * Visible focus everywhere, never removed. WCAG 2.1 AA, 2.4.7.
  *

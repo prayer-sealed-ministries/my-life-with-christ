@@ -11,6 +11,10 @@
     "overlaps, for a richer display. See src/lib/passages.ts resolveTopicEntries().",
     "",
     "Every ref is validated against src/data/kjv/versification.json by the topic tests.",
+    "",
+    "aliases: other words people actually search with. Nobody types the label I",
+    "picked — they type \"worry\" or \"tithing\". Free to extend; search matches them",
+    "the same as the topic name.",
     "book must be a book id (lowercase, hyphenated) exactly as used in src/data/kjv/."
   ],
   "topics": [
@@ -18,6 +22,14 @@
       "id": "marriage",
       "name": "Marriage",
       "description": "For couples wanting to know what God intends a marriage to be, and how to love each other well through every season of it.",
+      "aliases": [
+        "husband",
+        "wife",
+        "spouse",
+        "wedding",
+        "covenant",
+        "married"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -89,6 +101,13 @@
       "id": "divorce",
       "name": "Divorce",
       "description": "For anyone facing a broken or ending marriage, wanting to know what Scripture actually says and where God's mercy meets them.",
+      "aliases": [
+        "separation",
+        "remarriage",
+        "broken marriage",
+        "putting away",
+        "estranged"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -160,6 +179,17 @@
       "id": "money",
       "name": "Money",
       "description": "For when finances have a grip on your heart - what wealth can and cannot do, and how to hold it with an open hand.",
+      "aliases": [
+        "finances",
+        "giving",
+        "tithing",
+        "tithe",
+        "stewardship",
+        "wealth",
+        "riches",
+        "possessions",
+        "mammon"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -239,6 +269,14 @@
       "id": "debt",
       "name": "Debt",
       "description": "For anyone carrying what they owe - the weight of borrowing, the mercy of release, and the debt already forgiven at the cross.",
+      "aliases": [
+        "borrowing",
+        "lending",
+        "owing",
+        "loans",
+        "credit",
+        "surety"
+      ],
       "refs": [
         {
           "book": "leviticus",
@@ -318,6 +356,14 @@
       "id": "generosity",
       "name": "Generosity",
       "description": "For the question of what to do with what you have - giving that is cheerful, quiet, and unafraid of running out.",
+      "aliases": [
+        "giving",
+        "charity",
+        "almsgiving",
+        "offering",
+        "open handed",
+        "sharing"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -397,6 +443,15 @@
       "id": "anxiety",
       "name": "Anxiety",
       "description": "For the nights your mind will not stop circling - worry about money, health, tomorrow - and you need somewhere to set it down.",
+      "aliases": [
+        "worry",
+        "stress",
+        "anxious",
+        "overwhelmed",
+        "panic",
+        "restless",
+        "cares"
+      ],
       "refs": [
         {
           "book": "philippians",
@@ -468,6 +523,14 @@
       "id": "fear",
       "name": "Fear",
       "description": "For when something real is threatening you and you need to hear that God is present, and closer than the danger.",
+      "aliases": [
+        "afraid",
+        "terror",
+        "courage",
+        "fearful",
+        "dread",
+        "be not afraid"
+      ],
       "refs": [
         {
           "book": "isaiah",
@@ -547,6 +610,15 @@
       "id": "depression",
       "name": "Depression",
       "description": "For the long grey stretch when you cannot pray or get up, and you need to know scripture has been down there too.",
+      "aliases": [
+        "despair",
+        "hopeless",
+        "downcast",
+        "darkness",
+        "sadness",
+        "melancholy",
+        "low"
+      ],
       "refs": [
         {
           "book": "psalms",
@@ -626,6 +698,15 @@
       "id": "grief",
       "name": "Grief",
       "description": "For when you have lost someone and need to hear that God stays close to the broken-hearted.",
+      "aliases": [
+        "mourning",
+        "loss",
+        "bereavement",
+        "sorrow",
+        "weeping",
+        "lament",
+        "funeral"
+      ],
       "refs": [
         {
           "book": "psalms",
@@ -705,6 +786,14 @@
       "id": "death",
       "name": "Death",
       "description": "For facing your own mortality or a loved one's, and what Scripture promises lies beyond it.",
+      "aliases": [
+        "dying",
+        "mortality",
+        "the grave",
+        "resurrection",
+        "eternal life",
+        "passing away"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -784,6 +873,15 @@
       "id": "parenting",
       "name": "Parenting",
       "description": "For mothers and fathers asking how to raise, discipline, and pray their children toward God without losing heart.",
+      "aliases": [
+        "mother",
+        "father",
+        "raising children",
+        "discipline",
+        "family",
+        "motherhood",
+        "fatherhood"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -855,6 +953,15 @@
       "id": "children",
       "name": "Children",
       "description": "For seeing children as God sees them - given, known, welcomed by Jesus - including when a child is lost.",
+      "aliases": [
+        "kids",
+        "sons",
+        "daughters",
+        "babies",
+        "infants",
+        "little ones",
+        "childhood"
+      ],
       "refs": [
         {
           "book": "1-samuel",
@@ -926,6 +1033,14 @@
       "id": "singleness",
       "name": "Singleness",
       "description": "For the unmarried season — whether chosen, waiting, or grieved — and the worth God gives a life that stands alone before Him.",
+      "aliases": [
+        "unmarried",
+        "celibacy",
+        "alone",
+        "waiting",
+        "contentment",
+        "single"
+      ],
       "refs": [
         {
           "book": "psalms",
@@ -997,6 +1112,13 @@
       "id": "friendship",
       "name": "Friendship",
       "description": "For the friends who stay, the ones you need, and the kind of friend you are trying to become.",
+      "aliases": [
+        "friends",
+        "companionship",
+        "loyalty",
+        "brotherhood",
+        "fellowship"
+      ],
       "refs": [
         {
           "book": "ruth",
@@ -1076,6 +1198,15 @@
       "id": "forgiveness",
       "name": "Forgiveness",
       "description": "For when you need to be forgiven, and for the harder work of releasing someone who hurt you.",
+      "aliases": [
+        "forgive",
+        "mercy",
+        "pardon",
+        "reconciliation",
+        "grudge",
+        "bitterness",
+        "let go"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1155,6 +1286,14 @@
       "id": "anger",
       "name": "Anger",
       "description": "For the heat you can feel rising — what to do with it before it does damage, and what it is telling you.",
+      "aliases": [
+        "wrath",
+        "rage",
+        "temper",
+        "resentment",
+        "slow to anger",
+        "furious"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1234,6 +1373,14 @@
       "id": "pride",
       "name": "Pride",
       "description": "For when success, comparison, or being right has quietly hardened the heart — how Scripture names pride and what it costs.",
+      "aliases": [
+        "arrogance",
+        "boasting",
+        "vanity",
+        "ego",
+        "haughty",
+        "self righteous"
+      ],
       "refs": [
         {
           "book": "proverbs",
@@ -1305,6 +1452,13 @@
       "id": "humility",
       "name": "Humility",
       "description": "Where to turn when you need the low place — the mind of Christ, and the promise that God draws near to the lowly.",
+      "aliases": [
+        "meekness",
+        "lowliness",
+        "modesty",
+        "servant heart",
+        "humble"
+      ],
       "refs": [
         {
           "book": "philippians",
@@ -1384,6 +1538,16 @@
       "id": "work",
       "name": "Work",
       "description": "For the person wondering whether their daily labor matters to God, or whether it is only drudgery.",
+      "aliases": [
+        "job",
+        "labour",
+        "labor",
+        "employment",
+        "career",
+        "vocation",
+        "diligence",
+        "business"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1455,6 +1619,14 @@
       "id": "calling",
       "name": "Calling",
       "description": "For the person asking what God wants of their life, or wondering whether they were ever really chosen.",
+      "aliases": [
+        "vocation",
+        "purpose",
+        "gifts",
+        "ministry",
+        "mission",
+        "called"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1534,6 +1706,15 @@
       "id": "rest",
       "name": "Rest",
       "description": "For the exhausted and the restless — permission to stop, and the promise of rest that is deeper than sleep.",
+      "aliases": [
+        "sabbath",
+        "sleep",
+        "weary",
+        "burnout",
+        "stillness",
+        "quiet",
+        "tired"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1605,6 +1786,15 @@
       "id": "addiction",
       "name": "Addiction",
       "description": "For when something has you in its grip and you cannot put it down — honest words about the struggle, and the promise that you can be free.",
+      "aliases": [
+        "drunkenness",
+        "bondage",
+        "habit",
+        "compulsion",
+        "substance",
+        "enslaved",
+        "alcohol"
+      ],
       "refs": [
         {
           "book": "psalms",
@@ -1676,6 +1866,15 @@
       "id": "temptation",
       "name": "Temptation",
       "description": "For the moment of pull, when the wrong thing looks good — how to stand, where the exit is, and who understands.",
+      "aliases": [
+        "tempted",
+        "sin",
+        "lust",
+        "resisting",
+        "trial",
+        "enticement",
+        "struggle"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1747,6 +1946,14 @@
       "id": "doubt",
       "name": "Doubt",
       "description": "For when faith feels thin and you are half-afraid to admit it - where honest questions get met, not scolded.",
+      "aliases": [
+        "unbelief",
+        "questioning",
+        "uncertainty",
+        "skepticism",
+        "wrestling",
+        "doubting"
+      ],
       "refs": [
         {
           "book": "mark",
@@ -1826,6 +2033,13 @@
       "id": "faith",
       "name": "Faith",
       "description": "For when you need to keep trusting God before you can see how it turns out.",
+      "aliases": [
+        "belief",
+        "trust",
+        "believing",
+        "assurance",
+        "confidence in God"
+      ],
       "refs": [
         {
           "book": "genesis",
@@ -1905,6 +2119,14 @@
       "id": "prayer",
       "name": "Prayer",
       "description": "How to talk to God, what to say when you have no words, and the promise that he hears.",
+      "aliases": [
+        "praying",
+        "intercession",
+        "petition",
+        "supplication",
+        "talking to God",
+        "unanswered prayer"
+      ],
       "refs": [
         {
           "book": "matthew",
@@ -1984,6 +2206,12 @@
       "id": "fasting",
       "name": "Fasting",
       "description": "Going without food to seek God - why believers fast, how Jesus taught it, and the kind of fast God actually wants.",
+      "aliases": [
+        "fast",
+        "abstaining",
+        "self denial",
+        "discipline"
+      ],
       "refs": [
         {
           "book": "matthew",
@@ -2055,6 +2283,14 @@
       "id": "evangelism",
       "name": "Evangelism",
       "description": "Sharing the good news - the commission Jesus gave, and how ordinary believers tell others about him.",
+      "aliases": [
+        "witnessing",
+        "sharing faith",
+        "missions",
+        "great commission",
+        "testimony",
+        "outreach"
+      ],
       "refs": [
         {
           "book": "matthew",
@@ -2134,6 +2370,15 @@
       "id": "church",
       "name": "Church",
       "description": "What the church is, why belonging to one matters, and how believers live together as one body.",
+      "aliases": [
+        "congregation",
+        "body of Christ",
+        "fellowship",
+        "assembly",
+        "worship",
+        "communion",
+        "membership"
+      ],
       "refs": [
         {
           "book": "matthew",
@@ -2213,6 +2458,14 @@
       "id": "leadership",
       "name": "Leadership",
       "description": "For anyone carrying responsibility for others and wondering how to bear it well.",
+      "aliases": [
+        "elders",
+        "pastors",
+        "authority",
+        "shepherding",
+        "overseer",
+        "leading"
+      ],
       "refs": [
         {
           "book": "exodus",
@@ -2292,6 +2545,15 @@
       "id": "justice",
       "name": "Justice",
       "description": "For the ache over what is wrong in the world — how God feels about oppression, and what he asks of those who follow him.",
+      "aliases": [
+        "injustice",
+        "oppression",
+        "fairness",
+        "righteousness",
+        "the oppressed",
+        "advocacy",
+        "mercy and justice"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -2371,6 +2633,15 @@
       "id": "poverty",
       "name": "Poverty",
       "description": "For those with empty hands, and for those who must not look away - God's nearness to the poor and His claim on how we treat them.",
+      "aliases": [
+        "the poor",
+        "need",
+        "hunger",
+        "homeless",
+        "destitute",
+        "lack",
+        "want"
+      ],
       "refs": [
         {
           "book": "leviticus",
@@ -2450,6 +2721,15 @@
       "id": "healing",
       "name": "Healing",
       "description": "For sickness in your body or a loved one's, and for praying honestly when you need God to restore.",
+      "aliases": [
+        "sickness",
+        "illness",
+        "disease",
+        "health",
+        "recovery",
+        "miracles",
+        "sick"
+      ],
       "refs": [
         {
           "book": "exodus",
@@ -2529,6 +2809,15 @@
       "id": "suffering",
       "name": "Suffering",
       "description": "For the long hard season — pain that has not lifted yet, and the God who meets you inside it.",
+      "aliases": [
+        "pain",
+        "affliction",
+        "trials",
+        "hardship",
+        "why suffering",
+        "endurance",
+        "trouble"
+      ],
       "refs": [
         {
           "book": "job",
@@ -2608,6 +2897,14 @@
       "id": "persecution",
       "name": "Persecution",
       "description": "For when following Jesus costs you — rejection, hostility, or worse — and you need to know it was expected and it is not the end.",
+      "aliases": [
+        "suffering for faith",
+        "martyrdom",
+        "opposition",
+        "hated",
+        "reviled",
+        "tribulation"
+      ],
       "refs": [
         {
           "book": "daniel",
@@ -2687,6 +2984,16 @@
       "id": "end-times",
       "name": "End Times",
       "description": "For when you are asking how this world ends, where the dead in Christ are, and what we are waiting for.",
+      "aliases": [
+        "second coming",
+        "last days",
+        "apocalypse",
+        "revelation",
+        "judgment day",
+        "eschatology",
+        "return of christ",
+        "prophecy"
+      ],
       "refs": [
         {
           "book": "daniel",
@@ -2758,6 +3065,15 @@
       "id": "salvation",
       "name": "Salvation",
       "description": "For when you want to know how a person is rescued by God, and whether it can include you.",
+      "aliases": [
+        "saved",
+        "born again",
+        "redemption",
+        "eternal life",
+        "conversion",
+        "gospel",
+        "justification"
+      ],
       "refs": [
         {
           "book": "isaiah",
@@ -2829,6 +3145,13 @@
       "id": "grace",
       "name": "Grace",
       "description": "For when you feel you have used up God's patience and need to hear that you have not.",
+      "aliases": [
+        "unmerited favour",
+        "unmerited favor",
+        "mercy",
+        "undeserved",
+        "free gift"
+      ],
       "refs": [
         {
           "book": "exodus",
@@ -2900,6 +3223,13 @@
       "id": "obedience",
       "name": "Obedience",
       "description": "For the moment you know what God has asked and must decide — why obedience matters more than sacrifice, and what it grows into.",
+      "aliases": [
+        "following God",
+        "submission",
+        "keeping commandments",
+        "faithfulness to God",
+        "obey"
+      ],
       "refs": [
         {
           "book": "deuteronomy",
@@ -2979,6 +3309,14 @@
       "id": "thankfulness",
       "name": "Thankfulness",
       "description": "Passages to read aloud when gratitude comes easily and when it does not — giving thanks as praise, as remembering, and as obedience.",
+      "aliases": [
+        "gratitude",
+        "thanksgiving",
+        "praise",
+        "grateful",
+        "give thanks",
+        "contentment"
+      ],
       "refs": [
         {
           "book": "psalms",

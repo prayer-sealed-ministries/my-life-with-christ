@@ -13,12 +13,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { hasOutlineTitles, outlineBooks, segmentsForBook } from '../app/data';
+import { hasOutlineTitles, outlineBooks, segmentContaining, segmentsForBook } from '../app/data';
 import { Link, useRouter, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { EmptyState, Field, LiveRegion, Spinner } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { formatDay } from '../lib/dates';
+import { search } from '../lib/search';
 import type { Entry } from '../types';
 
 /** How long to wait after the last keystroke before touching the URL. */
@@ -160,6 +161,22 @@ function OutlineResult({ match }: { match: OutlineMatch }) {
   );
 }
 
+const SECTION_HEADING =
+  'border-b border-slate-200 pb-1 font-serif text-xl font-semibold dark:border-slate-700';
+
+/**
+ * Where a typed reference should land.
+ *
+ * The segment holding it, when one exists — under `refs-only` that is the whole
+ * chapter, under `full` it is whichever outline entry covers the verse.
+ */
+function passageRouteFor(ref: { book: string; chapterStart: number; verseStart: number }) {
+  const segment = segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+  return segment
+    ? ({ name: 'passage', bookId: ref.book, segmentId: segment.id } as const)
+    : ({ name: 'book', bookId: ref.book } as const);
+}
+
 export default function SearchView({ query }: { query: string }) {
   const { navigate } = useRouter();
   const [value, setValue] = useState(query);
@@ -219,14 +236,36 @@ export default function SearchView({ query }: { query: string }) {
 
   const outlineMatches = useMemo(() => searchOutlines(needle.toLowerCase()), [needle]);
 
+  /**
+   * Everything that is not the journal: a typed reference, topics, books.
+   *
+   * Entries come from storage, which has them indexed; the rest is static data
+   * already in memory, so it is matched here rather than round-tripping.
+   *
+   * This is what makes search work on a first visit. Before it, search covered
+   * the journal and the outline titles — and on the public build the outline
+   * titles do not exist and the journal is empty, so a stranger's first search
+   * returned nothing at all.
+   */
+  const catalogue = useMemo(
+    () => search(needle, { entries: [], outlineBooks: [], hasOutlines: hasOutlineTitles }),
+    [needle],
+  );
+
   const searching = needle.length > 0;
-  const nothingFound =
-    searching && settled && entries.length === 0 && outlineMatches.length === 0;
+  const resultCount =
+    entries.length +
+    outlineMatches.length +
+    catalogue.references.length +
+    catalogue.topics.length +
+    catalogue.books.length;
+  const nothingFound = searching && settled && resultCount === 0;
   const showResults = searching && settled && !nothingFound;
 
   const announcement =
     searching && settled
-      ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}` +
+      ? `${resultCount} ${resultCount === 1 ? 'result' : 'results'}: ` +
+        `${entries.length} in your journal, ${catalogue.topics.length} ${catalogue.topics.length === 1 ? 'topic' : 'topics'}` +
         (hasOutlineTitles
           ? `, ${outlineMatches.length} outline ${outlineMatches.length === 1 ? 'passage' : 'passages'}`
           : '') +
@@ -235,12 +274,12 @@ export default function SearchView({ query }: { query: string }) {
 
   // The label must not offer what this build cannot do. Under `refs-only` there
   // are no outline titles to search, so it does not claim otherwise.
-  const label = hasOutlineTitles
-    ? 'Search your journal and the Bible outline'
-    : 'Search your journal';
-  const hint = hasOutlineTitles
-    ? 'Titles, notes, reflections, speakers, places and tags, plus outline passage titles.'
-    : 'Titles, notes, reflections, speakers, places and tags.';
+  // One label for every profile. What differs between builds is which sources
+  // exist, and the empty state names any that are absent — the field label is
+  // the wrong place to carry that, and two identical ternary branches were
+  // only pretending it did.
+  const label = 'Search your journal, topics and the Bible';
+  const hint = 'A topic, a book, a passage like “Matt 6:25”, or anything in your own notes.';
 
   // A pasted paragraph is still a query; echoing all of it would not be.
   const echo = needle.length > ECHO_LIMIT ? `${needle.slice(0, ECHO_LIMIT).trimEnd()}…` : needle;
@@ -264,24 +303,116 @@ export default function SearchView({ query }: { query: string }) {
       {!searching ? (
         <div className="mt-6">
           <EmptyState title="What are you looking for?">
-            <p>Type a word above — a speaker, a phrase you remember, a tag, a place.</p>
+            <p>
+              A topic like <em>grief</em> or <em>money</em>. A book like <em>1 Cor</em>. A passage
+              like <em>Matt 6:25</em>. Or anything from your own notes — a speaker, a place, a
+              phrase you remember.
+            </p>
           </EmptyState>
         </div>
       ) : null}
 
       {searching && !settled ? <Spinner label="Searching" /> : null}
 
+      {/* An empty state that only says "no results" leaves the reader guessing
+          whether the thing they want is missing or was never looked for. This
+          lists what was searched, and names anything this build cannot search
+          rather than silently omitting it. */}
       {nothingFound ? (
         <div className="mt-6">
           <EmptyState title={`Nothing matches “${echo}”`}>
-            <p>Try a shorter word, or a different spelling.</p>
+            <p className="text-left">Searched:</p>
+            <ul className="mt-2 space-y-1 text-left">
+              {catalogue.searched.map((source) => (
+                <li key={source.label}>
+                  {source.available ? (
+                    <span>{source.label}</span>
+                  ) : (
+                    <span className="text-slate-400 dark:text-slate-500">
+                      {source.label} — {source.reason}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-left">
+              Try a shorter word, a different spelling, or a passage like “Matt 6:25”.
+            </p>
           </EmptyState>
         </div>
       ) : null}
 
+      {showResults && catalogue.references.length > 0 ? (
+        <section className="mt-8">
+          <h2 className={SECTION_HEADING}>Go to a passage</h2>
+          <ul className="mt-3 space-y-3">
+            {catalogue.references.map((hit) => (
+              <li key={hit.label}>
+                <Link
+                  to={passageRouteFor(hit.ref)}
+                  className="block rounded-lg border border-slate-200 p-3 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  <span className="font-serif text-lg font-semibold">{hit.label}</span>
+                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+                    Read it in the King James Version
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {showResults && catalogue.topics.length > 0 ? (
+        <section className="mt-8">
+          <h2 className={SECTION_HEADING}>Topics ({catalogue.topics.length})</h2>
+          <ul className="mt-3 space-y-3">
+            {catalogue.topics.map(({ topic, matchedAlias }) => (
+              <li key={topic.id}>
+                <Link
+                  to={{ name: 'topic', topicId: topic.id }}
+                  className="block rounded-lg border border-slate-200 p-3 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  <span className="font-medium">{topic.name}</span>
+                  {matchedAlias ? (
+                    <span className="ml-2 text-sm text-slate-500 dark:text-slate-400">
+                      matched “{matchedAlias}”
+                    </span>
+                  ) : null}
+                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+                    {topic.description}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                    {topic.refs.length} passages
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {showResults && catalogue.books.length > 0 ? (
+        <section className="mt-8">
+          <h2 className={SECTION_HEADING}>Books of the Bible ({catalogue.books.length})</h2>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {catalogue.books.map((book) => (
+              <li key={book.id}>
+                <Link
+                  to={{ name: 'book', bookId: book.id }}
+                  className="inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white px-4 py-1 text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  {book.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {showResults ? (
         <section className="mt-8">
-          <h2 className="border-b border-slate-200 pb-1 font-serif text-xl font-semibold dark:border-slate-700">
+          <h2 className={SECTION_HEADING}>
             Your journal ({entries.length})
           </h2>
           {entries.length === 0 ? (

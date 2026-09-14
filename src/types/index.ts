@@ -78,6 +78,8 @@ export interface ScriptureRef {
   verseStart: number;
   chapterEnd: number;
   verseEnd: number;
+  /** Why this passage belongs to the topic that cites it. */
+  note?: string;
 }
 
 /**
@@ -95,6 +97,11 @@ export interface Topic {
   name: string;
   /** One line on what a person is usually looking for when they pick this. */
   description: string;
+  /**
+   * Other words people actually search with. Nobody types the label we picked —
+   * they type "worry", or "tithing". Matched exactly as the name is.
+   */
+  aliases: string[];
   refs: ScriptureRef[];
 }
 

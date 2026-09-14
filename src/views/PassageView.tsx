@@ -29,6 +29,8 @@ import {
 import { Link } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { EmptyState, LiveRegion, Spinner, Tag } from '../components/ui';
+import { TopicChips } from '../components/TopicChips';
+import { topicsForSpan } from '../lib/topic-index';
 import { KIND_LABELS } from '../export/context';
 import { loadPassage, refToString, type PassageVerse } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
@@ -174,6 +176,20 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
   }, [bookId, segmentId]);
 
   const ref = useMemo(() => (segment ? segmentRef(segment, bookId) : null), [segment, bookId]);
+
+  const topicTouches = useMemo(
+    () =>
+      segment
+        ? topicsForSpan(
+            bookId,
+            segment.chapterStart,
+            segment.verseStart,
+            segment.chapterEnd,
+            segment.verseEnd,
+          )
+        : [],
+    [segment, bookId],
+  );
 
   /**
    * Where a segment id this build does not have was pointing.
@@ -358,6 +374,11 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
           ) : null}
         </ul>
       ) : null}
+
+      {/* The reverse link. Built from topics.json, so it is here under every
+          data profile — on the public build it is the only discovery layer
+          there is. */}
+      <TopicChips touches={topicTouches} headingId="passage-topics" />
 
       <div className="mt-5">{addEntry}</div>
 

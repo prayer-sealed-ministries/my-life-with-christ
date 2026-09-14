@@ -83,7 +83,10 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - run: npm run build
-      - name: axe, keyboard, contrast
+      # axe covers roughly a third of WCAG. The reflow suite covers three AA
+      # criteria it cannot check at all: 1.4.10 (320px reflow), 1.4.4 (200%
+      # text) and 1.4.12 (reader-imposed text spacing).
+      - name: axe, keyboard, contrast, reflow
         run: npm run test:a11y
       - uses: actions/upload-artifact@v4
         if: failure()

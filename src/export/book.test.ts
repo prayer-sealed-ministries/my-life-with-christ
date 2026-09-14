@@ -105,7 +105,7 @@ function makeContext(entries: Entry[], overrides: Partial<ExportContext> = {}): 
       ],
     ]),
     topics: new Map<string, Topic>([
-      ['grief', { id: 'grief', name: 'Grief', description: 'When someone is gone.', refs: [] }],
+      ['grief', { id: 'grief', name: 'Grief', description: 'When someone is gone.', aliases: [], refs: [] }],
     ]),
     passages,
     noteFilenames: buildNoteFilenames(entries),

@@ -52,7 +52,7 @@ export function Button({
 const LABEL = 'text-sm font-medium text-slate-700 dark:text-slate-300';
 const HINT = 'text-xs text-slate-500 dark:text-slate-400';
 const CONTROL =
-  'block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
+  'block w-full min-w-0 max-w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
 
 /**
  * The shared skeleton every field uses: label, helper, control — three grid rows.
@@ -81,7 +81,19 @@ export function FieldShell({
   className?: string;
 }) {
   return (
-    <div className={`grid content-start gap-1 sm:row-span-3 sm:grid-rows-subgrid ${className}`}>
+    // `min-w-0` matters more than it looks: a grid item defaults to a minimum
+    // of its content's intrinsic width, and <input type="date"> carries a wide
+    // one because of its picker UI. At 200% text in a 320px viewport that
+    // pushed the whole page sideways rather than letting the field shrink.
+    // `grid-cols-1` is load-bearing, not decoration. Tailwind's grid-cols-1 is
+    // `minmax(0, 1fr)`, which caps the column at the container. Without it the
+    // implicit `auto` track is sized to the widest child's min-content — and
+    // <input type="date"> carries a large intrinsic width from its picker UI,
+    // so the track grew to 313px inside a 190px shell and every sibling,
+    // labels included, stretched out with it.
+    <div
+      className={`grid min-w-0 grid-cols-1 content-start gap-1 sm:row-span-3 sm:grid-rows-subgrid ${className}`}
+    >
       <label htmlFor={htmlFor} className={LABEL}>
         {label}
       </label>
@@ -101,7 +113,9 @@ export function FieldShell({
 /** The row container fields sit in, supplying the tracks they subgrid onto. */
 export function FieldRow({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`grid gap-x-4 gap-y-4 sm:grid-cols-2 sm:grid-rows-[auto_auto_auto] ${className}`}>
+    <div
+      className={`grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 sm:grid-rows-[auto_auto_auto] ${className}`}
+    >
       {children}
     </div>
   );

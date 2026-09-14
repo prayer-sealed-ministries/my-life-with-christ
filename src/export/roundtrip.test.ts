@@ -5,6 +5,7 @@ import { buildArchive, buildContext, buildJourneyJson, matchesFilter } from './a
 import { applyImport, parseImport, previewImport } from './importer';
 import { readZip, zipEntryText } from './zip';
 import { ALL_ENTRIES, AWKWARD, COLLIDER_A, COLLIDER_B, READING, SERMON } from './fixtures';
+import { examinedAtLeast } from '../testing/floor';
 import outlines from '../data/outlines.json';
 import topicsFile from '../data/topics.json';
 import type { Entry, OutlineBook, Topic } from '../types';
@@ -50,6 +51,8 @@ describe('round trip', () => {
     await applyImport(parsed, db, 'merge');
 
     const after = byId(await db.listEntries());
+    // toEqual([], []) is a pass. Assert something came back before comparing.
+    examinedAtLeast(after.length, ALL_ENTRIES.length, 'entries restored from the archive');
     expect(after).toEqual(before);
   });
 
@@ -60,7 +63,9 @@ describe('round trip', () => {
     const parsed = await parseImport(json);
     await applyImport(parsed, db, 'merge');
 
-    expect(byId(await db.listEntries())).toEqual(byId(ALL_ENTRIES));
+    const restored = byId(await db.listEntries());
+    examinedAtLeast(restored.length, ALL_ENTRIES.length, 'entries restored from journey.json');
+    expect(restored).toEqual(byId(ALL_ENTRIES));
   });
 
   it('preserves unicode, markdown and newlines verbatim', async () => {
@@ -93,6 +98,8 @@ describe('the archive itself', () => {
   it('contains every file the spec calls for', async () => {
     const archive = await buildArchive(archiveOptions(ALL_ENTRIES));
     const paths = archive.paths;
+    examinedAtLeast(paths.length, 12, 'files in the archive');
+    examinedAtLeast(archive.bytes.length, 5_000, 'bytes in the archive');
 
     for (const required of [
       'README.txt',

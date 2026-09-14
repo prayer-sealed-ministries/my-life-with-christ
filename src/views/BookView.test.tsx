@@ -72,7 +72,12 @@ describe('BookView', () => {
     renderBook('genesis');
     await screen.findByRole('heading', { level: 1, name: 'Genesis' });
 
-    const links = screen.getAllByRole('link');
+    // Scoped to passage links: the view also carries topic chips, and counting
+    // every anchor on the page would break whenever a neighbouring section
+    // gained one.
+    const links = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('#/passage/'));
 
     expect(links).toHaveLength(GENESIS_SEGMENTS.length);
     expect(links.map((link) => link.getAttribute('href'))).toEqual(
@@ -88,6 +93,7 @@ describe('BookView', () => {
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Topics in this book',
       `Passages (${GENESIS_SEGMENTS.length} passages)`,
     ]);
     expect(screen.queryAllByRole('heading', { level: 3 })).toHaveLength(0);
@@ -110,7 +116,9 @@ describe('BookView', () => {
     renderBook('genesis');
     await screen.findByRole('heading', { level: 1, name: 'Genesis' });
 
-    const links = screen.getAllByRole('link');
+    const links = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('#/passage/'));
     GENESIS_SEGMENTS.forEach((segment, index) => {
       const title = segmentTitle(segment);
       expect(links[index]).toHaveTextContent(title);
@@ -156,7 +164,9 @@ describe('BookView', () => {
     renderBook('genesis');
     await screen.findByRole('heading', { level: 1, name: 'Genesis' });
 
-    const links = screen.getAllByRole('link');
+    const links = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('#/passage/'));
     expect(links).toHaveLength(50);
     expect(links[0]).toHaveTextContent('Genesis 1');
     expect(links[0]).toHaveAttribute('href', '#/passage/genesis/genesis-1');
@@ -269,7 +279,11 @@ describe('BookView', () => {
     expect(status).not.toHaveTextContent('No journal entries in Genesis yet.');
 
     // The book is still fully browsable; only the counts are in doubt.
-    expect(screen.getAllByRole('link')).toHaveLength(GENESIS_SEGMENTS.length);
+    expect(
+      screen
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('href')?.startsWith('#/passage/')),
+    ).toHaveLength(GENESIS_SEGMENTS.length);
   });
 
   it('says plainly when a book id is unknown, and offers the way back', async () => {

@@ -1,0 +1,78 @@
+/**
+ * The list of views to sweep, resolved against the build actually under test.
+ *
+ * Hardcoding `#/passage/matthew/matthew-5-1-12` tied the whole suite to the
+ * `full` data profile: under `refs-only` there are no outline divisions, so
+ * that id names nothing and the view renders a graceful "passage not found".
+ * Graceful is right for a reader following an old link — but as a test target
+ * it meant the suite swept a not-found page and reported it clean.
+ *
+ * Worse, nothing said which profile was under test. `dist/` holds whatever was
+ * built last, so the same command tested different things depending on what had
+ * run before it.
+ *
+ * So the passage is discovered from the running build, and the profile is
+ * reported rather than assumed.
+ */
+
+import { expect, type Page } from '@playwright/test';
+
+export interface ViewTarget {
+  key: string;
+  hash: string;
+}
+
+/** Which data profile the build under test carries. */
+export async function detectProfile(page: Page): Promise<'full' | 'refs-only'> {
+  await page.goto('#/book/matthew');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
+
+  // Under `full` a book divides into outline entries; under `refs-only` it is
+  // one segment per chapter, so Matthew has exactly 28.
+  const links = await page.locator('main a[href^="#/passage/matthew/"]').count();
+  return links === 28 ? 'refs-only' : 'full';
+}
+
+/**
+ * A passage hash that exists in this build.
+ *
+ * Read from the book page rather than constructed, so it is correct under
+ * either profile and stays correct if the segmentation ever changes again.
+ */
+export async function resolvePassageHash(page: Page, bookId = 'matthew'): Promise<string> {
+  await page.goto(`#/book/${bookId}`);
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
+
+  const links = page.locator(`main a[href^="#/passage/${bookId}/"]`);
+  const count = await links.count();
+  expect(count, `no passage links on the ${bookId} page — the build may be broken`).toBeGreaterThan(0);
+
+  // The fifth, where there is one: the first entry of a book is often an
+  // introduction or genealogy, and a mid-book passage exercises more of the
+  // view (previous/next links, topic chips, existing entries).
+  const href = await links.nth(Math.min(4, count - 1)).getAttribute('href');
+  expect(href, 'passage link had no href').toBeTruthy();
+  return href!;
+}
+
+/** Every view, with the passage resolved against the running build. */
+export async function resolveViews(page: Page): Promise<ViewTarget[]> {
+  const passage = await resolvePassageHash(page);
+
+  return [
+    { key: 'home', hash: '#/' },
+    { key: 'browse', hash: '#/browse' },
+    { key: 'book', hash: '#/book/matthew' },
+    { key: 'passage', hash: passage },
+    { key: 'topics', hash: '#/topics' },
+    { key: 'topic', hash: '#/topic/anxiety' },
+    { key: 'timeline', hash: '#/timeline' },
+    { key: 'search', hash: '#/search?q=whitfield' },
+    { key: 'entry-edit', hash: '#/entry/seed-01' },
+    { key: 'entry-new', hash: '#/entry/new' },
+    { key: 'data', hash: '#/data' },
+    { key: 'legacy', hash: '#/legacy' },
+  ];
+}

@@ -64,6 +64,27 @@ async function collectFiles(dir) {
 // Assertions
 // ---------------------------------------------------------------------------
 
+/**
+ * Things that MUST be present in any real build of this app.
+ *
+ * Every other assertion here is of the form "none of X appears", which is
+ * satisfied perfectly by a build containing nothing at all — an empty dist/
+ * passed all four and reported "publishable". A gate that cannot tell an empty
+ * directory from a clean build is not a gate.
+ *
+ * These sentinels ship under BOTH data profiles: the app shell, and content
+ * from topics.json and the KJV, neither of which the profile switch touches.
+ */
+const SENTINELS = [
+  { needle: 'Journey', why: 'the application name, in index.html' },
+  { needle: 'Thankfulness', why: 'a topic name from topics.json, which ships in every profile' },
+  { needle: 'Be careful for nothing', why: 'KJV text, which ships in every profile' },
+];
+
+/** Below these, the verifier is not looking at a real build. */
+const MINIMUM_FILES = 5;
+const MINIMUM_BYTES = 100_000;
+
 /** Files that must never be inside a deployed build, at any path. */
 const FORBIDDEN_PATTERNS = [
   { test: (path) => /\.pdf$/i.test(path), why: 'the purchased source PDFs' },
@@ -155,7 +176,30 @@ async function main() {
   /** @type {Array<{assertion: string, detail: string}>} */
   const failures = [...erosion];
 
-  // ---- 1. No forbidden file is present at all. ----
+  // ---- 1. The verifier is actually reading a build. ----
+  // This must come first. Everything below is a "none of X is present" check,
+  // and all of them pass on an empty directory.
+  let totalBytes = 0;
+  for (const file of textFiles) totalBytes += (await stat(file)).size;
+
+  if (files.length < MINIMUM_FILES) {
+    failures.push({
+      assertion: 'BUNDLE_WAS_READ',
+      detail: `${dist}/ holds ${files.length} files, expected at least ${MINIMUM_FILES}. Is this a real build?`,
+    });
+  }
+  if (totalBytes < MINIMUM_BYTES) {
+    failures.push({
+      assertion: 'BUNDLE_WAS_READ',
+      detail: `${dist}/ holds ${totalBytes} searchable bytes, expected at least ${MINIMUM_BYTES}.`,
+    });
+  }
+  if (!relPaths.some((path) => path.endsWith('index.html'))) {
+    failures.push({ assertion: 'BUNDLE_WAS_READ', detail: `no index.html in ${dist}/` });
+  }
+  if (!relPaths.some((path) => /\.js$/.test(path))) {
+    failures.push({ assertion: 'BUNDLE_WAS_READ', detail: `no JavaScript bundle in ${dist}/` });
+  }
   for (const path of relPaths) {
     for (const rule of FORBIDDEN_PATTERNS) {
       if (rule.test(path)) {
@@ -180,10 +224,15 @@ async function main() {
   // ---- 3 and 4. Prose and divisions, across every searchable file. ----
   const proseHits = [];
   const divisionHits = [];
+  const sentinelsFound = new Set();
 
   for (const file of textFiles) {
     const content = await readFile(file, 'utf8');
     const path = relative(distDir, file);
+
+    for (const sentinel of SENTINELS) {
+      if (content.includes(sentinel.needle)) sentinelsFound.add(sentinel.needle);
+    }
 
     for (const [probe, kind] of prose) {
       if (content.includes(probe)) proseHits.push({ path, kind, probe });
@@ -195,6 +244,17 @@ async function main() {
           break;
         }
       }
+    }
+  }
+
+  // Known-present content must be found. A count alone can be satisfied by the
+  // wrong files; this proves the search reached the content it claims to search.
+  for (const sentinel of SENTINELS) {
+    if (!sentinelsFound.has(sentinel.needle)) {
+      failures.push({
+        assertion: 'BUNDLE_WAS_READ',
+        detail: `sentinel ${JSON.stringify(sentinel.needle)} (${sentinel.why}) was not found anywhere in ${dist}/`,
+      });
     }
   }
 
@@ -235,6 +295,9 @@ async function main() {
     }
 
     console.log('PASS');
+    console.log(
+      `  BUNDLE_WAS_READ       ${files.length} files, ${Math.round(totalBytes / 1024)}kB searched, ${sentinelsFound.size}/${SENTINELS.length} sentinels found`,
+    );
     console.log(`  PROBE_SET_INTACT      gate is as strong as its frozen baseline`);
     console.log('  NO_SOURCE_FILES       no PDFs, reports, or outlines.json in the build');
     console.log('  NO_SOURCE_MAPS        no .map files that could carry the original modules');
@@ -252,6 +315,14 @@ async function main() {
     console.error('FAILED — PROBE_SET_INTACT: the gate has weakened.\n');
     for (const failure of erosion) console.error(`      ${failure.detail}`);
     console.error('\nRe-run with --accept-smaller-probe-set only if the shrink is understood and intended.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const unread = failures.filter((failure) => failure.assertion === 'BUNDLE_WAS_READ');
+  if (unread.length > 0) {
+    console.error('FAILED — BUNDLE_WAS_READ: this is not a real build.\n');
+    for (const failure of unread) console.error(`      ${failure.detail}`);
     process.exitCode = 1;
     return;
   }

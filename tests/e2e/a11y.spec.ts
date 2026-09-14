@@ -10,7 +10,9 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+import { assertRendered, examinedAtLeast } from './floor';
 import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { detectProfile, resolveViews, type ViewTarget } from './views';
 
 const WIDTHS = [
   { name: '390', width: 390, height: 844 },
@@ -19,20 +21,6 @@ const WIDTHS = [
 
 const THEMES = ['light', 'dark'] as const;
 
-const VIEWS = [
-  { key: 'home', hash: '#/' },
-  { key: 'browse', hash: '#/browse' },
-  { key: 'book', hash: '#/book/matthew' },
-  { key: 'passage', hash: '#/passage/matthew/matthew-5-1-12' },
-  { key: 'topics', hash: '#/topics' },
-  { key: 'topic', hash: '#/topic/anxiety' },
-  { key: 'timeline', hash: '#/timeline' },
-  { key: 'search', hash: '#/search?q=whitfield' },
-  { key: 'entry-edit', hash: '#/entry/seed-01' },
-  { key: 'entry-new', hash: '#/entry/new' },
-  { key: 'data', hash: '#/data' },
-  { key: 'legacy', hash: '#/legacy' },
-] as const;
 
 /** The standard this project holds itself to. */
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -43,13 +31,22 @@ async function settle(page: Page) {
   await page.waitForTimeout(400);
 }
 
-async function ready(page: Page, theme: 'light' | 'dark', size: { width: number; height: number }) {
+async function ready(
+  page: Page,
+  theme: 'light' | 'dark',
+  size: { width: number; height: number },
+): Promise<ViewTarget[]> {
   await page.setViewportSize(size);
   await dismissWelcome(page);
   await forceTheme(page, theme);
   await page.goto('#/');
   await page.waitForLoadState('networkidle');
   await seedEntries(page);
+
+  // Say which build this ran against, so a green suite cannot quietly mean a
+  // different profile than the reader assumes.
+  console.log(`  data profile under test: ${await detectProfile(page)}`);
+  return resolveViews(page);
 }
 
 test.describe('axe-core, WCAG 2.1 AA', () => {
@@ -57,15 +54,25 @@ test.describe('axe-core, WCAG 2.1 AA', () => {
     for (const size of WIDTHS) {
       test(`no violations — ${theme} @ ${size.name}px`, async ({ page }) => {
         test.setTimeout(240_000);
-        await ready(page, theme, size);
+        const VIEWS = await ready(page, theme, size);
 
         const found: string[] = [];
+        let totalChecks = 0;
 
         for (const view of VIEWS) {
           await page.goto(view.hash);
           await settle(page);
 
-          const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+          // A view that failed to render still has an <h1> and still passes
+          // every axe rule, because there is nothing there to violate.
+          await assertRendered(page, view.key);
+
+          const { violations, passes } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+
+          // axe reports what it checked as well as what failed. Zero passing
+          // checks means it examined nothing, and "no violations" means nothing.
+          examinedAtLeast(passes.length, 5, `axe rule results on ${view.key}`);
+          totalChecks += passes.length + violations.length;
 
           for (const violation of violations) {
             const where = violation.nodes
@@ -78,6 +85,7 @@ test.describe('axe-core, WCAG 2.1 AA', () => {
           }
         }
 
+        examinedAtLeast(totalChecks, VIEWS.length * 10, 'axe rule results across all views');
         expect(found.join('\n')).toBe('');
       });
     }
@@ -88,13 +96,15 @@ test.describe('heading order', () => {
   for (const theme of THEMES) {
     test(`exactly one h1 and no skipped levels — ${theme}`, async ({ page }) => {
       test.setTimeout(180_000);
-      await ready(page, theme, { width: 1280, height: 900 });
+      const VIEWS = await ready(page, theme, { width: 1280, height: 900 });
 
       const problems: string[] = [];
+      let totalHeadings = 0;
 
       for (const view of VIEWS) {
         await page.goto(view.hash);
         await settle(page);
+        await assertRendered(page, view.key);
 
         // Only headings inside <main>: the shell's chrome is not the view's.
         const levels = await page.locator('main :is(h1,h2,h3,h4,h5,h6)').evaluateAll((nodes) =>
@@ -105,6 +115,9 @@ test.describe('heading order', () => {
             })
             .map((node) => Number(node.tagName.slice(1))),
         );
+
+        totalHeadings += levels.length;
+        examinedAtLeast(levels.length, 1, `headings in ${view.key}`);
 
         const h1s = levels.filter((level) => level === 1).length;
         if (h1s !== 1) problems.push(`[${view.key}] expected exactly 1 h1, found ${h1s}`);
@@ -119,6 +132,7 @@ test.describe('heading order', () => {
         }
       }
 
+      examinedAtLeast(totalHeadings, VIEWS.length, 'headings across all views');
       expect(problems.join('\n')).toBe('');
     });
   }
@@ -127,13 +141,19 @@ test.describe('heading order', () => {
 test.describe('form controls carry real labels', () => {
   test('no placeholder is standing in for a label', async ({ page }) => {
     test.setTimeout(180_000);
-    await ready(page, 'light', { width: 1280, height: 900 });
+    const VIEWS = await ready(page, 'light', { width: 1280, height: 900 });
 
     const problems: string[] = [];
+    let totalControls = 0;
 
     for (const view of VIEWS) {
       await page.goto(view.hash);
       await settle(page);
+      await assertRendered(page, view.key);
+
+      totalControls += await page
+        .locator('main :is(input, textarea, select)')
+        .evaluateAll((nodes) => nodes.filter((n) => (n as HTMLInputElement).type !== 'hidden').length);
 
       const bad = await page
         .locator('main :is(input, textarea, select)')
@@ -179,6 +199,9 @@ test.describe('form controls carry real labels', () => {
       }
     }
 
+    // Several views carry no form control at all, which is fine — but across
+    // the whole app there must be controls, or this check proved nothing.
+    examinedAtLeast(totalControls, 10, 'form controls across all views');
     expect(problems.join('\n')).toBe('');
   });
 });

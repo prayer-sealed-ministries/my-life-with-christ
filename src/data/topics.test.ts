@@ -4,6 +4,7 @@ import topicsFile from './topics.json';
 import versification from './kjv/versification.json';
 import outlines from './outlines.json';
 import { resolveTopicEntries } from '../lib/passages';
+import { examinedAtLeast } from '../testing/floor';
 import type { OutlineBook, Topic } from '../types';
 
 const topics = topicsFile.topics as Topic[];
@@ -43,9 +44,11 @@ describe('topics.json', () => {
   // reader, so every single one is checked against the real KJV versification.
   it('references only verses that exist in the KJV', () => {
     const problems: string[] = [];
+    let refsChecked = 0;
 
     for (const topic of topics) {
       for (const ref of topic.refs) {
+        refsChecked += 1;
         const chapters = counts[ref.book];
         const where = `${topic.id}: ${ref.book} ${ref.chapterStart}:${ref.verseStart}-${ref.chapterEnd}:${ref.verseEnd}`;
 
@@ -73,6 +76,9 @@ describe('topics.json', () => {
       }
     }
 
+    // 344 refs at the time of writing. An empty topic set would otherwise
+    // report a clean validation.
+    examinedAtLeast(refsChecked, 200, 'topic references');
     expect(problems).toEqual([]);
   });
 
@@ -101,11 +107,15 @@ describe('topics stand alone', () => {
   it('resolves to outline entries when outlines ARE loaded', () => {
     const byId = new Map(books.map((book) => [book.id, book]));
     const empty: string[] = [];
+    let resolved = 0;
 
     for (const topic of topics) {
-      if (resolveTopicEntries(topic, byId, counts).length === 0) empty.push(topic.id);
+      const entries = resolveTopicEntries(topic, byId, counts);
+      resolved += entries.length;
+      if (entries.length === 0) empty.push(topic.id);
     }
 
+    examinedAtLeast(resolved, topics.length, 'topic-to-outline links');
     expect(empty).toEqual([]);
   });
 

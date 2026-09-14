@@ -18,7 +18,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "gate": "npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only",
     "test:e2e": "playwright test",
-    "test:a11y": "playwright test a11y.spec.ts keyboard.spec.ts contrast.spec.ts",
+    "test:a11y": "playwright test a11y.spec.ts keyboard.spec.ts contrast.spec.ts reflow.spec.ts",
     "screenshots": "playwright test screenshots.spec.ts"
   },
   "dependencies": {

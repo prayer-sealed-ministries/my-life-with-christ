@@ -10,6 +10,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
+import { examinedAtLeast } from './floor';
 import { forceTheme, seedEntries } from './seed';
 
 /** What currently has focus, described well enough to read in a failure. */
@@ -222,6 +223,11 @@ test('no keyboard trap anywhere in the journal views', async ({ page }) => {
       const state = await focused(page);
       stops.push(state.signature || state.tag);
     }
+
+    // A page with nothing focusable produces thirty identical BODY stops and
+    // no "stuck" run long enough to fail — so require real, distinct stops.
+    const distinct = new Set(stops.filter((stop) => stop !== 'BODY'));
+    examinedAtLeast(distinct.size, 3, `distinct focus stops in ${hash}`);
 
     let stuck = 0;
     for (let i = 1; i < stops.length; i += 1) {

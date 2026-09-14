@@ -13,7 +13,9 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
+import { assertRendered, examinedAtLeast } from './floor';
 import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { detectProfile, resolvePassageHash } from './views';
 
 const WIDTHS = [
   { name: '390', width: 390, height: 844 },
@@ -27,7 +29,8 @@ const VIEWS = [
   { key: '01-home', hash: '#/', heading: 'Journey' },
   { key: '02-browse', hash: '#/browse', heading: 'The Bible' },
   { key: '03-book', hash: '#/book/matthew', heading: 'Matthew' },
-  { key: '04-passage', hash: '#/passage/matthew/matthew-5-1-12', heading: null },
+  // Replaced at runtime with a passage that exists in the build under test.
+  { key: '04-passage', hash: '', heading: null },
   { key: '05-topics', hash: '#/topics', heading: 'Topics' },
   { key: '06-topic', hash: '#/topic/anxiety', heading: 'Anxiety' },
   { key: '07-timeline', hash: '#/timeline', heading: null },
@@ -62,12 +65,24 @@ test.describe('populated', () => {
         await page.waitForLoadState('networkidle');
         await seedEntries(page);
 
+        console.log(`  data profile under test: ${await detectProfile(page)}`);
+        const passage = await resolvePassageHash(page);
+        const views = VIEWS.map((view) =>
+          view.key === '04-passage' ? { ...view, hash: passage } : view,
+        );
+
         const problems: string[] = [];
         page.on('pageerror', (error) => problems.push(`${error.message}`));
 
-        for (const view of VIEWS) {
+        let totalText = 0;
+
+        for (const view of views) {
           await page.goto(view.hash);
           await settle(page);
+
+          // A screenshot of a blank page is easy to skim past in a folder of
+          // sixty. Assert each view actually rendered before capturing it.
+          totalText += await assertRendered(page, view.key);
 
           if (view.key === '10-entry-new') {
             // Mid-write, which is the state this view is actually used in.
@@ -85,6 +100,7 @@ test.describe('populated', () => {
           }
         }
 
+        examinedAtLeast(totalText, views.length * 120, 'characters rendered across all views');
         expect(problems, `page errors: ${problems.join(' | ')}`).toEqual([]);
       });
     }

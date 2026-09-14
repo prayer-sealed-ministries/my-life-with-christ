@@ -17,13 +17,10 @@
 
 import { expect, test } from '@playwright/test';
 
+import { assertRendered, examinedAtLeast } from './floor';
 import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { detectProfile, resolveViews } from './views';
 
-const VIEWS = [
-  '#/', '#/browse', '#/book/matthew', '#/passage/matthew/matthew-5-1-12',
-  '#/topics', '#/topic/anxiety', '#/timeline', '#/search?q=whitfield',
-  '#/entry/seed-01', '#/entry/new', '#/data', '#/legacy',
-];
 
 interface Sample {
   kind: 'text' | 'placeholder' | 'disabled';
@@ -166,6 +163,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.waitForLoadState('networkidle');
     await seedEntries(page);
 
+    console.log(`  data profile under test: ${await detectProfile(page)}`);
+    const VIEWS = (await resolveViews(page)).map((target) => target.hash);
+
     const all: Array<Sample & { view: string }> = [];
 
     for (const view of VIEWS) {
@@ -173,8 +173,12 @@ for (const theme of ['light', 'dark'] as const) {
       await page.waitForLoadState('networkidle');
       await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
       await page.waitForTimeout(300);
+      await assertRendered(page, view);
 
       const measured = await page.evaluate(measureContrast);
+      // A view that measured no colour pair contributes nothing, and its
+      // silence would be indistinguishable from a clean result.
+      examinedAtLeast(measured.length, 3, `colour pairs in ${view}`);
       all.push(...measured.map((row) => ({ ...row, view })));
     }
 
@@ -203,7 +207,8 @@ for (const theme of ['light', 'dark'] as const) {
         ? `  including ${placeholders.length} placeholder samples`
         : '  no placeholder text anywhere — every field uses a real label',
     );
-    expect(disabled.length, 'no disabled control was measured — the check would be vacuous').toBeGreaterThan(0);
+    examinedAtLeast(all.length, 40, 'colour pairs across all views');
+    examinedAtLeast(disabled.length, 1, 'disabled controls');
     console.log(`  including ${disabled.length} disabled-control samples`);
 
     const report = failures

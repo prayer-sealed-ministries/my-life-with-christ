@@ -80,7 +80,7 @@ function makeCtx(overrides: Partial<ExportContext> = {}): ExportContext {
     outlineBooks: new Map(),
     outlineEntries: new Map(),
     topics: new Map([
-      ['grief', { id: 'grief', name: 'Grief', description: 'When someone is gone.', refs: [] }],
+      ['grief', { id: 'grief', name: 'Grief', description: 'When someone is gone.', aliases: [], refs: [] }],
     ]),
     passages: new Map(),
     noteFilenames: buildNoteFilenames(entries),

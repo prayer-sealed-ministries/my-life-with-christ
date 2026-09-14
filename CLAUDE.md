@@ -76,7 +76,7 @@ The original spelling always stays on the record.
 An adjudication marked `resolved: false` is an open question. It is NOT applied —
 the entry keeps the source reading and the report raises it every run.
 
-### 2. Topics never depend on outlines
+### 2. Topics never depend on outlines, and are visible from both ends
 
 `topics.json` maps to scripture refs, never to outline entry ids. Under the
 `refs-only` data profile the outline layer is absent entirely, and a topic
@@ -86,6 +86,13 @@ The outline layer is an *enhancement* over topics, never a dependency. Same rule
 for journal entries: a passage anchor always carries a resolved scripture ref and
 may additionally carry an outline entry id. A journal written under `full` must
 stay fully readable after an export/import into `refs-only`.
+
+`src/lib/topic-index.ts` builds the reverse index — passage to topics — at load,
+from `topics.json` and versification alone. Under `refs-only` it is the entire
+discovery layer, so it must never acquire an outline dependency. Search
+(`src/lib/search.ts`) covers typed references, topics and their aliases, book
+names and their aliases, the journal, and outline titles where they exist; its
+empty state names every source it searched and any the build cannot.
 
 ### 3. Every passage is reachable and journalable
 
@@ -139,9 +146,35 @@ npm run test:e2e       # all of the above
 | `a11y.spec.ts` | axe-core at WCAG 2.1 AA over 12 views × 2 themes × 2 widths; exactly one h1 per view with no skipped levels; every control labelled by a real `<label>`, never by a placeholder |
 | `keyboard.spec.ts` | the first-visit dialog traps focus and returns it; Escape dismisses; the skip link works; an entry can be written and saved with no mouse at all; no focus trap in any view |
 | `contrast.spec.ts` | computed contrast on the rendered page, both themes, including placeholder and disabled text |
+| `reflow.spec.ts` | the AA criteria axe cannot check — 1.4.10 reflow at 320 CSS px, 1.4.4 text at 200%, 1.4.12 reader-imposed text spacing, and the combinations |
 | `screenshots.spec.ts` | evidence, not assertions — output lands in `screenshots/` |
 
-Two things that cost real time to learn, so they are written down:
+### Floors: no check may pass while examining nothing
+
+Nearly every check here is shaped as *collect problems, assert the list is
+empty*. Every one of them passes trivially when the collection step yields
+nothing — and this repo has already shipped that bug twice:
+
+- A contrast regex matched zero colours (Tailwind emits `oklch()`, the regex
+  wanted `rgb()`), so the suite reported a clean pass having measured nothing.
+- **An empty `dist/` passed all four gate assertions and printed "This build is
+  publishable."** The most important gate in the repo could not distinguish an
+  empty directory from a clean build.
+
+So a check is not finished until it also asserts *what it looked at*. Use
+`examinedAtLeast()` from `src/testing/floor.ts` (or `tests/e2e/floor.ts`), and
+`assertRendered()` before measuring a page — an error page satisfies every
+structural check while containing nothing.
+
+`verify-bundle.mjs` additionally looks for three sentinels that ship under every
+data profile. A count can be satisfied by the wrong files; a known-present
+string proves the search reached the content it claims to search.
+
+The same trap applies to shell commands: **do not pipe a build to `/dev/null`.**
+A silently failing build leaves a stale `dist/`, and every conclusion drawn from
+it is worthless.
+
+Two more things that cost real time to learn, so they are written down:
 
 - **Colours must be parsed by the browser, not by regex.** Tailwind v4 emits
   `oklch()`, and `getComputedStyle` returns it verbatim. A regex for `rgb()`
@@ -302,7 +335,7 @@ machine-decidable part. It cannot judge:
   is visible. They cannot tell you it landed where a person would expect.
 - **Cognitive load.** Whether the fast-capture path is genuinely fast for
   somebody writing in a pew, on a phone, one-handed, during a sermon.
-- **Zoom and reflow.** 400% zoom and 320px reflow (1.4.10) are not covered.
+- ~~Zoom and reflow~~ — now covered by `reflow.spec.ts` (1.4.10, 1.4.4, 1.4.12).
 - **Voice control and switch access.** Untested entirely.
 - **Real assistive technology on real devices.** Chromium headless is not a
   screen reader, and Playwright's accessibility tree is not what a user hears.

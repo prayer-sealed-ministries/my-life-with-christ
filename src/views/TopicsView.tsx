@@ -107,9 +107,12 @@ export default function TopicsView() {
           </EmptyState>
         </div>
       ) : (
+        // `min-w-0` on each item: a grid item's default minimum is its
+        // content's intrinsic width, so a long description refuses to wrap and
+        // widens the whole page. It only shows at 320px or 200% text.
         <ul className="mt-4 grid gap-3 sm:grid-cols-2">
           {shown.map((topic) => (
-            <li key={topic.id}>
+            <li key={topic.id} className="min-w-0">
               <Link
                 to={{ name: 'topic', topicId: topic.id }}
                 className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-500 dark:hover:bg-slate-800"

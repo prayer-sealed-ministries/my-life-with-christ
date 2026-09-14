@@ -5,6 +5,7 @@ import { buildIndex } from './verse-index';
 import outlines from '../data/outlines.json';
 import versification from '../data/kjv/versification.json';
 import type { OutlineBook, OutlineEntry } from '../types';
+import { examinedAtLeast } from '../testing/floor';
 
 const books = outlines as unknown as OutlineBook[];
 const counts = versification as Record<string, number[]>;
@@ -145,12 +146,17 @@ describe('every real book is fully reachable', () => {
   });
 
   it('gives every segment a usable id and reference', () => {
+    let segmentsChecked = 0;
+
     for (const book of books) {
       for (const segment of buildSegments(book, counts[book.id])) {
+        segmentsChecked += 1;
         expect(segment.id, `${book.name} ${segment.ref}`).toMatch(/\S/);
         expect(segment.ref, `${book.name} ${segment.id}`).toMatch(/\S/);
       }
     }
+
+    examinedAtLeast(segmentsChecked, 1000, 'segments across the canon');
   });
 
   it('makes Genesis 35:1-15 reachable as an uncovered segment', () => {

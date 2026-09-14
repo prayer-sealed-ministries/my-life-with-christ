@@ -28,6 +28,25 @@ const stepsOf = (workflow, jobName) => workflow.jobs[jobName]?.steps ?? [];
 const stepText = (step) =>
   [step.run ?? '', step.uses ?? '', JSON.stringify(step.env ?? {}), JSON.stringify(step.with ?? {})].join(' ');
 
+describe('the workflows were actually read', () => {
+  // Every assertion below is "no step does X", which an empty workflow
+  // satisfies perfectly. These floors are what make the rest mean anything.
+  it('parsed a Pages workflow with real jobs and steps', () => {
+    expect(pages, 'pages.yml did not parse').toBeTruthy();
+    expect(Object.keys(pages.jobs ?? {}).length).toBeGreaterThanOrEqual(2);
+    expect(stepsOf(pages, 'build').length).toBeGreaterThanOrEqual(5);
+    expect(stepsOf(pages, 'deploy').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('parsed a CI workflow with real jobs and steps', () => {
+    expect(ci, 'ci.yml did not parse').toBeTruthy();
+    expect(Object.keys(ci.jobs ?? {}).length).toBeGreaterThanOrEqual(3);
+    for (const job of Object.keys(ci.jobs)) {
+      expect(stepsOf(ci, job).length, `job "${job}" has no steps`).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
 describe('the Pages workflow can only ever publish a refs-only build', () => {
   it('has exactly the two jobs it is supposed to have', () => {
     expect(Object.keys(pages.jobs).sort()).toEqual(['build', 'deploy']);

@@ -12,6 +12,7 @@ import outlines from '../data/outlines.json';
 import topicsFile from '../data/topics.json';
 import versification from '../data/kjv/versification.json';
 import { referenceSpan, buildIndex } from '../lib/verse-index';
+import { examinedAtLeast } from '../testing/floor';
 import type { Entry, OutlineBook, Topic } from '../types';
 
 const fullBooks = outlines as unknown as OutlineBook[];
@@ -67,8 +68,11 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
     await applyImport(parsed, db, 'merge');
 
     const dangling: string[] = [];
+    let anchorsChecked = 0;
+
     for (const entry of await db.listEntries()) {
       for (const anchor of entry.anchors) {
+        anchorsChecked += 1;
         if (anchor.kind === 'topic') {
           if (!topics.some((topic) => topic.id === anchor.topicId)) dangling.push(`${entry.id}: topic ${anchor.topicId}`);
           continue;
@@ -84,6 +88,9 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
       }
     }
 
+    // Without this, an import that silently dropped every anchor would pass:
+    // no anchors means no dangling anchors.
+    examinedAtLeast(anchorsChecked, ALL_ENTRIES.length, 'anchors');
     expect(dangling).toEqual([]);
   });
 
@@ -94,7 +101,10 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
     const parsed = await parseImport(archive.bytes, { resolveOutlineId: () => undefined });
     await applyImport(parsed, db, 'merge');
 
-    for (const entry of await db.listEntries()) {
+    const imported = await db.listEntries();
+    examinedAtLeast(imported.length, ALL_ENTRIES.length, 'imported entries');
+
+    for (const entry of imported) {
       const resolvable = entry.anchors.filter(
         (anchor) => anchor.kind === 'topic' || anchor.book in counts,
       );

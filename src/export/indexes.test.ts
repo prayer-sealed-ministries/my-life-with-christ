@@ -21,9 +21,9 @@ const BOOKS: Array<[string, string, number]> = [
 ];
 
 const TOPICS: Topic[] = [
-  { id: 'grief', name: 'Grief', description: 'Losing someone, and what to do with the days after.', refs: [] },
-  { id: 'money', name: 'Money', description: 'Earning it, owing it, and giving it away.', refs: [] },
-  { id: 'faith', name: 'Faith', description: 'Trusting God when nothing is settled yet.', refs: [] },
+  { id: 'grief', name: 'Grief', description: 'Losing someone, and what to do with the days after.', aliases: [], refs: [] },
+  { id: 'money', name: 'Money', description: 'Earning it, owing it, and giving it away.', aliases: [], refs: [] },
+  { id: 'faith', name: 'Faith', description: 'Trusting God when nothing is settled yet.', aliases: [], refs: [] },
 ];
 
 function entry(id: string, fields: Partial<Entry> = {}): Entry {
@@ -575,7 +575,7 @@ describe('by-topic.md', () => {
   it('does not let an asterisk in a description break the emphasis around it', () => {
     const content = renderIndexes(
       makeCtx([entry('a', { anchors: [{ kind: 'topic', topicId: 'star' }] })], {
-        topics: [{ id: 'star', name: 'Money*', description: 'Earning it, *owing* it, and giving it away.', refs: [] }],
+        topics: [{ id: 'star', name: 'Money*', description: 'Earning it, *owing* it, and giving it away.', aliases: [], refs: [] }],
       }),
     )['indexes/by-topic.md'];
 
