@@ -73,6 +73,22 @@ describe('the provenance record matches reality', () => {
   it('accounts for every book exactly once', () => {
     const overlap = claimed.filter((bookId) => reserved.includes(bookId));
     expect(overlap, 'a book is both reserved and claimed as drafted').toEqual([]);
+
+    // The drafting is finished, so the two lists now have to cover the canon
+    // between them. Until they did, a book could sit with no introduction and
+    // no recorded reason, which is indistinguishable from one that was
+    // forgotten. Either it is drafted, or it is reserved and the exposure that
+    // reserved it is named.
+    const canon = Object.keys(counts);
+    examinedAtLeast(canon.length, 66, 'books in the canon');
+    const unaccounted = canon.filter(
+      (bookId) => !claimed.includes(bookId) && !reserved.includes(bookId),
+    );
+    expect(
+      unaccounted,
+      `no introduction and no recorded reason: ${unaccounted.join(', ')}`,
+    ).toEqual([]);
+    expect(claimed.length + reserved.length).toBe(canon.length);
   });
 });
 
