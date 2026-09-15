@@ -17,6 +17,7 @@ import type { Entry, EntryAnchor, EntryKind } from '../types';
 import type { ExportContext } from './context';
 import { KIND_LABELS, csvCell } from './context';
 import { refToString } from '../lib/bible';
+import { attributionText } from '../lib/attribution';
 
 // ---------------------------------------------------------------------------
 // Plain-text helpers
@@ -258,6 +259,17 @@ export function renderReadme(ctx: ExportContext): string {
           'a UK publisher would need permission. Reading it, copying it for ' +
           'your family, and keeping it are not affected.)',
       ),
+    ),
+  );
+
+  // Source attribution, in the archive as well as on the site. Neither source
+  // requires it; a record meant to outlive its software should carry it anyway.
+  blocks.push(
+    section(
+      'WHERE THESE WORDS CAME FROM',
+      ...attributionText(ctx.profile === 'full' ? 'outlines' : ctx.profile === 'public' ? 'sections' : 'none')
+        .split('\n\n')
+        .map((entry) => para(entry.replace(/\n/g, ' '))),
     ),
   );
 

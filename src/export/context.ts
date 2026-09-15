@@ -7,7 +7,7 @@
  * note is written under is the same filename every index links to.
  */
 
-import type { Entry, EntryKind, ExportFilter, OutlineBook, OutlineEntry, ScriptureRef, Topic } from '../types';
+import type { Entry, EntryKind, ExportFilter, OutlineBook, OutlineEntry, ScriptureRef, Topic, DataProfile} from '../types';
 import type { PassageVerse } from '../lib/bible';
 
 export interface ExportContext {
@@ -20,7 +20,7 @@ export interface ExportContext {
   /** ISO timestamp stamped across the archive. */
   exportedAt: string;
   /** Which data profile produced this archive. */
-  profile: 'full' | 'refs-only';
+  profile: DataProfile;
 
   /** Display name for every book id in the canon, outline layer or not. */
   bookNames: Map<string, string>;

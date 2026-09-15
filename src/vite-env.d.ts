@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 
 /** Injected by scripts/vite-plugin-data-profile.mjs. */
-declare const __DATA_PROFILE__: 'full' | 'refs-only';
+declare const __DATA_PROFILE__: 'full' | 'public' | 'refs-only';
 
 declare module 'virtual:journey-data' {
   import type { OutlineBook } from './types';
 
-  export const DATA_PROFILE: 'full' | 'refs-only';
+  export const DATA_PROFILE: 'full' | 'public' | 'refs-only';
   /**
    * True when this build carries a titled division scheme, whichever one.
    * False under `refs-only`, where no divisions ship at all.

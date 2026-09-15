@@ -29,6 +29,7 @@ import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
 import { shouldRestoreFocus } from '../lib/focus-restore';
+import { Attribution } from '../components/Attribution';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
 import { applyImport, parseImport, previewImport, type ParsedImport } from '../export/importer';
@@ -697,6 +698,10 @@ export default function DataView() {
           </Card>
         ) : null}
       </section>
+
+      {/* Not legally required for either source. Given because a record that
+          outlives its software should say where its words came from. */}
+      <Attribution />
     </div>
   );
 }

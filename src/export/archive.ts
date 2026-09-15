@@ -19,7 +19,7 @@
  * carries EXPORT-NOTE.txt stating plainly what was left out and how much.
  */
 
-import type { Entry, ExportFilter, JourneyExport, OutlineBook, ScriptureRef, Topic } from '../types';
+import type { Entry, ExportFilter, JourneyExport, OutlineBook, ScriptureRef, Topic, DataProfile} from '../types';
 import { BOOK_NAMES, BOOK_ORDER } from '../lib/canon';
 import { loadPassage, type PassageVerse } from '../lib/bible';
 import { buildNoteFilenames, refKey, type ExportContext } from './context';
@@ -37,7 +37,7 @@ export interface BuildArchiveOptions {
   filter?: ExportFilter;
   outlineBooks: OutlineBook[];
   topics: Topic[];
-  profile: 'full' | 'refs-only';
+  profile: DataProfile;
   now?: Date;
 }
 
