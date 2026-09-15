@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldRestoreFocus } from './focus-restore';
+import { shouldAbandonRestore, shouldRestoreFocus } from './focus-restore';
 
 const connected = (tag = 'button') => {
   const el = document.createElement(tag);
@@ -49,5 +49,47 @@ describe('shouldRestoreFocus', () => {
     const target = connected();
     target.setAttribute('disabled', '');
     expect(shouldRestoreFocus({ active: document.body, target, body: document.body })).toBe(false);
+  });
+
+  // The second race, which survived the first fix and failed ~1 run in 20: the
+  // effect runs BEFORE React detaches the outgoing control, so it is still
+  // connected and looks like a destination the user chose.
+  it('restores when focus is still on the control that queued the restore', () => {
+    const target = connected('input');
+    const from = connected('button');
+    expect(shouldRestoreFocus({ active: from, target, from, body: document.body })).toBe(true);
+  });
+
+  it('still stands down for a connected element that is not the one being left', () => {
+    const target = connected('input');
+    const from = connected('button');
+    const elsewhere = connected('a');
+    expect(shouldRestoreFocus({ active: elsewhere, target, from, body: document.body })).toBe(false);
+  });
+});
+
+describe('shouldAbandonRestore', () => {
+  // Not the negation of shouldRestoreFocus. A disabled target means "not yet" —
+  // the request must survive until the button is re-enabled.
+  it('keeps the request while the target is merely disabled', () => {
+    const target = connected();
+    target.setAttribute('disabled', '');
+    expect(shouldRestoreFocus({ active: document.body, target, body: document.body })).toBe(false);
+    expect(shouldAbandonRestore({ active: document.body, target, body: document.body })).toBe(false);
+  });
+
+  it('keeps the request while focus is still on the outgoing control', () => {
+    const target = connected('input');
+    const from = connected('button');
+    expect(shouldAbandonRestore({ active: from, target, from, body: document.body })).toBe(false);
+  });
+
+  it('abandons only for a connected element the user chose', () => {
+    const target = connected('input');
+    expect(shouldAbandonRestore({ active: connected('a'), target, body: document.body })).toBe(true);
+  });
+
+  it('abandons when there is no target', () => {
+    expect(shouldAbandonRestore({ active: document.body, target: null, body: document.body })).toBe(true);
   });
 });

@@ -149,6 +149,114 @@ npm run test:e2e       # all of the above
 | `reflow.spec.ts` | the AA criteria axe cannot check — 1.4.10 reflow at 320 CSS px, 1.4.4 text at 200%, 1.4.12 reader-imposed text spacing, and the combinations |
 | `screenshots.spec.ts` | evidence, not assertions — output lands in `screenshots/` |
 
+### A regression test is not done until it has been seen to FAIL
+
+**Rule for this repository, binding on anyone working in it, human or agent.**
+
+When you fix a bug and write a test for it:
+
+1. Write the test. Confirm it passes against the fix.
+2. **Revert the fix.** Not the test — the fix.
+3. **Run the test and watch it fail.** If it passes, the test does not test the
+   bug, and you have learned that before shipping instead of after.
+4. Restore the fix. Confirm it passes again.
+
+State in the commit message that you did this. "Verified by reintroducing the
+bug, which fails N cases" is the sentence to aim for.
+
+This is not a preference. It caught a live example: a regression test for a focus
+bug drove the component, parked focus on a detached node, and asserted the
+restore — and **passed against the broken code**, because jsdom resets
+`activeElement` to `<body>` before the effect runs. The race it claimed to
+reproduce never happened. It read exactly like coverage and was none.
+
+Where a race cannot be staged from outside, extract the decision as a pure
+predicate and test that directly. `src/lib/focus-restore.ts` exists for this
+reason: as a predicate, the five focus states are exact, and reintroducing the
+original bug fails three of them.
+
+### Reproduce under the conditions the failure occurred in
+
+**Rule for this repository, binding on anyone working in it, human or agent.**
+
+When something fails intermittently, reproduce it the way it failed. Not the way
+that is quick to run.
+
+A single test file runs on one worker with no contention. The full suite runs
+parallel workers competing for timers, and that is precisely what a focus race,
+a debounce, or anything touching `requestAnimationFrame` is sensitive to. A
+clean single-file run says nothing about a failure seen in a full-suite run.
+
+This cost three separate detours in one session, each with the same shape — the
+convenient check came back clean, and the real one did not:
+
+| Failure seen in | First verified with | Result |
+| --- | --- | --- |
+| a full-suite run | 60 single-file runs | clean, and wrong |
+| the e2e suite | a hand-written probe | clean, and wrong |
+| CI | local typecheck and tests | clean, and wrong — the path was machine-specific |
+
+State the conditions with the number: **"unreproduced at 150 full-suite runs"**,
+not "fixed". The two claims are different, and only one of them is measurable.
+
+Do the arithmetic before believing a clean sweep. At an observed 4.4% failure
+rate — 2 failures in 45 runs — the chance a bug survives `n` clean runs is
+`0.956^n`:
+
+| Clean runs | Chance the bug is still there |
+| ---: | ---: |
+| 8 | **69.5%** |
+| 45 | 12.9% |
+| 70 | 4.2% |
+| 100 | 1.1% |
+| **150** | **0.11%** |
+
+The 8-run row is not hypothetical. This session declared a focus race fixed on
+the strength of eight clean runs, with a **seven-in-ten chance it was still
+there** — and it was. It resurfaced twenty runs later.
+
+150 full-suite runs is the bar for calling an intermittent failure closed here.
+Below that, report it as **"unreproduced at N runs"** and give N.
+
+### Do not mutate the repo while a verification loop is running
+
+A loop measuring a moving target measures the movement.
+
+A 45-iteration suite run was left going while `src/data/intros.json` was edited
+underneath it. It duly reported a failing provenance test, which then had to be
+investigated and disproved. The finding was real; it was a finding about the
+edit, not about the code.
+
+Start the loop, leave the tree alone, read the result. If something must be
+edited meanwhile, edit a file no test reads — and check that claim rather than
+assuming it.
+
+#### Why these rules exist
+
+One session produced four distinct instrument failures, each found by the layer
+outside the one that should have caught it, never by the layer itself:
+
+| # | The instrument | What it actually did |
+| --- | --- | --- |
+| 1 | contrast suite | matched zero colours (Tailwind emits `oklch()`, the regex wanted `rgb()`) and reported a clean pass having measured nothing |
+| 2 | data gate | an **empty `dist/`** passed all four assertions and printed "This build is publishable" |
+| 3 | e2e suite | hardcoded a passage id that exists only under `full`, so it swept a not-found page and called it clean — and never said which profile it had tested |
+| 4 | attribution | written, exported, unit-tested, passing, and **called by nothing** — it shipped to production entirely unwired |
+
+| 5 | the flake hunt | 40 iterations run with `--reporter=basic`, which does not exist in vitest 5. Every run failed to start; the loop recorded 40 identical "failures" and would have hidden the real one underneath |
+| 6 | the fix for #5's target | the DataView focus race was declared fixed after the detached-node case was handled. A **second** race remained — the effect can run before React detaches the node — and it kept failing about 1 run in 20. The first fix made it rarer, which is worse than not fixing it: eight clean runs then looked like proof |
+
+A seventh was caught before shipping, by the revert-and-confirm rule: the focus
+regression test above, which passed against the broken code.
+
+The common shape is not carelessness. Every one of those checks was written
+attentively and every one passed. What they had in common is that **nobody asked
+the instrument to prove it could fail.** That is the only question that reliably
+separates a check from a decoration.
+
+So: floors on what was examined, sentinels that must be found, wiring tests as
+well as behaviour tests, and this rule.
+
 ### Floors: no check may pass while examining nothing
 
 Nearly every check here is shaped as *collect problems, assert the list is

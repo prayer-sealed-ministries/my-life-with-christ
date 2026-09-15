@@ -70,11 +70,40 @@ The machine-readable version is `_provenance` in `src/data/intros.json`.
 
 | Books | Drafted by | Exposure |
 | --- | --- | --- |
-| Ruth, Jonah, Ecclesiastes, Philippians, James | assistant (Claude Opus 5), 2026-09-14 | Had **not** read the purchased introductions for these books. Chosen for that reason. |
-| Genesis, Matthew, Mark, Luke, John, Acts, Romans, 1 Corinthians | **reserved for the owner** | An assistant read the purchased introductions for these eight on 2026-09-13, while extracting text from the source PDFs. |
-| The remaining 53 | not yet written | — |
+| The 15 listed in `intros.json` `_provenance.drafted` | assistant (Claude Opus 5), 2026-09-14/15 | Had **not** read the purchased introduction for any of them. Asserted by test against the reserved list. |
+| The 11 named below | **reserved for the owner** | Purchased introduction read on 2026-09-13. |
+| The remaining 40 | not yet written | — |
 
-The eight are reserved deliberately. A test asserts no drafted introduction
+### The eleven reserved books, by name
+
+| Book | Exposure |
+| --- | --- |
+| Genesis | full introduction read |
+| Matthew | full introduction read |
+| Mark | full introduction read |
+| Luke | full introduction read |
+| John | full introduction read |
+| Acts | full introduction read |
+| Romans | full introduction read |
+| 1 Corinthians | full introduction read |
+| Song of Solomon | full introduction read |
+| Psalms | full introduction read |
+| Isaiah | opening sentence read |
+
+The first eight were printed while surveying book headings and introduction
+prose during the PDF ingest — output that was being read deliberately.
+
+**Song of Solomon, Psalms and Isaiah came from a different command**, which is
+why the first count missed them: `pdftotext` run in raw mode to compare against
+`-layout` mode. Whole introduction paragraphs appeared as a side effect of a
+formatting comparison. This was recorded as eight books on 2026-09-14 and
+corrected to eleven on 2026-09-15, one batch before Psalms and Song of Solomon
+would have been drafted under the wrong assumption.
+
+None of the introductions drafted before the correction is among the eleven,
+verified by test rather than by inspection.
+
+They are reserved deliberately. A test asserts no drafted introduction
 shares a sentence with the purchased prose, but a sentence-level check cannot
 detect borrowed *structure* — which facts are chosen, in what order, where the
 emphasis falls. Having read the original, anything drafted for those books would

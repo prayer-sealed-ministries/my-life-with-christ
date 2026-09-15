@@ -28,7 +28,7 @@ import {
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
-import { shouldRestoreFocus } from '../lib/focus-restore';
+import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
@@ -120,22 +120,29 @@ export default function DataView() {
    * all. It survived locally and failed in CI, which is exactly the kind of
    * timing a keyboard user would meet on a slow machine.
    */
-  const refocus = useRef<HTMLElement | null>(null);
+  // The target, plus the element focus is expected to leave. Without the
+  // second, an effect that runs before React detaches the outgoing control sees
+  // it still connected, reads that as a deliberate move, and cancels the
+  // restore — which failed about one run in twenty.
+  const refocus = useRef<{ target: HTMLElement; from: Element | null } | null>(null);
   useEffect(() => {
-    const target = refocus.current;
-    if (!target) return;
+    const queued = refocus.current;
+    if (!queued) return;
 
-    if (shouldRestoreFocus({ active: document.activeElement, target, body: document.body })) {
+    const state = {
+      active: document.activeElement,
+      target: queued.target,
+      from: queued.from,
+      body: document.body,
+    };
+
+    if (shouldRestoreFocus(state)) {
       refocus.current = null;
-      target.focus();
+      queued.target.focus();
       return;
     }
-
-    // Stand down only for a real, connected element the user moved to.
-    const active = document.activeElement;
-    if (active && active !== document.body && active !== target && active.isConnected) {
-      refocus.current = null;
-    }
+    // A disabled target means "not yet", not "never" — keep the request.
+    if (shouldAbandonRestore(state)) refocus.current = null;
   });
 
   // --- export ------------------------------------------------------------
@@ -190,7 +197,10 @@ export default function DataView() {
       );
     } finally {
       // Queue the focus request before the re-render that re-enables the button.
-      refocus.current = filter ? partialExportButton.current : fullExportButton.current;
+      {
+      const target = filter ? partialExportButton.current : fullExportButton.current;
+      if (target) refocus.current = { target, from: document.activeElement };
+    }
       setBusy('none');
     }
   };
@@ -238,7 +248,7 @@ export default function DataView() {
     // exactly what someone does after cancelling.
     if (fileInput.current) fileInput.current.value = '';
     // The card holding this button is about to unmount; keep focus on the page.
-    refocus.current = fileInput.current;
+    if (fileInput.current) refocus.current = { target: fileInput.current, from: document.activeElement };
   };
 
   const onFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
