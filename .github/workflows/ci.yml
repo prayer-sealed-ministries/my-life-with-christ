@@ -111,6 +111,46 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # The end-to-end suite, on the two profiles a person actually uses.
+  #
+  # It had only ever run on a developer's machine, which meant the one suite
+  # that drives the real browser against the real bundle was invisible to
+  # everyone else and unrecorded — a green report nobody but its author could
+  # check. `test:a11y` above is a subset of this and runs on every pull
+  # request; the whole suite takes ~6 minutes per profile, so it runs on
+  # pushes to main rather than on every commit.
+  e2e:
+    name: e2e (${{ matrix.profile }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [full, public]
+    runs-on: ubuntu-latest
+    env:
+      DATA_PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run build
+      # The suite reports which profile the served bundle carries, read from
+      # the build rather than from DATA_PROFILE above. If those two ever
+      # disagree, the log says so.
+      - name: Playwright — all specs
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-traces-${{ matrix.profile }}
+          path: test-results/
+          retention-days: 7
+
   # Re-running the ingest must reproduce exactly what is committed. If a parser
   # change silently alters the data, this fails rather than drifting unnoticed.
   ingest-is-reproducible:
