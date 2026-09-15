@@ -269,6 +269,33 @@ separates a check from a decoration.
 So: floors on what was examined, sentinels that must be found, wiring tests as
 well as behaviour tests, and this rule.
 
+### Test the wiring, not just the unit
+
+A function tested in isolation proves the function works. It proves nothing
+about whether anything calls it.
+
+`src/lib/attribution.ts` was written, exported, unit-tested and passing — and
+called by nothing. It shipped to production entirely unwired, and the live site
+carried no attribution at all. `attribution.test.ts` was correct throughout; it
+was simply answering a different question from the one that mattered.
+
+So where a module must be *reached* to do its job, assert that it is:
+`src/lib/attribution-wiring.test.ts` checks that something imports it, that a
+view renders it, and that the export includes it. Verified by unwiring the view,
+which fails it.
+
+### Verify against the deployed artefact, not the local build
+
+For anything the owner will see, check what is actually served.
+
+Fetch the deployed HTML, follow it to every lazy chunk, and run the real
+verifier over those bytes — not over `dist/`. The unwired attribution above
+passed every local check and was caught only by reading the live bundle.
+
+`dist/` also holds whichever profile was built last, which is not necessarily
+the one being reasoned about. State which profile an artefact carries rather
+than assuming; the e2e suite prints it for the same reason.
+
 ### Floors: no check may pass while examining nothing
 
 Nearly every check here is shaped as *collect problems, assert the list is
@@ -307,6 +334,51 @@ Two more things that cost real time to learn, so they are written down:
 What automation cannot settle is listed at the end of this file.
 
 ---
+
+## Not without asking
+
+These need the owner's decision. Stop and ask; a clean stop is better than a
+guess carried forward.
+
+- **Publishing, deploying, or changing `DATA_PROFILE`.** Including flipping which
+  profile `pages.yml` builds.
+- **Relaxing, narrowing, or adding an exclusion to the data gate.** Every
+  exclusion must trace to a source the project owns — a BSB section or a
+  `topics.json` range — and name it. `EXCLUSIONS_TRACEABLE` enforces that an
+  exclusion can identify its source; it cannot judge whether a *new kind* of
+  exclusion is legitimate. That judgement is the owner's.
+- **Adjudicating ambiguous source data.** A reference that does not parse, a
+  title that looks wrong, an intro whose provenance is unclear. Record both
+  readings and stop.
+- **Reversing a decision the owner made.** Say so plainly, give the reasoning,
+  and wait — before acting, not after.
+- **Anything that cannot be explained.** An unexplained result is a reason to
+  stop, not a reason to try again.
+
+### Never
+
+- **Let purchased-outline content reach a public artefact.** This is the one
+  irreversible mistake available in this repository. Everything else can be
+  corrected.
+- **Silence or skip a failing test.** Quarantine it by name, with its measured
+  rate, the hypothesis, and the date — or fix it. A skipped test is a check that
+  examines nothing, which is the failure this whole file is about.
+- **Bypass the pre-push hook.** An agent pushes with the owner's token and
+  inherits the owner's admin bypass; branch protection does not constrain it.
+  The hook is the only thing that does. `--no-verify` is not available to you.
+
+## Reporting
+
+- Lead with what needs a decision. Not with status.
+- **"Fixed" and "unreproduced at N runs" are different claims.** Never use the
+  first for the second, and always give N.
+- Report corrections downward as readily as upward. An alarm that turned out to
+  be overblown must be said so — that is what makes the other reports usable.
+- Say what was *not* verified. Silence from a test suite is not a clean bill.
+- Read raw output, not summaries, when it matters. Summaries are where failures
+  hide: a 40-iteration loop once reported forty identical "failures" that were
+  all the same startup error, and the real flake would have been invisible
+  underneath.
 
 ## The data licensing constraint
 
