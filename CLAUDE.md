@@ -199,24 +199,36 @@ convenient check came back clean, and the real one did not:
 State the conditions with the number: **"unreproduced at 150 full-suite runs"**,
 not "fixed". The two claims are different, and only one of them is measurable.
 
-Do the arithmetic before believing a clean sweep. At an observed 4.4% failure
-rate — 2 failures in 45 runs — the chance a bug survives `n` clean runs is
-`0.956^n`:
+Do the arithmetic before believing a clean sweep, and **do it with the rate
+observed for THAT bug**. The chance a bug survives `n` clean runs is `(1-p)^n`,
+and `p` is not a property of the repository — it is a property of the bug.
 
-| Clean runs | Chance the bug is still there |
-| ---: | ---: |
-| 8 | **69.5%** |
-| 45 | 12.9% |
-| 70 | 4.2% |
-| 100 | 1.1% |
-| **150** | **0.11%** |
+Two real examples from this repo, with their own measured rates:
 
-The 8-run row is not hypothetical. This session declared a focus race fixed on
-the strength of eight clean runs, with a **seven-in-ten chance it was still
-there** — and it was. It resurfaced twenty runs later.
+| | DataView focus race | EntryEditor focus race |
+| --- | --- | --- |
+| Observed | 2 failures in 45 runs — **4.4%** | 1 failure in 115 runs — **0.87%** |
+| Survives 8 clean | 69.5% | 93.3% |
+| Survives 45 clean | 12.9% | 67.6% |
+| Survives 115 clean | 0.54% | 36.7% |
+| Survives 150 clean | 0.11% | **27.0%** |
+| Runs for 0.1% confidence | ~150 | **~780** |
 
-150 full-suite runs is the bar for calling an intermittent failure closed here.
-Below that, report it as **"unreproduced at N runs"** and give N.
+Applying one bug's rate to another is its own instrument failure — a number that
+was true somewhere else, reused where it is not. It happened here: 150 runs was
+set as the bar for both, which would have been near-certainty for one and a
+coin-flip for the other.
+
+Two consequences:
+
+- Report intermittent failures as **"unreproduced at N runs"** with N stated,
+  never as "fixed", until the arithmetic for that bug's own rate justifies it.
+- **Below roughly 1%, do not try to run your way out.** ~780 runs is not a
+  verification strategy. Force the race instead: inject the timing seam, pin
+  the interleaving, and assert both orderings. See
+  `src/views/EntryEditor.focus-race.test.tsx`, which holds
+  `requestAnimationFrame` and drives the exact ordering that failed once in 115
+  runs. A test that drives a race beats any number of runs hoping to catch it.
 
 ### Do not mutate the repo while a verification loop is running
 

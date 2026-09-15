@@ -19,6 +19,7 @@ import { canonBooks, findSegment, hasOutlineTitles, segmentTitle, topics, topics
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
+import { shouldRestoreFocus } from '../lib/focus-restore';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import { segmentRef } from '../lib/passages';
@@ -365,12 +366,37 @@ export default function EntryEditor({
   }, [ready, storage, entryId, anchorParam]);
 
   // Fast capture: the cursor belongs in the notes box the moment the form opens.
+  //
   // The shell moves focus to the page heading after every navigation and its
-  // effect runs after this one, so claim focus back a frame later. TextArea does
-  // not forward a ref, hence the wrapper and the query.
+  // effect runs after this one, so the claim is deferred a frame to land after
+  // it. TextArea does not forward a ref, hence the wrapper and the query.
+  //
+  // But a deferred claim is a claim that can arrive LATE. On a slow machine the
+  // frame can land after the reader has already clicked something, and the
+  // cursor is then yanked out of wherever they went — which is how a focus
+  // race got into this view: add a link, remove it, and the pending frame
+  // stole focus back to the notes box afterwards.
+  //
+  // So the claim only takes focus from the shell's own wrapper, or from
+  // nothing. Anywhere the reader actually chose, it stands down. `from` names
+  // the shell's container, which is the one place it IS allowed to take from.
   useEffect(() => {
     if (entryId || !loaded) return;
-    return nextFrame(() => notesBoxRef.current?.querySelector('textarea')?.focus());
+    return nextFrame(() => {
+      const textarea = notesBoxRef.current?.querySelector('textarea');
+      if (!textarea) return;
+      const shellTarget = document.querySelector('main [tabindex="-1"]');
+      if (
+        shouldRestoreFocus({
+          active: document.activeElement,
+          target: textarea,
+          from: shellTarget,
+          body: document.body,
+        })
+      ) {
+        textarea.focus();
+      }
+    });
   }, [entryId, loaded]);
 
   // Unsaved-changes guard. Modern browsers show their own wording; the handler
