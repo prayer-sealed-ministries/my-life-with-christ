@@ -296,6 +296,13 @@ passed every local check and was caught only by reading the live bundle.
 the one being reasoned about. State which profile an artefact carries rather
 than assuming; the e2e suite prints it for the same reason.
 
+`npm run verify:deployed` does this for the data gate: it crawls the live
+Pages site and runs `verify:bundle` over the mirror. Follow `./chunk-HASH.js`
+references as well as `assets/...` ones — Vite splits per book, and a crawl
+that only follows the latter finds 16 of 86 files. `BUNDLE_WAS_READ` is what
+caught that; without the floor it would have reported a clean pass over a
+near-empty read.
+
 ### Floors: no check may pass while examining nothing
 
 Nearly every check here is shaped as *collect problems, assert the list is
