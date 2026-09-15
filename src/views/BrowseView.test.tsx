@@ -6,6 +6,13 @@ import { canonBooks, hasOutlines } from '../app/data';
 
 const OT_COUNT = canonBooks.filter((book) => book.testament === 'OT').length;
 
+/** The canon row for a book, so counts are read from the profile in the build. */
+function bookById(id: string) {
+  const book = canonBooks.find((candidate) => candidate.id === id);
+  if (!book) throw new Error(`no canon book ${id}`);
+  return book;
+}
+
 /** The polite announcement region, wherever it sits in the tree. */
 function announcement(): string {
   const region = document.querySelector('[aria-live="polite"]');
@@ -63,8 +70,32 @@ describe('BrowseView', () => {
     expect(obadiah).toHaveTextContent(/1 chapter(?!s)/);
 
     if (hasOutlines) {
-      expect(genesis).toHaveTextContent(/50 chapters, 78 outline entries/);
-      expect(obadiah).toHaveTextContent(/1 chapter, 1 outline entry(?!\w)/);
+      // The division count is the profile's, not a constant: the purchased
+      // outlines divide Genesis 78 ways and the BSB sections 135. What has to
+      // hold is that the row states the count the data actually carries, and
+      // pluralises it correctly.
+      const genesisEntries = bookById('genesis').entryCount;
+      expect(genesisEntries).toBeGreaterThan(1);
+      expect(genesis).toHaveTextContent(
+        new RegExp(`50 chapters, ${genesisEntries} outline entries`),
+      );
+
+      // The singular needs a book with exactly one division. Obadiah is that
+      // book under `full`; the BSB sections give every book at least two, so
+      // the singular is asserted where it exists and the plural form of the
+      // same row is asserted where it does not. The chapter count above
+      // exercises the singular under every profile either way.
+      const singular = canonBooks.find((book) => book.entryCount === 1);
+      if (singular) {
+        const row = screen.getByRole('link', { name: new RegExp(`^${singular.name}\\b`) });
+        expect(row).toHaveTextContent(/, 1 outline entry(?!\w)/);
+      } else {
+        const obadiahEntries = bookById('obadiah').entryCount;
+        expect(obadiahEntries).toBeGreaterThan(1);
+        expect(obadiah).toHaveTextContent(
+          new RegExp(`1 chapter, ${obadiahEntries} outline entries`),
+        );
+      }
     } else {
       // `refs-only` ships no outline layer, so there is nothing to count.
       expect(genesis).not.toHaveTextContent(/outline entr/);

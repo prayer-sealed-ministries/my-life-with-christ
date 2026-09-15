@@ -8,7 +8,12 @@ import {
   hasOutlineTitles,
   segmentTitle,
   segmentsForBook,
+  segmentNote,
+  outlineBooksById,
 } from '../app/data';
+
+/** Escape a reference for use inside an accessible-name RegExp. */
+const escapeForRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 import { StorageContextProvider } from '../app/storage';
 import { segmentRef } from '../lib/passages';
 import { DexieStorageProvider } from '../storage/db';
@@ -66,6 +71,7 @@ function renderBook(bookId: string, provider = newProvider()) {
 }
 
 const GENESIS_SEGMENTS = segmentsForBook('genesis');
+const JOHN_SEGMENTS = segmentsForBook('john');
 
 describe('BookView', () => {
   it('names the book and links every segment to its passage', async () => {
@@ -103,12 +109,18 @@ describe('BookView', () => {
     renderBook('genesis');
     await screen.findByRole('heading', { level: 1, name: 'Genesis' });
 
-    // Under `refs-only` the author's prose is not in the build at all, and the
-    // view must render nothing rather than an empty box.
-    if (hasOutlineTitles) {
-      expect(screen.getByText(/Genesis is not only the first Bible book/)).toBeInTheDocument();
+    // Asserted against whatever intro THIS profile ships, read from the data
+    // rather than written into the test. The purchased prose was previously a
+    // literal here, which both tied the test to one profile and put licensed
+    // text in a file that has no need of it.
+    const intro = outlineBooksById.get('genesis')?.intro ?? '';
+    if (intro) {
+      const opening = intro.split(/(?<=[.!?])\s+/)[0].slice(0, 40);
+      expect(screen.getByText(new RegExp(opening.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeInTheDocument();
     } else {
-      expect(screen.queryByText(/Genesis is not only the first Bible book/)).toBeNull();
+      // No intro in this build: render nothing, not an empty box.
+      const main = document.querySelector('main');
+      expect(main?.querySelectorAll('p[data-intro]').length ?? 0).toBe(0);
     }
   });
 
@@ -134,26 +146,50 @@ describe('BookView', () => {
     });
   });
 
-  it.skipIf(!hasOutlines)(
+  // Gated on the shape: `public` ships the BSB sections, which partition the
+  // canon completely, so it has no uncovered span to assert about.
+  it.skipIf(!GENESIS_SEGMENTS.some((segment) => segment.kind === 'uncovered'))(
     'makes an uncovered passage as clickable as an outline one, and says what it is',
     async () => {
       renderBook('genesis');
       await screen.findByRole('heading', { level: 1, name: 'Genesis' });
 
-      // Genesis 35:1-15 is the case the product promise is written about: the
-      // outlines do not cover it, and the reader must still be able to write.
-      const gap = findSegment('genesis', 'genesis-35-1-15');
-      expect(gap?.kind).toBe('uncovered');
+      // Genesis 35:1-15 is the case the product promise is written about — the
+      // outlines do not cover it and the reader must still be able to write —
+      // so it is preferred where it exists. But it only exists under `full`:
+      // `refs-only` divides Genesis into whole chapters, where the uncovered
+      // span is the chapter. The shape is what matters, so the segment is
+      // found rather than named.
+      const gap =
+        findSegment('genesis', 'genesis-35-1-15') ??
+        GENESIS_SEGMENTS.find((segment) => segment.kind === 'uncovered')!;
+      expect(gap.kind).toBe('uncovered');
 
-      const link = screen.getByRole('link', { name: /Genesis 35:1-15/ });
-      expect(link).toHaveAttribute('href', '#/passage/genesis/genesis-35-1-15');
+      // Anchored, and stopped at a word boundary: under `refs-only` the
+      // reference is `Genesis 1`, which is a prefix of `Genesis 10` through
+      // `Genesis 19` and matches eleven links unanchored.
+      const link = screen.getByRole('link', {
+        name: new RegExp(`^${escapeForRegExp(gap.ref)}\\b`),
+      });
+      expect(link).toHaveAttribute('href', `#/passage/genesis/${gap.id}`);
       expect(link.tagName).toBe('A');
-      expect(link).toHaveTextContent('No outline entry — read it and add your own note');
-      // Separated when spoken, rather than running on from the reference.
-      expect(link.textContent).toContain(', No outline entry');
+      // The promise that an uncovered passage is still journalable is made
+      // either way, but not twice: on the row where there are covered rows to
+      // contrast against, and once above the list under `refs-only`, where
+      // every row is uncovered and per-row wording would say nothing.
+      if (hasOutlines) {
+        expect(link).toHaveTextContent(segmentNote(gap)!);
+        // Separated when spoken, rather than running on from the reference.
+        expect(link.textContent).toContain(`, ${segmentNote(gap)}`);
+      } else {
+        expect(link.textContent).not.toContain(segmentNote(gap)!);
+        expect(screen.getByText(/read it and add your own note/i)).toBeInTheDocument();
+      }
 
       // Same element, same affordance as its outline-backed neighbour.
-      const covered = screen.getByRole('link', { name: new RegExp(segmentTitle(GENESIS_SEGMENTS[0])) });
+      const covered = screen.getByRole('link', {
+        name: new RegExp(`^${escapeForRegExp(segmentTitle(GENESIS_SEGMENTS[0]))}\\b`),
+      });
       expect(link.tagName).toBe(covered.tagName);
       expect(link.className.includes('min-h-11')).toBe(true);
       expect(covered.className.includes('min-h-11')).toBe(true);
@@ -174,20 +210,31 @@ describe('BookView', () => {
     expect(screen.getByText(/Open any chapter to read it and add your own note/)).toBeInTheDocument();
   });
 
-  it.skipIf(!hasOutlines)(
+  // `series` and `classicStory` are metadata on the purchased outline entries.
+  // The BSB sections shipped under `public` carry neither, so there is nothing
+  // to mark — found rather than named so the test asserts about the profile in
+  // front of it.
+  const CLASSIC_STORY = JOHN_SEGMENTS.find(
+    (segment) => segment.kind === 'outline' && segment.entry.classicStory,
+  );
+
+  it.skipIf(!CLASSIC_STORY)(
     'marks series and classic stories with tags, where the profile has them',
     async () => {
+      const segment = CLASSIC_STORY!;
       renderBook('john');
       await screen.findByRole('heading', { level: 1, name: 'John' });
 
-      const segment = findSegment('john', 'john-2-1-12');
-      const link = screen.getByRole('link', { name: new RegExp(segmentTitle(segment!)) });
+      const link = screen.getByRole('link', {
+        name: new RegExp(`^${escapeForRegExp(segmentTitle(segment))}\\b`),
+      });
 
-      expect(link).toHaveAttribute('href', '#/passage/john/john-2-1-12');
+      expect(link).toHaveAttribute('href', `#/passage/john/${segment.id}`);
       expect(link).toHaveTextContent('Classic story');
       // Chips run together when spoken unless each carries its own separator.
       expect(link.textContent).toContain(', Classic story');
-      if (hasOutlineTitles) expect(link).toHaveTextContent('Series: Miracle');
+      const series = segment.kind === 'outline' ? segment.entry.series : null;
+      if (hasOutlineTitles && series) expect(link).toHaveTextContent(`Series: ${series}`);
       else expect(link).not.toHaveTextContent('Series:');
     },
   );

@@ -18,10 +18,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import PassageView from './PassageView';
-import { findSegment, hasOutlineTitles, hasOutlines, segmentTitle, segmentsForBook } from '../app/data';
+import { findSegment, hasOutlineTitles, segmentTitle, segmentsForBook } from '../app/data';
 import { StorageContextProvider } from '../app/storage';
 import { segmentRef } from '../lib/passages';
 import { DexieStorageProvider } from '../storage/db';
+import versification from '../data/kjv/versification.json';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Entry, NewEntry, PassageSegment, ScriptureRef } from '../types';
 
@@ -29,18 +30,51 @@ afterEach(cleanup);
 
 const GENESIS = segmentsForBook('genesis');
 
-// Genesis 1 is one whole chapter in both profiles — an outline entry under
-// `full`, a chapter segment under `refs-only` — so the same id resolves either
-// way and the title assertions can compare the two.
-const WHOLE_CHAPTER = 'genesis-1';
-const OUTLINE_TITLE = '[licensed content removed]';
-const CROSS_CHAPTER = 'genesis-6-9'; // The one Genesis segment spanning chapters.
+/**
+ * Fixtures are FOUND in whatever profile is loaded, never hardcoded.
+ *
+ * Three division schemes can be built — the purchased outlines, the BSB
+ * sections, whole chapters — and they divide Genesis 78, 135 and 50 ways
+ * respectively. An id written for one does not exist in the others, and this
+ * file previously hardcoded ids that only `full` and `refs-only` carry. Under
+ * `public`, the profile actually deployed, every fixture threw and 23 tests
+ * failed — which nobody saw, because CI only ever ran `full`.
+ */
+const chapterVerses = (chapter: number): number => versification.genesis[chapter - 1];
+
+/** A segment covering exactly one whole chapter. Present in every profile. */
+const WHOLE_CHAPTER =
+  GENESIS.find(
+    (segment) =>
+      segment.chapterStart === segment.chapterEnd &&
+      segment.verseStart === 1 &&
+      segment.verseEnd === chapterVerses(segment.chapterStart),
+  )?.id ?? '';
+
+/** Whatever this profile titles that segment — the assertion target, derived. */
+const WHOLE_CHAPTER_TITLE = WHOLE_CHAPTER ? segmentTitle(findSegment('genesis', WHOLE_CHAPTER)!) : '';
+
+/**
+ * A segment spanning a chapter boundary. Only `full` has one in Genesis, so
+ * tests that need it are gated rather than assuming it exists.
+ */
+const CROSS_CHAPTER = GENESIS.find((segment) => segment.chapterEnd > segment.chapterStart)?.id ?? '';
 
 // Found rather than hardcoded: under `refs-only` every segment is uncovered.
 const UNCOVERED = GENESIS.find((segment) => segment.kind === 'uncovered')?.id ?? '';
 
-// A verse range inside chapter 1, which is no division in either profile.
-const STALE = 'genesis-1-5-9';
+/** Any other segment, for asserting that entries do not bleed between them. */
+const OTHER_SEGMENT = GENESIS.find((segment) => segment.id !== WHOLE_CHAPTER)?.id ?? '';
+
+/** An id no profile divides Genesis at, so the stale-link path is exercised. */
+const STALE = (() => {
+  const ids = new Set(GENESIS.map((segment) => segment.id));
+  for (let verse = 2; verse < 30; verse += 1) {
+    const candidate = `genesis-1-${verse}-${verse}`;
+    if (!ids.has(candidate)) return candidate;
+  }
+  throw new Error('no stale id available — every candidate is a real segment');
+})();
 
 let dbCount = 0;
 const freshStorage = () => new DexieStorageProvider(`passage-view-${(dbCount += 1)}`);
@@ -100,7 +134,7 @@ describe('PassageView — the passage itself', () => {
     const heading = await screen.findByRole('heading', { level: 1 });
     // Under `refs-only` there is no title and this is the reference instead.
     expect(heading).toHaveTextContent(segmentTitle(segment));
-    expect(heading).toHaveTextContent(hasOutlineTitles ? OUTLINE_TITLE : 'Genesis 1');
+    expect(heading).toHaveTextContent(WHOLE_CHAPTER_TITLE);
   });
 
   it('shows the canonical reference exactly once', async () => {
@@ -114,7 +148,9 @@ describe('PassageView — the passage itself', () => {
     expect(shown[0].tagName === 'H1').toBe(!hasOutlineTitles);
   });
 
-  it('titles an uncovered span with its reference, and does not repeat it underneath', async () => {
+  // `public` has no uncovered spans at all — the BSB sections partition the
+  // whole canon — so this shape exists only under `full` and `refs-only`.
+  it.skipIf(!UNCOVERED)('titles an uncovered span with its reference, and does not repeat it underneath', async () => {
     const reference = fixture(UNCOVERED).ref;
     renderPassage(UNCOVERED);
 
@@ -177,7 +213,10 @@ describe('PassageView — the passage itself', () => {
     expect(screen.getByText('No entries yet for Genesis 1.')).toBeInTheDocument();
   });
 
-  it.skipIf(!hasOutlines)(
+  // Gated on the shape, not the profile name: only `full` divides Genesis
+  // across a chapter boundary. `public` (BSB sections) and `refs-only` have no
+  // such segment, so there is nothing here for them to assert.
+  it.skipIf(!CROSS_CHAPTER)(
     'marks each chapter when a passage crosses a chapter boundary',
     async () => {
       renderPassage(CROSS_CHAPTER);
@@ -204,7 +243,7 @@ describe('PassageView — the passage itself', () => {
     // The cross-chapter passage is the shape that adds an h3, so it is the one
     // worth checking where it exists; under `refs-only` no segment crosses a
     // chapter, and the h1/h2 order still has to hold.
-    await renderSettled(hasOutlines ? CROSS_CHAPTER : WHOLE_CHAPTER);
+    await renderSettled(CROSS_CHAPTER || WHOLE_CHAPTER);
 
     const levels = screen.getAllByRole('heading').map((node) => Number(node.tagName.slice(1)));
     expect(levels[0]).toBe(1);
@@ -227,7 +266,7 @@ describe('PassageView — writing', () => {
     }
   });
 
-  it('offers the same action on an uncovered span', async () => {
+  it.skipIf(!UNCOVERED)('offers the same action on an uncovered span', async () => {
     renderPassage(UNCOVERED);
 
     const links = await screen.findAllByRole('link', { name: 'Add entry for this passage' });
@@ -270,7 +309,7 @@ describe('PassageView — entries already written here', () => {
   it('does not list entries anchored to a different passage', async () => {
     const storage = freshStorage();
     await seedEntry(storage, WHOLE_CHAPTER, { title: 'Belongs here' });
-    await seedEntry(storage, 'genesis-3', { title: 'Belongs elsewhere' });
+    await seedEntry(storage, OTHER_SEGMENT, { title: 'Belongs elsewhere' });
     renderPassage(WHOLE_CHAPTER, storage);
 
     expect(await screen.findByText('Belongs here')).toBeInTheDocument();

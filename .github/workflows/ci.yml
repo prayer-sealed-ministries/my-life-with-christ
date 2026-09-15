@@ -50,7 +50,7 @@ jobs:
         run: npm run verify:bundle -- --profile full
 
   check:
-    name: typecheck, lint, test
+    name: typecheck, lint, test (all profiles)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,8 +63,13 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Test
-        run: npm test
+      # `npm test` alone only ever tested `full`, because that is the default
+      # when DATA_PROFILE is unset — and `public` is the profile that is
+      # actually deployed. This runs the suite under all three and additionally
+      # asserts that no test is skipped under every one of them, which is the
+      # way a shape-gated test can quietly stop measuring anything.
+      - name: Test (full, public, refs-only)
+        run: npm run test:profiles
 
   # Accessibility is a stated non-negotiable, so it is enforced rather than
   # reviewed. axe-core at WCAG 2.1 AA over every view in both themes at both

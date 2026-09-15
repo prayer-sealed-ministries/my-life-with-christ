@@ -16,8 +16,31 @@ import { GUARDED_COUNTS, compareToBaseline, measureProbes } from '../lib/probes.
 const { topics } = topicsFile;
 
 describe('resolveProfile', () => {
-  it('defaults to full', () => {
-    expect(resolveProfile(undefined)).toBe('full');
+  it('defaults to full when nothing selects a profile', () => {
+    // resolveProfile falls back to process.env.DATA_PROFILE, so the environment
+    // has to be cleared to test the default. Without this the test asserted
+    // "the default is full" and actually asserted "the env var happens to be
+    // unset", which passed in CI and failed the moment the suite was run under
+    // another profile.
+    const previous = process.env.DATA_PROFILE;
+    delete process.env.DATA_PROFILE;
+    try {
+      expect(resolveProfile(undefined)).toBe('full');
+    } finally {
+      if (previous === undefined) delete process.env.DATA_PROFILE;
+      else process.env.DATA_PROFILE = previous;
+    }
+  });
+
+  it('takes the profile from the environment when one is set', () => {
+    const previous = process.env.DATA_PROFILE;
+    process.env.DATA_PROFILE = 'public';
+    try {
+      expect(resolveProfile(undefined)).toBe('public');
+    } finally {
+      if (previous === undefined) delete process.env.DATA_PROFILE;
+      else process.env.DATA_PROFILE = previous;
+    }
   });
 
   it('accepts the three known profiles', () => {

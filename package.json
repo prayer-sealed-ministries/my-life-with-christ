@@ -22,7 +22,8 @@
     "screenshots": "playwright test screenshots.spec.ts",
     "ingest:sections": "node scripts/ingest-sections.mjs",
     "compare:coverage": "node scripts/compare-coverage.mjs",
-    "build:public": "DATA_PROFILE=public npm run build"
+    "build:public": "DATA_PROFILE=public npm run build",
+    "test:profiles": "node scripts/profile-coverage.mjs"
   },
   "dependencies": {
     "dexie": "^4.4.6",
