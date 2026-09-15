@@ -42,7 +42,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Typecheck, lint, test
+      # Tested under the profile this workflow deploys, not the default.
+      # `npm test` with DATA_PROFILE unset runs `full`, which is the one
+      # profile that must never be published — so the deploy was gated on a
+      # suite that had never exercised the build it was about to upload.
+      # CI runs all three profiles; this job runs the one it is deploying.
+      - name: Typecheck, lint, test (public)
+        env:
+          DATA_PROFILE: public
         run: |
           npm run typecheck
           npm run lint
