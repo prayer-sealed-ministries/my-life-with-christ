@@ -5,7 +5,12 @@ import outlines from '../../src/data/outlines.json';
 import versification from '../../src/data/kjv/versification.json';
 import intros from '../../src/data/intros.json';
 import { cleanHeading, parseUsfmSections } from '../lib/parse-usfm-sections.mjs';
-import { divisionProbes, proseProbes } from '../lib/probes.mjs';
+import {
+  divisionProbes,
+  exclusionsBySource,
+  proseProbes,
+  untraceableExclusions,
+} from '../lib/probes.mjs';
 import topicsFile from '../../src/data/topics.json';
 import { examinedAtLeast } from '../../src/testing/floor.ts';
 
@@ -145,6 +150,96 @@ describe('book introductions', () => {
       }
     }
     expect(collisions.join('\n')).toBe('');
+  });
+});
+
+describe('every exclusion names the source that justifies it', () => {
+  const { topics } = topicsFile;
+
+  // The wrong rule would be "exclude anything present in both sets" — that
+  // would excuse a genuine leak that happened to coincide with owned content.
+  // The rule is that a specific, identified owned source contains it.
+  it('records a named source for every excluded probe', () => {
+    const record = [];
+    proseProbes(outlines, sections, record);
+    divisionProbes(outlines, topics, sections, record);
+
+    examinedAtLeast(record.length, 100, 'recorded exclusions');
+    expect(untraceableExclusions(record)).toEqual([]);
+
+    for (const row of record) {
+      const by = row.excludedBy;
+      expect(by.kind, `${row.probe} has no source kind`).toMatch(/^(bsb-section|topics-json)$/);
+      if (by.kind === 'bsb-section') {
+        expect(by.id, `${row.probe} names no BSB section id`).toBeTruthy();
+        expect(by.ref, `${row.probe} names no BSB reference`).toBeTruthy();
+      } else {
+        expect(by.topicId, `${row.probe} names no topic`).toBeTruthy();
+      }
+    }
+  });
+
+  it('every BSB-justified exclusion resolves to a section that really exists', () => {
+    const record = [];
+    proseProbes(outlines, sections, record);
+    divisionProbes(outlines, topics, sections, record);
+
+    const byId = new Map();
+    for (const book of sections) for (const entry of book.entries) byId.set(entry.id, entry);
+
+    let checked = 0;
+    for (const row of record) {
+      if (row.excludedBy.kind !== 'bsb-section') continue;
+      checked += 1;
+      const section = byId.get(row.excludedBy.id);
+      expect(section, `${row.excludedBy.id} is not a real BSB section`).toBeDefined();
+      expect(section.ref).toBe(row.excludedBy.ref);
+    }
+    examinedAtLeast(checked, 100, 'BSB-justified exclusions verified against sections.json');
+  });
+
+  it('every topic-justified exclusion resolves to a real topic range', () => {
+    const record = [];
+    divisionProbes(outlines, topics, sections, record);
+
+    const ranges = new Set();
+    for (const topic of topics) {
+      for (const ref of topic.refs) {
+        ranges.add(`${ref.book}:${ref.chapterStart}:${ref.verseStart}:${ref.chapterEnd}:${ref.verseEnd}`);
+      }
+    }
+
+    let checked = 0;
+    for (const row of record) {
+      if (row.excludedBy.kind !== 'topics-json') continue;
+      checked += 1;
+      expect(topics.some((t) => t.id === row.excludedBy.topicId)).toBe(true);
+      expect(ranges.has(row.excludedBy.ref), `${row.excludedBy.ref} is not a topic range`).toBe(true);
+    }
+    examinedAtLeast(checked, 10, 'topic-justified exclusions verified against topics.json');
+  });
+
+  it('flags an exclusion that cannot name its source', () => {
+    // A check that never fails is not a check.
+    const bad = [
+      { probe: 'a', excludedBy: { kind: 'bsb-section', id: 'x', ref: 'X 1:1' } },
+      { probe: 'b', excludedBy: { kind: 'bsb-section' } },
+      { probe: 'c', excludedBy: { kind: 'it-appears-in-both' } },
+      { probe: 'd' },
+    ];
+    expect(untraceableExclusions(bad).map((r) => r.probe)).toEqual(['b', 'c', 'd']);
+  });
+
+  it('excludes nothing owned when no owned scheme is published', () => {
+    // Under refs-only the BSB sections do not ship, so none of them may justify
+    // removing a probe. Only topics.json, which ships under every profile, does.
+    const record = [];
+    proseProbes(outlines, [], record);
+    divisionProbes(outlines, topics, [], record);
+
+    const kinds = exclusionsBySource(record);
+    expect(kinds.has('bsb-section')).toBe(false);
+    expect(kinds.get('topics-json')?.total ?? 0).toBeGreaterThan(0);
   });
 });
 

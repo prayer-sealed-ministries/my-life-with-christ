@@ -11,8 +11,43 @@
     "",
     "Voice: for someone about to read the book who may never have read it before.",
     "Say what it is, when it was written, what it is doing, and what a reader will",
-    "actually meet in it. No exhortation, no selling. Two short paragraphs."
+    "actually meet in it. No exhortation, no selling. Two short paragraphs.",
+    "",
+    "PROVENANCE: every intro records who drafted it and what they had been exposed",
+    "to. See _provenance below and src/data/sections/SOURCE.md. Eight books are",
+    "reserved for the owner because an assistant had already read the purchased",
+    "introductions for them in the session where the PDFs were ingested, and a",
+    "no-shared-sentence check cannot detect borrowed structure or emphasis."
   ],
+  "_provenance": {
+    "reserved_for_owner": {
+      "books": [
+        "genesis",
+        "matthew",
+        "mark",
+        "luke",
+        "john",
+        "acts",
+        "romans",
+        "1-corinthians"
+      ],
+      "reason": "An assistant read the purchased introductions for these eight books on 2026-09-13, while extracting text from the source PDFs. Anything it drafted for them afterwards would be paraphrase-by-memory regardless of intent, and a sentence-level check cannot detect borrowed structure, emphasis, or choice of facts. Reserved for the owner to write.",
+      "status": "not drafted — renders without an introduction until written"
+    },
+    "drafted": {
+      "by": "assistant (Claude Opus 5), session 2026-09-14",
+      "exposure": "Had NOT read the purchased introductions for these books. Books were chosen specifically for that reason.",
+      "sources": "Plain historical fact; public-domain reference works.",
+      "books": [
+        "ruth",
+        "jonah",
+        "ecclesiastes",
+        "philippians",
+        "james"
+      ],
+      "status": "first pass, awaiting the owner’s judgement on voice"
+    }
+  },
   "ruth": "Ruth is four chapters long and set during the time of the judges, a period the book of Judges describes as lawless and grim. It opens with a famine, a family leaving Bethlehem for Moab, and three deaths in quick succession — and then narrows to two widows walking back to Bethlehem with nothing. Ruth, the younger, is a Moabitess, a foreigner from a people Israel had every historical reason to distrust.\n\nWhat follows is an ordinary story: gleaning in a barley field, a landowner's kindness, a legal transaction at the town gate about who has the right to redeem a dead man's property and marry his widow. It is told without miracles and almost without mention of God acting directly. The last five verses reveal why it was kept: Ruth becomes the great-grandmother of David. In Jewish tradition it is read at Shavuot, the festival of the harvest it describes.",
   "jonah": "Jonah is the odd one out among the prophets. The other prophetic books are collections of oracles — what the prophet said. Jonah is a story about the prophet himself, and he comes off badly in nearly all of it. Four short chapters: a commission refused, a storm, a fish, a reluctant sermon, and an argument with God that the book simply stops in the middle of.\n\nJonah is named in 2 Kings 14:25 as a prophet under Jeroboam II, which places him in the eighth century BC. Nineveh was the great city of Assyria — the empire that would destroy the northern kingdom within his century — so his refusal to go is not cowardice so much as a refusal to see that city spared. That is what the closing chapter is about, and it ends on a question God asks Jonah, which the book never answers. The reader is left holding it.",
   "ecclesiastes": "Ecclesiastes is the most unguarded book in the Bible. Its speaker calls himself Qoheleth — usually rendered \"the Preacher\" or \"the Teacher\" — and he has tried everything: work, pleasure, learning, building, wealth. His verdict on all of it is the word the King James translates \"vanity\", which in Hebrew is *hevel*: vapour, breath, something you cannot get hold of. He uses it nearly forty times.\n\nIt belongs to the wisdom literature, alongside Proverbs and Job, and it argues with Proverbs more than it agrees. Where Proverbs says the diligent prosper, Ecclesiastes notes that the same fate meets the wise and the fool, and that a man's heirs may squander everything he built. It does not resolve this. Readers have found it bleak and readers have found it the only honest book they own; both are reading it correctly. It ends by telling you to fear God and keep his commandments, having spent twelve chapters refusing to pretend that this makes life legible.",

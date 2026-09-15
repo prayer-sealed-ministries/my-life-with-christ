@@ -1,10 +1,15 @@
 name: Deploy to GitHub Pages
 
 # The repository is private, but a GitHub Pages site is PUBLIC regardless.
-# The outline titles and the author's intro prose are purchased third-party
-# material (DATA-LICENSE.md) and must not be republished, so this workflow
-# deploys the `refs-only` profile ONLY, and refuses to deploy if the built
-# artefact turns out to contain any of the protected content.
+#
+# This deploys the `public` profile: BSB section headings, which were dedicated
+# to the public domain on 2023-04-30, plus introductions and topics written for
+# this project. All of it is ours to publish outright.
+#
+# The purchased [licensed content removed] are NOT in this build and must never be. In a
+# compilation the protected element is the selection and arrangement, not the
+# labels, so rewording would not have cleared it — hence a scheme we own.
+# See DATA-LICENSE.md and src/data/sections/SOURCE.md.
 #
 # Changing this to `full` would publish purchased material to the open web.
 # Do not do it without resolving the rights question first.
@@ -43,16 +48,16 @@ jobs:
           npm run lint
           npm test
 
-      - name: Build (refs-only)
+      - name: Build (public)
         env:
-          DATA_PROFILE: refs-only
+          DATA_PROFILE: public
           BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
       # The gate. This greps the actual built files for the purchased titles and
       # intro prose. If any survived, the deploy stops here.
       - name: Verify no purchased content in the artefact
-        run: npm run verify:bundle -- --profile refs-only
+        run: npm run verify:bundle -- --profile public
 
       - uses: actions/configure-pages@v5
 

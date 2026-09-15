@@ -28,8 +28,10 @@ import {
   compareToBaseline,
   divisionNeedles,
   divisionProbes,
+  exclusionsBySource,
   measureProbes,
   proseProbes,
+  untraceableExclusions,
 } from './lib/probes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,8 +125,14 @@ async function main() {
    */
   const publishesOwnedDivisions = profile === 'public';
   const owned = publishesOwnedDivisions ? sections : [];
-  const prose = proseProbes(books, owned);
-  const divisions = divisionProbes(books, topics, owned);
+
+  // Every probe removed from the set records WHY, and which specific owned
+  // thing justified it. An exclusion that cannot name its source is treated as
+  // a failure, not a convenience — "it appears in both sets" would excuse a
+  // genuine leak that happened to coincide with something we own.
+  const exclusions = [];
+  const prose = proseProbes(books, owned, exclusions);
+  const divisions = divisionProbes(books, topics, owned, exclusions);
 
   // ---- 0. The gate must not have weakened since it was last frozen. ----
   // Probes are derived from the outline data, so a shrunken dataset means a
@@ -194,6 +202,25 @@ async function main() {
 
   /** @type {Array<{assertion: string, detail: string}>} */
   const failures = [...erosion];
+
+  // ---- 0b. Every exclusion is traceable to a named source. ----
+  const untraceable = untraceableExclusions(exclusions);
+  for (const row of untraceable) {
+    erosion.push({
+      assertion: 'EXCLUSIONS_TRACEABLE',
+      detail: `${JSON.stringify(String(row.probe).slice(0, 60))} was excluded with no identifiable owned source`,
+    });
+  }
+
+  const bySource = exclusionsBySource(exclusions);
+  if (exclusions.length > 0) {
+    console.log('  exclusions, by the source that justifies each:');
+    for (const [kind, counts] of bySource) {
+      const detail = counts.contained > 0 ? ` (${counts.exact} exact, ${counts.contained} contained)` : '';
+      console.log(`    ${String(kind).padEnd(14)} ${String(counts.total).padStart(5)}${detail}`);
+    }
+    console.log('');
+  }
 
   // ---- 1. The verifier is actually reading a build. ----
   // This must come first. Everything below is a "none of X is present" check,
@@ -317,6 +344,9 @@ async function main() {
     console.log(
       `  BUNDLE_WAS_READ       ${files.length} files, ${Math.round(totalBytes / 1024)}kB searched, ${sentinelsFound.size}/${SENTINELS.length} sentinels found`,
     );
+    console.log(
+      `  EXCLUSIONS_TRACEABLE  all ${exclusions.length} exclusions resolve to a named owned source`,
+    );
     console.log(`  PROBE_SET_INTACT      gate is as strong as its frozen baseline`);
     console.log('  NO_SOURCE_FILES       no PDFs, reports, or outlines.json in the build');
     console.log('  NO_SOURCE_MAPS        no .map files that could carry the original modules');
@@ -336,7 +366,8 @@ async function main() {
   // Erosion of the probe set is a defect regardless of which profile was built:
   // the gate's strength does not depend on what this particular run produced.
   if (erosion.length > 0) {
-    console.error('FAILED — PROBE_SET_INTACT: the gate has weakened.\n');
+    const kind = erosion[0].assertion;
+    console.error(`FAILED — ${kind}: the gate has weakened.\n`);
     for (const failure of erosion) console.error(`      ${failure.detail}`);
     console.error('\nRe-run with --accept-smaller-probe-set only if the shrink is understood and intended.');
     process.exitCode = 1;

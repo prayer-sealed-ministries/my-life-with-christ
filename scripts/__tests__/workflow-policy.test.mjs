@@ -52,12 +52,24 @@ describe('the Pages workflow can only ever publish a refs-only build', () => {
     expect(Object.keys(pages.jobs).sort()).toEqual(['build', 'deploy']);
   });
 
-  it('builds with DATA_PROFILE=refs-only', () => {
+  // Both `public` and `refs-only` are publishable; `full` never is. The test
+  // pins the exact profile rather than accepting either, so switching the
+  // deployed build stays a deliberate edit to this assertion.
+  const PUBLISHED_PROFILE = 'public';
+
+  it(`builds with DATA_PROFILE=${PUBLISHED_PROFILE}`, () => {
     const build = stepsOf(pages, 'build');
     const buildStep = build.find((step) => typeof step.run === 'string' && /npm run build/.test(step.run));
 
     expect(buildStep, 'no build step found in the Pages workflow').toBeDefined();
-    expect(buildStep.env?.DATA_PROFILE).toBe('refs-only');
+    expect(buildStep.env?.DATA_PROFILE).toBe(PUBLISHED_PROFILE);
+  });
+
+  it('never deploys the purchased outlines, whatever the profile is set to', () => {
+    const build = stepsOf(pages, 'build');
+    for (const step of build) {
+      expect(step.env?.DATA_PROFILE, 'a step pins the purchased profile').not.toBe('full');
+    }
   });
 
   // The single most dangerous edit: flipping the profile.
@@ -73,7 +85,7 @@ describe('the Pages workflow can only ever publish a refs-only build', () => {
         expect(
           step.env?.DATA_PROFILE,
           `a build step in job "${jobName}" does not pin DATA_PROFILE; it would default to full`,
-        ).toBe('refs-only');
+        ).toBe(PUBLISHED_PROFILE);
       }
     }
   });
@@ -81,7 +93,9 @@ describe('the Pages workflow can only ever publish a refs-only build', () => {
   it('runs the verifier, in refs-only mode', () => {
     const verify = stepsOf(pages, 'build').find((step) => /verify:bundle|verify-bundle/.test(stepText(step)));
     expect(verify, 'the Pages workflow does not run the bundle verifier').toBeDefined();
-    expect(stepText(verify)).toMatch(/refs-only/);
+    // The verifier must be told the same profile the artefact was built with,
+    // or it would judge it against the wrong rules.
+    expect(stepText(verify)).toMatch(new RegExp(PUBLISHED_PROFILE));
   });
 
   it('verifies BEFORE it uploads the artefact', () => {

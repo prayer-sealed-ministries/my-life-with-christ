@@ -63,6 +63,26 @@ clean partition into duplicates. They are counted in
   by an independent walk over consecutive spans.
 - Compare against the purchased scheme in `data/coverage-comparison.md`.
 
+## Who wrote the introductions, and what they had read
+
+Provenance for the book introductions is part of the record, not a footnote.
+The machine-readable version is `_provenance` in `src/data/intros.json`.
+
+| Books | Drafted by | Exposure |
+| --- | --- | --- |
+| Ruth, Jonah, Ecclesiastes, Philippians, James | assistant (Claude Opus 5), 2026-09-14 | Had **not** read the purchased introductions for these books. Chosen for that reason. |
+| Genesis, Matthew, Mark, Luke, John, Acts, Romans, 1 Corinthians | **reserved for the owner** | An assistant read the purchased introductions for these eight on 2026-09-13, while extracting text from the source PDFs. |
+| The remaining 53 | not yet written | — |
+
+The eight are reserved deliberately. A test asserts no drafted introduction
+shares a sentence with the purchased prose, but a sentence-level check cannot
+detect borrowed *structure* — which facts are chosen, in what order, where the
+emphasis falls. Having read the original, anything drafted for those books would
+be paraphrase-by-memory whatever the intent. They are also the books a reader
+opens first, and the ones most worth having in the owner's own voice.
+
+A book with no introduction simply renders without one.
+
 ## What this does NOT cover
 
 Only the **divisions and their titles** come from the BSB. The scripture text
