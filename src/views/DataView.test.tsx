@@ -341,6 +341,40 @@ describe('DataView', () => {
     expect(await db.listEntries()).toHaveLength(0);
   });
 
+  // The detached-node case is covered in src/lib/focus-restore.test.ts, not
+  // here. A component-level version of it passed against the BROKEN code too —
+  // jsdom resets activeElement to <body> before the effect runs, so the race it
+  // claimed to reproduce never happened. A test that cannot fail is worse than
+  // no test, because it reads like coverage.
+
+  it('does not steal focus when the user really has moved on', async () => {
+    // The other half of the rule. A restore that fires regardless would yank a
+    // keyboard user out of whatever they moved to.
+    renderView();
+    await screen.findByRole('heading', { level: 1 });
+
+    const payload: JourneyExport = {
+      format: 'journey-export',
+      version: 1,
+      exportedAt: '2026-05-01T00:00:00.000Z',
+      entries: [QUIET],
+    };
+    const file = new File([JSON.stringify(payload)], 'journey.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('Journal file to read'), { target: { files: [file] } });
+    await screen.findByRole('heading', { name: 'What this would do' });
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    cancel.focus();
+
+    // A real, connected element the user moved to deliberately.
+    const elsewhere = screen.getByRole('button', { name: 'Export everything' });
+    fireEvent.click(cancel);
+    elsewhere.focus();
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'What this would do' })).toBeNull());
+    expect(elsewhere).toHaveFocus();
+  });
+
   it('does not offer an export it cannot run, or call an unreadable journal empty', async () => {
     render(
       <RouterProvider>

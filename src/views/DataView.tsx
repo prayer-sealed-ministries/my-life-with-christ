@@ -28,6 +28,7 @@ import {
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
+import { shouldRestoreFocus } from '../lib/focus-restore';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
 import { applyImport, parseImport, previewImport, type ParsedImport } from '../export/importer';
@@ -104,23 +105,35 @@ export default function DataView() {
    * Put focus back after a control disappears or goes disabled under the user.
    *
    * Pressing "Export everything" disables the button that has focus, and
-   * confirming an import unmounts it entirely; either way the browser drops
-   * focus to <body> and a keyboard user restarts from the top of the page. The
-   * effect runs after every render and hands focus back once the target is
-   * interactive again — and drops the request silently if the user has already
-   * moved somewhere else, so focus is never stolen.
+   * confirming an import unmounts it entirely; either way focus drops and a
+   * keyboard user restarts from the top of the page. The effect runs after
+   * every render and hands focus back once the target is interactive again —
+   * and drops the request silently if the user has already moved somewhere
+   * else, so focus is never stolen.
+   *
+   * "Somewhere else" has to mean a real, still-connected element. An earlier
+   * version abandoned the request whenever activeElement was not <body>, which
+   * looked equivalent and was not: between a control unmounting and the browser
+   * resetting focus, activeElement is briefly the DETACHED node. Treating that
+   * as a deliberate move cancelled the restore and left focus on nothing at
+   * all. It survived locally and failed in CI, which is exactly the kind of
+   * timing a keyboard user would meet on a slow machine.
    */
   const refocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const target = refocus.current;
     if (!target) return;
-    if (document.activeElement !== document.body) {
-      refocus.current = null;
-      return;
-    }
-    if (target.isConnected && !target.hasAttribute('disabled')) {
+
+    if (shouldRestoreFocus({ active: document.activeElement, target, body: document.body })) {
       refocus.current = null;
       target.focus();
+      return;
+    }
+
+    // Stand down only for a real, connected element the user moved to.
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== target && active.isConnected) {
+      refocus.current = null;
     }
   });
 
