@@ -22,16 +22,33 @@ export interface ViewTarget {
   hash: string;
 }
 
-/** Which data profile the build under test carries. */
-export async function detectProfile(page: Page): Promise<'full' | 'refs-only'> {
-  await page.goto('#/book/matthew');
+export type DataProfile = 'full' | 'public' | 'refs-only';
+
+const PROFILES: DataProfile[] = ['full', 'public', 'refs-only'];
+
+/**
+ * Which data profile the build under test carries — read, not inferred.
+ *
+ * This used to count passage links on the Matthew page and return `refs-only`
+ * if there were exactly 28 and `full` otherwise. That has two profiles in it
+ * and there are three, so a `public` build reported itself as `full`: the
+ * suite printed a profile name that was simply wrong, which is worse than
+ * printing nothing. The build now stamps the answer on the root element and
+ * this reads it back, failing loudly if it is missing or unrecognised rather
+ * than falling back to a default.
+ */
+export async function detectProfile(page: Page): Promise<DataProfile> {
+  await page.goto('#/');
   await page.waitForLoadState('networkidle');
   await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
 
-  // Under `full` a book divides into outline entries; under `refs-only` it is
-  // one segment per chapter, so Matthew has exactly 28.
-  const links = await page.locator('main a[href^="#/passage/matthew/"]').count();
-  return links === 28 ? 'refs-only' : 'full';
+  const stamped = await page.locator('html').getAttribute('data-data-profile');
+  expect(
+    stamped,
+    'the build did not stamp data-data-profile on <html> — cannot say what is under test',
+  ).toBeTruthy();
+  expect(PROFILES, `unrecognised data profile ${stamped}`).toContain(stamped);
+  return stamped as DataProfile;
 }
 
 /**

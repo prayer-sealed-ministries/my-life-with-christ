@@ -76,8 +76,19 @@ jobs:
   # widths, plus the checks axe cannot make: heading order, computed contrast,
   # real labels, and a keyboard-only walkthrough from load to saving an entry.
   accessibility:
-    name: accessibility
+    # Run against both profiles that a person actually uses. `full` is what the
+    # owner runs locally; `public` is what is deployed to Pages and is the only
+    # one anyone else will ever see. They render different segment lists, so a
+    # pass on one is not a pass on the other — and until now only `full` was
+    # ever checked, because DATA_PROFILE was unset and `full` is the default.
+    name: accessibility (${{ matrix.profile }})
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [full, public]
     runs-on: ubuntu-latest
+    env:
+      DATA_PROFILE: ${{ matrix.profile }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -96,7 +107,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: a11y-failure-traces
+          name: a11y-failure-traces-${{ matrix.profile }}
           path: test-results/
           retention-days: 7
 
