@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
+import { usePrinter } from '../platform/context';
 import { topicsById } from '../app/data';
 import { Button, EmptyState, LiveRegion, Spinner, Tag } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
@@ -243,6 +244,7 @@ export default function LegacyView() {
   // Without this, a journal that failed to open renders as "nothing to print
   // yet" — telling someone with ten years of writing that they have none.
   const { error: storageError } = useStorage();
+  const printer = usePrinter();
   const { data: entries, loading } = useStorageQuery(
     (storage) => storage.listEntriesChronological(),
     [],
@@ -323,7 +325,7 @@ export default function LegacyView() {
           </div>
         </fieldset>
 
-        <Button variant="primary" className="w-full sm:w-auto" onClick={() => window.print()}>
+        <Button variant="primary" className="w-full sm:w-auto" onClick={() => printer.print()}>
           Print or save as PDF
         </Button>
 

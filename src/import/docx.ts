@@ -81,7 +81,7 @@ export async function parseDocx(data: Uint8Array): Promise<DocxParagraph[]> {
 
   const xml = new TextDecoder().decode(document.bytes);
   if (xml.length > MAX_TEXT_CHARS) {
-    throw new ImportError('That Word document is too large to read in the browser.');
+    throw new ImportError('That Word document is too large to read on this device.');
   }
 
   const paragraphs: DocxParagraph[] = [];

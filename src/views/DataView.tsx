@@ -14,7 +14,7 @@
  * applies them.
  */
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   DATA_PROFILE,
@@ -27,6 +27,9 @@ import {
 } from '../app/data';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
+import { useFileSaver } from '../platform/context';
+import type { PickedFile } from '../platform/ports';
+import { pickedFromDomFile } from '../platform/web';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
 import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
@@ -91,6 +94,7 @@ function lastExportedWords(iso: string | undefined, now: Date): string {
 
 export default function DataView() {
   const { storage, settings, updateSettings, touch, error: storageError } = useStorage();
+  const files = useFileSaver();
 
   const { data: entryCount, loading: counting } = useStorageQuery(
     async (provider) => (await provider.listEntries()).length,
@@ -179,6 +183,8 @@ export default function DataView() {
         topics,
         profile: DATA_PROFILE,
         filter,
+        // Where the bytes go is the platform's business, not this view's.
+        files,
       });
 
       // exportEverything records lastExportAt straight to storage. Re-read it
@@ -251,8 +257,13 @@ export default function DataView() {
     if (fileInput.current) refocus.current = { target: fileInput.current, from: document.activeElement };
   };
 
-  const onFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  /**
+   * Handle a chosen archive, in the platform's shape rather than the browser's.
+   *
+   * Takes a name and bytes. The `<input>` below converts a DOM `File` first; a
+   * native document picker will hand the same shape straight in.
+   */
+  const onFileChosen = async (file: PickedFile | null) => {
     const token = (readToken.current += 1);
     setParsed(null);
     setExisting(null);
@@ -268,9 +279,8 @@ export default function DataView() {
     setFileName(file.name);
     setReading(true);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
       const [incoming, mine] = await Promise.all([
-        parseImport(bytes, {
+        parseImport(file.bytes, {
           resolveOutlineId,
           isTopicId: (id) => topicsById.has(id),
           isBookId: (id) => Boolean(versification[id]),
@@ -587,7 +597,12 @@ export default function DataView() {
             type="file"
             accept=".zip,.json,application/zip,application/json"
             aria-describedby="import-file-hint"
-            onChange={(event) => void onFileChosen(event)}
+            onChange={(event) => {
+              const chosen = event.target.files?.[0];
+              // The web binding: a DOM File becomes the shape every edition uses.
+              if (chosen) void pickedFromDomFile(chosen).then(onFileChosen);
+              else void onFileChosen(null);
+            }}
             disabled={importing || blocked}
             className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
           />

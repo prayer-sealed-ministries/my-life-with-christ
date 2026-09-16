@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { DexieStorageProvider } from '../storage/db';
+import { selectStorageProvider } from '../platform/storage';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Settings } from '../types';
 
@@ -43,7 +43,18 @@ export function StorageContextProvider({
   children: ReactNode;
   provider?: StorageProvider;
 }) {
-  const storage = useMemo(() => provider ?? new DexieStorageProvider(), [provider]);
+  // Obtained through the platform seam rather than constructed here.
+  //
+  // Today that seam returns Dexie and nothing else can happen. It exists for
+  // what comes next: a native edition requires SQLite, and if SQLite cannot be
+  // opened the selection THROWS rather than quietly handing back IndexedDB. A
+  // silent fallback would put months of someone's journal in a store they were
+  // never told about, that we cannot hand them, and that the next successful
+  // launch would stop reading. See src/platform/storage.ts.
+  const storage = useMemo(
+    () => provider ?? selectStorageProvider().provider,
+    [provider],
+  );
   const [revision, setRevision] = useState(0);
   const [settings, setSettings] = useState<Settings>({});
   const [ready, setReady] = useState(false);

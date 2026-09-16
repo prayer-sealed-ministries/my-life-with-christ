@@ -85,7 +85,7 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
     }
   } catch {
-    throw new ImportError('PDF support could not be loaded in this browser.');
+    throw new ImportError('PDF support could not be loaded on this device.');
   }
 
   // Every flag here exists to keep a document from reaching the network. None

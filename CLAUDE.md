@@ -526,6 +526,80 @@ src/
   types/               the domain contract
 ```
 
+## The platform boundary
+
+`src/platform/` is where the application is allowed to know what it is running
+on. Four ports, one storage seam, one capability probe, one pure decision. The
+web implementations live in `src/platform/web.ts`; native ones arrive in Phase 1
+(see `docs/ADR-NATIVE-APP-ARCHITECTURE.md`).
+
+The rules below are binding, and each exists because breaking it is both easy
+and hard to notice.
+
+### Native storage fails closed. It never falls back to Dexie.
+
+`selectStorageProvider` returns the kind it was asked for or it throws. When a
+native edition cannot open SQLite, the app must refuse to start.
+
+The tempting alternative — fall back to the webview's IndexedDB so the app still
+launches — would have a paid user write months of entries into a store they were
+never told about, that cannot be handed to them, that does not appear in their
+archive, and that the next successful launch would stop reading. They would lose
+the record while every screen reported success.
+
+An app that will not start is a bug report. An app that quietly writes to the
+wrong place is a lost inheritance. Do not add the fallback.
+
+### Journal data never lives in convenience storage.
+
+`localStorage` holds the theme choice and the first-visit flag. Both are
+**disposable UI preferences**: losing them costs a reader one tap and nothing
+else, which is why they are allowed to sit in storage that can vanish.
+
+Nothing journal-critical may join them. Entries, settings that drive the export
+reminder, and anything that would be missed if it disappeared go through
+`StorageProvider`. The test is not "is this convenient" but "if this were gone
+tomorrow, has the reader lost something they wrote?"
+
+### Platform capabilities stay behind their ports.
+
+A view asks for a capability; it never asks what platform it is on. There is no
+`isIOS`, no `isAndroid`, no `isNative`, and `src/platform/ports.ts` deliberately
+offers nothing to branch on. The moment a view branches, journal behaviour has
+begun to fork three ways, which is the entire thing this boundary prevents.
+
+`src/platform/platform.test.tsx` asserts the wiring from the product surface —
+pressing the real button in the real view must reach the port. Verified by making
+each view bypass its port, which fails.
+
+### Canonical archive generation is shared, always.
+
+`buildArchive()` produces identical bytes on every edition. Only *delivery* —
+handing those bytes to a file system — crosses the platform boundary. A native
+edition must never invent its own backup format; the archive already is one, and
+it is the artefact the whole product promises.
+
+### One conformance suite, every provider.
+
+`src/storage/conformance.ts` holds the persistence contract: ordering, defaulting,
+what `updateEntry` refuses to change, that `putEntries` writes verbatim while
+`createEntry` defaults, that clearing entries leaves settings alone. Any new
+`StorageProvider` runs it unchanged. Verified by four deliberate provider
+violations, each of which fails it.
+
+### User-facing errors say "device", not "browser".
+
+Every runtime error string is reachable inside an installed app, where there is
+no browser from the reader's point of view. `src/platform/wording.test.ts` holds
+this for the messages that matter.
+
+Wording that is genuinely about a browser stays: the archive's own README tells a
+stranger to open an HTML file in any web browser, and the export reminder names
+"clearing your browser data" because on the web that is the exact action that
+destroys a journal. A native edition will need its own wording for that reminder
+— uninstalling the app is the equivalent risk — and that is a Phase 4 decision,
+not a find-and-replace.
+
 ## Names that are deliberately not the brand
 
 The product is **Life With Christ**; the book it exports is **My Journey With

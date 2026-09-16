@@ -26,6 +26,7 @@ import {
 } from '../app/data';
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
+import { useUnsavedWorkGuard } from '../platform/context';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { shouldRestoreFocus } from '../lib/focus-restore';
@@ -269,6 +270,7 @@ export default function EntryEditor({
   anchorParam?: string;
 }) {
   const { storage, ready, touch, error: storageError } = useStorage();
+  const unsavedWork = useUnsavedWorkGuard();
   const { navigate } = useRouter();
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -434,17 +436,19 @@ export default function EntryEditor({
     });
   }, [entryId, loaded]);
 
-  // Unsaved-changes guard. Modern browsers show their own wording; the handler
-  // only has to exist and cancel.
+  // Unsaved-changes guard, asked for through the platform rather than wired to
+  // `beforeunload` here.
+  //
+  // The distinction is not cosmetic. `beforeunload` protects a browser tab; an
+  // installed app gets no equivalent promise, because iOS may terminate a
+  // backgrounded process without running anything of ours. So this port warns a
+  // person who is still present and can still choose, and nothing more —
+  // durable writes must never depend on it firing. Saving remains explicit, on
+  // the Save button, exactly as before.
   useEffect(() => {
     if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [dirty]);
+    return unsavedWork.protect(() => true);
+  }, [dirty, unsavedWork]);
 
   // Send focus to the confirm button so a keyboard user is standing on the
   // decision rather than hunting for where the page changed.

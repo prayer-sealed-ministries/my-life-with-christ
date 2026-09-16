@@ -6,6 +6,7 @@ import { DATA_PROFILE } from './app/data';
 import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
 import { ThemeProvider } from './app/theme';
+import { PlatformProvider } from './platform/provider';
 import './index.css';
 
 // The build states which data scheme it carries, rather than leaving it to be
@@ -20,12 +21,17 @@ if (!root) throw new Error('No #root element');
 
 createRoot(root).render(
   <StrictMode>
-    <ThemeProvider>
-      <StorageContextProvider>
-        <RouterProvider>
-          <App />
-        </RouterProvider>
-      </StorageContextProvider>
-    </ThemeProvider>
+    {/* The platform sits outermost: storage selection and every file operation
+        below it are capabilities of the edition, not of the journal. Defaults
+        to the web implementations, so nothing that does not opt in changes. */}
+    <PlatformProvider>
+      <ThemeProvider>
+        <StorageContextProvider>
+          <RouterProvider>
+            <App />
+          </RouterProvider>
+        </StorageContextProvider>
+      </ThemeProvider>
+    </PlatformProvider>
   </StrictMode>,
 );

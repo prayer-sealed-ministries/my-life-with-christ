@@ -1,8 +1,8 @@
 # ADR: Native application architecture
 
-**Status:** Accepted — architecture only. No native code, no dependencies, no
-refactors have been made. Implementation is gated behind the phases at the end
-of this document.
+**Status:** Accepted. **Phase 0 complete** — the seams exist and the web
+edition runs through them. No native code, no native dependencies, no `ios/` or
+`android/`. Implementation continues at Phase 1.
 
 **Date:** 2026-09-16
 **Supersedes:** nothing
@@ -232,20 +232,24 @@ custom editing surface.
 
 Four new seams. Three of them have exactly one call site today.
 
-### Code too coupled to the browser, to be moved behind an adapter **before**
-### native work begins (Phase 0 — not done in this task)
+### Code too coupled to the browser — **done in Phase 0**
 
-1. `src/export/download.ts` — the only export path. Becomes
-   `FileExporter.save(archive)`, with the current DOM implementation as the web
-   binding.
-2. `views/LegacyView.tsx:326` — `window.print()` inline in a click handler.
-3. `views/EntryEditor.tsx:443-446` — `beforeunload` registration inline in an
-   effect.
-4. `views/DataView.tsx` and `views/ImportView.tsx` — `<input type="file">` read
-   directly. The *parsers* already take `Uint8Array` and are fine; only the
-   acquisition of the bytes needs a seam.
+All four are now behind ports in `src/platform/`:
 
-Nothing else requires refactoring. That is a remarkably small Phase 0.
+1. `src/export/download.ts` — `exportEverything` takes a `FileSaver` and calls
+   `files.save(outgoingArchive(archive))`. `buildArchive` is untouched.
+2. `views/LegacyView.tsx` — `window.print()` became `printer.print()`.
+3. `views/EntryEditor.tsx` — `beforeunload` became `unsavedWork.protect()`.
+4. `views/DataView.tsx` and `views/ImportView.tsx` — both handlers now take a
+   `PickedFile` (a name and bytes) rather than a DOM `File`. The visible
+   `<input type="file">` stays, because it is keyboard reachable, screen-reader
+   labelled and covered by the accessibility suite; it is now a *binding* that
+   converts, not an assumption the view is built on.
+
+Phase 0 also added what the ADR asked for but had not specified:
+`selectStorageProvider` with the fail-closed rule, the
+`StorageProvider` conformance suite, a centralised compression capability, and
+`decideBack` as a pure function.
 
 ---
 
@@ -622,6 +626,9 @@ Every item is a known webview-on-mobile risk, not a hypothetical:
    Mitigated by not depending on it.
 2. **`DecompressionStream` availability** sets an iOS floor (16.4+). Import
    fails hard without it while export degrades gracefully. **Spike 1.**
+   Phase 0 centralised the check in `src/platform/compression.ts` and gave it
+   neutral wording, which makes the risk visible and testable — it does **not**
+   remove it. No ZIP library was added; that decision waits on the spike.
 3. **Webview text editing fidelity** — keyboard, selection, scroll-into-view in
    a long `<textarea>`. Acceptance-tested, not architecturally solved.
 4. **App Store Guideline 4.2** — mitigated by genuine offline function, a local
@@ -710,16 +717,22 @@ Each is small, has a pass/fail criterion, and **is not performed in this task.**
 Each phase has a **stop gate**. A phase is finished when its gate passes; work
 does not begin on the next until it does. No phase opens another lane.
 
-### Phase 0 — Seams, before any native code
+### Phase 0 — Seams, before any native code — **COMPLETE**
 
-Introduce `FileExporter`, `FilePicker`, `Printer` and `LifecycleGuard` with web
-implementations that behave exactly as today. Extract `download.ts`, the
-`window.print()` call, the `beforeunload` effect, and the two file inputs behind
-them. Add the `StorageProvider` conformance suite and prove Dexie passes it.
+Delivered: `src/platform/` with `FileSaver`, `FilePicker`, `Printer` and
+`UnsavedWorkGuard`; `selectStorageProvider` with the fail-closed rule;
+`src/storage/conformance.ts` run against Dexie; a centralised compression
+capability; `decideBack`; and platform-neutral wording for every runtime error
+reachable inside an app.
 
-> **Stop gate:** the web edition is byte-for-byte unchanged in behaviour — all
-> ~918 unit tests and 42 e2e tests pass, the data gate passes — and no adapter
-> has a native implementation yet.
+Naming note: the ADR drafted these as `FileExporter` and `LifecycleGuard`. They
+shipped as `FileSaver` and `UnsavedWorkGuard` — the second rename is the
+meaningful one, because "lifecycle guard" implied a reliable shutdown callback
+that no native platform actually provides, and the port must not promise it.
+
+> **Stop gate — met:** the web edition behaves as before; 984 unit tests across
+> three data profiles, 42 e2e tests, and the data gate all pass; no adapter has
+> a native implementation.
 
 ### Phase 1 — Minimal shells (development only, never shipped)
 

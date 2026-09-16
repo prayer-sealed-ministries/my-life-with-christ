@@ -30,6 +30,8 @@ import {
 } from '../import/candidates';
 import { commitImport, findDuplicates, type DuplicateReport } from '../import/commit';
 import { ImportError, MAX_FILE_BYTES, describeBytes } from '../import/limits';
+import type { PickedFile } from '../platform/ports';
+import { pickedFromDomFile } from '../platform/web';
 import type { EntryKind } from '../types';
 
 /** Said in words next to the control that reads a file, not buried in settings. */
@@ -47,10 +49,7 @@ const REASON_TEXT: Record<ReviewReason, string> = {
 
 const KINDS = Object.keys(KIND_LABELS) as EntryKind[];
 
-/** Read a File without ever handing it to anything but the parsers. */
-async function readBytes(file: File): Promise<Uint8Array> {
-  return new Uint8Array(await file.arrayBuffer());
-}
+
 
 type Stage = 'choose' | 'reading' | 'review' | 'done';
 
@@ -91,8 +90,15 @@ export default function ImportView() {
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
+  /**
+   * Handle a chosen file, in the platform's shape rather than the browser's.
+   *
+   * Takes a name and bytes, never a DOM `File`. The web binding below converts;
+   * a native document picker will supply the same shape directly, and this
+   * function will not know the difference.
+   */
   const onFile = useCallback(
-    async (file: File | undefined) => {
+    async (file: PickedFile | undefined | null) => {
       if (!file) return;
       setError('');
       setResult(null);
@@ -101,9 +107,9 @@ export default function ImportView() {
         setError('Import handles .txt, .md, .docx and text-based .pdf files.');
         return;
       }
-      if (file.size > MAX_FILE_BYTES) {
+      if (file.bytes.byteLength > MAX_FILE_BYTES) {
         setError(
-          `That file is ${describeBytes(file.size)}, larger than the ${describeBytes(MAX_FILE_BYTES)} import limit.`,
+          `That file is ${describeBytes(file.bytes.byteLength)}, larger than the ${describeBytes(MAX_FILE_BYTES)} import limit.`,
         );
         return;
       }
@@ -112,7 +118,7 @@ export default function ImportView() {
       setMessage(`Reading ${file.name}.`);
 
       try {
-        const parsed = await parseDocument(await readBytes(file), file.name);
+        const parsed = await parseDocument(file.bytes, file.name);
         const existing = await storage.listEntries();
         const report = await findDuplicates(parsed, parsed.candidates, existing);
 
@@ -205,7 +211,12 @@ export default function ImportView() {
               accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               aria-describedby={`${fileInputId}-hint`}
               disabled={stage === 'reading'}
-              onChange={(event) => void onFile(event.target.files?.[0])}
+              onChange={(event) => {
+                // The web binding: convert the browser's File into the shape
+                // every edition uses, then hand it on.
+                const chosen = event.target.files?.[0];
+                if (chosen) void pickedFromDomFile(chosen).then(onFile);
+              }}
               className={`mt-2 ${CONTROL} text-sm file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink`}
             />
           </div>

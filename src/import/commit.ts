@@ -140,7 +140,7 @@ export async function commitImport(
       imported: 0,
       failures: [
         cause instanceof Error && cause.name === 'QuotaExceededError'
-          ? 'There is not enough room left in this browser to store these notes. Nothing was imported.'
+          ? 'There is not enough room left on this device to store these notes. Nothing was imported.'
           : 'The notes could not be saved, so nothing was imported. Your journal is unchanged.',
       ],
     };

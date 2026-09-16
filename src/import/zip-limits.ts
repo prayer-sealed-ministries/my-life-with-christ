@@ -21,6 +21,7 @@
  * as it is spent.
  */
 
+import { CANNOT_DECOMPRESS, canDecompress } from '../platform/compression';
 import { ImportError, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, describeBytes } from './limits';
 
 /**
@@ -71,8 +72,8 @@ export interface ZipLimitOptions {
  * cancelled the moment it is exceeded.
  */
 async function inflateBounded(data: Uint8Array, limit: number, path: string): Promise<Uint8Array> {
-  if (typeof DecompressionStream === 'undefined') {
-    throw new ImportError('This browser cannot read compressed documents.');
+  if (!canDecompress()) {
+    throw new ImportError(CANNOT_DECOMPRESS);
   }
 
   // A ReadableStream built here rather than `new Blob([...]).stream()`.
