@@ -39,10 +39,10 @@ const KIND_LABELS: Record<EntryKind, string> = {
 };
 
 const LINK =
-  'underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:decoration-slate-500 dark:hover:decoration-slate-100';
+  'underline decoration-line-strong underline-offset-4 hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2';
 
 const CARD =
-  'rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60';
+  'rounded-card border border-line bg-surface p-4';
 
 /**
  * The curated one-liner topics.json keeps beside each ref.
@@ -79,17 +79,17 @@ function TopicNotFound({ topicId }: { topicId: string }) {
   return (
     <>
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">Topic not found</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
+      <p className="measure mt-2 text-ink-soft">
         There is no topic called{' '}
         {/* The id comes straight off the URL and has no spaces to wrap at, so it
             is broken mid-word rather than pushing the page sideways on a phone. */}
-        <code className="break-words rounded bg-slate-100 px-1 dark:bg-slate-800">{topicId}</code>{' '}
+        <code className="break-words rounded bg-raised px-1">{topicId}</code>{' '}
         in this build.
       </p>
       <p className="mt-4">
         <Link
           to={{ name: 'topics' }}
-          className={`inline-flex min-h-11 items-center text-slate-900 dark:text-slate-100 ${LINK}`}
+          className={`inline-flex min-h-11 items-center text-ink ${LINK}`}
         >
           See all topics
         </Link>
@@ -123,17 +123,17 @@ export default function TopicView({ topicId }: { topicId: string }) {
       <p className="mb-3">
         <Link
           to={{ name: 'topics' }}
-          className={`inline-flex min-h-11 items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100 ${LINK}`}
+          className={`inline-flex min-h-11 items-center gap-1 text-sm text-ink-soft hover:text-ink ${LINK}`}
         >
           <span aria-hidden="true">←</span> All topics
         </Link>
       </p>
 
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">{topic.name}</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">{topic.description}</p>
+      <p className="measure mt-2 text-ink-soft">{topic.description}</p>
 
       <h2 className="mt-8 font-serif text-xl font-semibold">Passages</h2>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+      <p className="mt-1 text-sm text-ink-soft">
         {topic.refs.length} {topic.refs.length === 1 ? 'passage' : 'passages'}, with a line on why
         each one is here.
       </p>
@@ -159,7 +159,7 @@ export default function TopicView({ topicId }: { topicId: string }) {
               {segment ? (
                 <Link
                   to={{ name: 'passage', bookId: ref.book, segmentId: segment.id }}
-                  className={`inline-flex min-h-11 items-center font-serif text-lg font-semibold text-slate-900 dark:text-slate-100 ${LINK}`}
+                  className={`inline-flex min-h-11 items-center font-serif text-lg font-semibold text-ink ${LINK}`}
                 >
                   {label}
                 </Link>
@@ -168,18 +168,18 @@ export default function TopicView({ topicId }: { topicId: string }) {
               )}
 
               {note ? (
-                <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{note}</p>
+                <p className="mt-1 text-sm text-ink-soft">{note}</p>
               ) : null}
 
               {context && context !== label ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-xs text-ink-muted">
                   Reading view: {context}
                 </p>
               ) : null}
 
               {/* Never a dead end: the reference still reads even with nowhere to open. */}
               {!segment ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-xs text-ink-muted">
                   No reading view for this reference in this build.
                 </p>
               ) : null}
@@ -191,7 +191,7 @@ export default function TopicView({ topicId }: { topicId: string }) {
       {outlineEntries.length > 0 ? (
         <>
           <h2 className="mt-8 font-serif text-xl font-semibold">Also in the outline</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          <p className="mt-1 text-sm text-ink-soft">
             The outline study sections that overlap the passages above. An extra, not the point —
             the passages stand on their own.
           </p>
@@ -204,7 +204,7 @@ export default function TopicView({ topicId }: { topicId: string }) {
                   {segment ? (
                     <Link
                       to={{ name: 'passage', bookId: entry.book, segmentId: entry.id }}
-                      className={`inline-flex min-h-11 items-center text-slate-900 dark:text-slate-100 ${LINK}`}
+                      className={`inline-flex min-h-11 items-center text-ink ${LINK}`}
                     >
                       {label}
                     </Link>
@@ -229,7 +229,7 @@ export default function TopicView({ topicId }: { topicId: string }) {
             <p className="mt-3">
               <Link
                 to={{ name: 'newEntry', anchor: `topic:${topic.id}` }}
-                className="inline-flex min-h-11 items-center rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                className="inline-flex min-h-11 items-center rounded-control border border-accent bg-accent text-accent-ink hover:bg-accent-hover px-4 py-2 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 Write about {topic.name}
               </Link>
@@ -242,14 +242,14 @@ export default function TopicView({ topicId }: { topicId: string }) {
             <li key={entry.id}>
               <Link
                 to={{ name: 'entry', id: entry.id }}
-                className={`block ${CARD} transition-colors hover:border-slate-400 focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:border-slate-500`}
+                className={`block ${CARD} transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2`}
               >
                 {/* A title is whatever was typed; a long unbroken one must wrap
                     rather than widen the page on a phone. */}
-                <span className="block break-words font-medium text-slate-900 dark:text-slate-100">
+                <span className="block break-words font-medium text-ink">
                   {entry.title || 'Untitled entry'}
                 </span>
-                <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                <span className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
                   <span>{formatDate(entry.date)}</span>
                   {/* An entry imported from a newer version can carry a kind this
                       build has no label for. Show the raw kind rather than an

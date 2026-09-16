@@ -332,7 +332,7 @@ export default function DataView() {
         The lead, not the fine print. Amber carries none of the meaning on its
         own — the word "Warning" and the sentence do.
       */}
-      <div className="rounded-xl border-2 border-amber-500 bg-amber-50 p-4 text-amber-950 dark:border-amber-400 dark:bg-amber-950/40 dark:text-amber-100">
+      <div className="rounded-card border-2 border-amber-500 bg-amber-50 p-4 text-amber-950 dark:border-amber-400 dark:bg-amber-950/40 dark:text-amber-100">
         <p className="text-base font-semibold">
           <span aria-hidden="true">⚠ </span>
           Warning: browser storage is not a backup.
@@ -348,7 +348,7 @@ export default function DataView() {
       {storageError ? (
         <p
           role="alert"
-          className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+          className="rounded-card border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
         >
           {storageError} Export and import cannot run until that is fixed.
         </p>
@@ -363,7 +363,7 @@ export default function DataView() {
           Never "0 entries in this journal" when the count could not be read:
           that reads as an answer, and the answer would be wrong.
         */}
-        <p role="status" className="text-sm text-slate-600 dark:text-slate-300">
+        <p role="status" className="text-sm text-ink-soft">
           {blocked
             ? 'Your entries cannot be counted while the journal is unavailable.'
             : counting
@@ -384,33 +384,33 @@ export default function DataView() {
         {busy === 'full' ? <Spinner label="Building your archive. This can take a moment" /> : null}
 
         {exportMessage ? (
-          <p className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
+          <p className="rounded-control border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
             <span aria-hidden="true">✓ </span>
             {exportMessage}
           </p>
         ) : null}
 
         {exportError ? (
-          <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+          <p className="rounded-control border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
             {exportError}
           </p>
         ) : null}
 
         <LiveRegion message={exportError || exportMessage} />
 
-        <details className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/60">
+        <details className="rounded-card border border-line bg-surface">
           {/*
             No `flex` here: a summary is display:list-item, and overriding that
             removes the browser's own disclosure triangle — leaving a row that
             gives a sighted user no sign it opens. py-3 on text-sm already clears
             the 44px target without it.
           */}
-          <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 text-sm font-medium">
+          <summary className="min-h-11 cursor-pointer rounded-card px-4 py-3 text-sm font-medium">
             Export only part of it
           </summary>
 
-          <div className="space-y-4 border-t border-slate-200 p-4 dark:border-slate-700">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+          <div className="space-y-4 border-t border-line p-4">
+            <p className="text-sm text-ink-soft">
               A partial export is not a backup of your journal. It leaves entries behind on purpose,
               and the file says so inside, so nobody later mistakes it for the whole thing.
             </p>
@@ -436,23 +436,23 @@ export default function DataView() {
             </FieldRow>
 
             <fieldset className="border-0 p-0">
-              <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              <legend className="text-sm font-medium text-ink-soft">
                 Kinds of entry
               </legend>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 text-xs text-ink-muted">
                 Tick none to include every kind.
               </p>
               <div className="mt-1 grid gap-x-4 sm:grid-cols-2">
                 {KINDS.map((kind) => (
                   <label
                     key={kind}
-                    className="flex min-h-11 items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+                    className="flex min-h-11 items-center gap-3 text-sm text-ink-soft"
                   >
                     <input
                       type="checkbox"
                       checked={kinds.includes(kind)}
                       onChange={() => toggleKind(kind)}
-                      className="h-5 w-5 rounded border-slate-400 dark:border-slate-500"
+                      className="h-5 w-5 rounded border-line-strong"
                     />
                     {KIND_LABELS[kind]}
                   </label>
@@ -460,12 +460,12 @@ export default function DataView() {
               </div>
             </fieldset>
 
-            <label className="flex min-h-11 items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+            <label className="flex min-h-11 items-center gap-3 text-sm text-ink-soft">
               <input
                 type="checkbox"
                 checked={descendantsOnly}
                 onChange={(event) => setDescendantsOnly(event.target.checked)}
-                className="h-5 w-5 rounded border-slate-400 dark:border-slate-500"
+                className="h-5 w-5 rounded border-line-strong"
               />
               Only entries marked for those who come after
             </label>
@@ -480,7 +480,7 @@ export default function DataView() {
             </Button>
 
             {partialFilter ? null : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-ink-soft">
                 Choose a date, a kind, or the descendants filter first — otherwise use “Export
                 everything” above, which also records that your journal is backed up.
               </p>
@@ -495,7 +495,7 @@ export default function DataView() {
         <h2 id="inside-heading" className="font-serif text-xl font-semibold">
           What is in the file
         </h2>
-        <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+        <p className="text-sm leading-relaxed text-ink-soft">
           One zip, built so it can be read in 2060 by someone with a text editor and no app. Nothing
           in it needs Journey, or any program, to make sense.
         </p>
@@ -503,27 +503,27 @@ export default function DataView() {
           <dl className="space-y-3 text-sm">
             <div>
               <dt className="font-medium">README.txt and MANIFEST.txt</dt>
-              <dd className="text-slate-600 dark:text-slate-300">
+              <dd className="text-ink-soft">
                 What this is, for a stranger; then every file with its size and checksum, so damage
                 is detectable rather than silent.
               </dd>
             </div>
             <div>
               <dt className="font-medium">notes/</dt>
-              <dd className="text-slate-600 dark:text-slate-300">
+              <dd className="text-ink-soft">
                 One plain Markdown file per entry — the real archive. Readable in any text editor.
               </dd>
             </div>
             <div>
               <dt className="font-medium">data/</dt>
-              <dd className="text-slate-600 dark:text-slate-300">
+              <dd className="text-ink-soft">
                 journey.json, the copy this app can read back in, with its own schema beside it and
                 a flat CSV for a spreadsheet.
               </dd>
             </div>
             <div>
               <dt className="font-medium">indexes/ and book/</dt>
-              <dd className="text-slate-600 dark:text-slate-300">
+              <dd className="text-ink-soft">
                 Cross-references into notes/, and one self-contained HTML file —{' '}
                 <em>My Journey with God</em> — that prints as a book.{' '}
                 <Link to={{ name: 'legacy' }} className="underline">
@@ -540,7 +540,7 @@ export default function DataView() {
         <h2 id="import-heading" className="font-serif text-xl font-semibold">
           Bring a journal back in
         </h2>
-        <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+        <p className="text-sm leading-relaxed text-ink-soft">
           Choose an export and you will be shown exactly what it would do. Nothing is written until
           you press the button that says so.
         </p>
@@ -548,11 +548,11 @@ export default function DataView() {
         <div>
           <label
             htmlFor="import-file"
-            className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+            className="block text-sm font-medium text-ink-soft"
           >
             Journal file to read
           </label>
-          <p id="import-file-hint" className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <p id="import-file-hint" className="mt-0.5 text-xs text-ink-muted">
             A Journey export: a .zip archive, or a bare journey.json.
           </p>
           <input
@@ -563,7 +563,7 @@ export default function DataView() {
             aria-describedby="import-file-hint"
             onChange={(event) => void onFileChosen(event)}
             disabled={importing || blocked}
-            className="mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:file:bg-slate-700 dark:file:text-slate-100"
+            className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
           />
         </div>
 
@@ -572,13 +572,13 @@ export default function DataView() {
         {/* break-words throughout: these carry a filename the user chose, and one
             long unbroken name would scroll a 360px page sideways. */}
         {importError ? (
-          <p className="break-words rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+          <p className="break-words rounded-control border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
             {importError}
           </p>
         ) : null}
 
         {importResult ? (
-          <p className="break-words rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
+          <p className="break-words rounded-control border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
             <span aria-hidden="true">✓ </span>
             {importResult}
           </p>
@@ -590,7 +590,7 @@ export default function DataView() {
           <Card className="space-y-4">
             <h3 className="font-medium">What this would do</h3>
 
-            <p className="break-words text-sm text-slate-600 dark:text-slate-300">
+            <p className="break-words text-sm text-ink-soft">
               {fileName} holds {plural(preview.incoming, 'entry', 'entries')}.
             </p>
 
@@ -624,7 +624,7 @@ export default function DataView() {
             {preview.conflicts.length > 0 ? (
               <div>
                 <h4 className="text-sm font-medium">Edited on both sides</h4>
-                <ul className="mt-1 space-y-1 break-words text-sm text-slate-600 dark:text-slate-300">
+                <ul className="mt-1 space-y-1 break-words text-sm text-ink-soft">
                   {preview.conflicts.slice(0, 10).map((conflict) => (
                     <li key={conflict.id}>
                       {conflict.title} — here {conflict.mineUpdatedAt.slice(0, 10)}, in the file{' '}
@@ -644,7 +644,7 @@ export default function DataView() {
             ) : null}
 
             {preview.warnings.length > 0 ? (
-              <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-500 dark:bg-amber-950/40">
+              <div className="rounded-control border border-amber-400 bg-amber-50 p-3 dark:border-amber-500 dark:bg-amber-950/40">
                 <h4 className="text-sm font-semibold text-amber-950 dark:text-amber-100">
                   <span aria-hidden="true">⚠ </span>
                   Worth reading first
@@ -660,7 +660,7 @@ export default function DataView() {
             ) : null}
 
             <fieldset className="border-0 p-0">
-              <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              <legend className="text-sm font-medium text-ink-soft">
                 How should it come in?
               </legend>
               {/*
@@ -671,7 +671,7 @@ export default function DataView() {
               {modes.map((option) => (
                 <label
                   key={option.value}
-                  className="mt-1 grid min-h-11 grid-cols-[auto_1fr] items-start gap-x-3 py-1 text-sm text-slate-700 dark:text-slate-200"
+                  className="mt-1 grid min-h-11 grid-cols-[auto_1fr] items-start gap-x-3 py-1 text-sm text-ink-soft"
                 >
                   <input
                     type="radio"
@@ -682,7 +682,7 @@ export default function DataView() {
                     className="row-span-2 mt-1 h-5 w-5"
                   />
                   <span className="font-medium">{option.label}</span>
-                  <span className="text-slate-600 dark:text-slate-300">{option.detail}</span>
+                  <span className="text-ink-soft">{option.detail}</span>
                 </label>
               ))}
             </fieldset>

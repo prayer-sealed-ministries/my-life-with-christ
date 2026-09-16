@@ -76,7 +76,7 @@ export default function BrowseView() {
   return (
     <>
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">The Bible</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
+      <p className="measure mt-2 text-ink-soft">
         All {TOTAL} books, in canonical order. Open a book to read a passage and write about it.
       </p>
 
@@ -114,14 +114,14 @@ export default function BrowseView() {
             >
               <h2
                 id={`${headingId}-${section.key}`}
-                className="font-serif text-xl font-semibold text-slate-900 dark:text-slate-100"
+                className="font-serif text-xl font-semibold text-ink"
               >
                 {section.label}
                 {/* The space is written out: Tailwind's margin is not read aloud. */}
                 {needle ? (
                   <>
                     {' '}
-                    <span className="text-sm font-normal text-slate-600 dark:text-slate-300">
+                    <span className="text-sm font-normal text-ink-soft">
                       ({countLabel(section.books.length, 'book', 'books')})
                     </span>
                   </>
@@ -133,14 +133,14 @@ export default function BrowseView() {
                   <li key={book.id}>
                     <Link
                       to={{ name: 'book', bookId: book.id }}
-                      className="flex min-h-11 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-900 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:hover:bg-slate-700"
+                      className="flex min-h-11 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-control border border-line bg-surface px-3 py-2.5 text-ink transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                     >
                       <span className="font-medium">{book.name}</span>
                       {/* Separates the name from the counts when the link is
                           read aloud as one string. `sr-only` is absolutely
                           positioned, so it does not sit in the flex row. */}
                       <span className="sr-only">, </span>
-                      <span className="text-sm text-slate-600 dark:text-slate-300">
+                      <span className="text-sm text-ink-soft">
                         {countLabel(book.chapters, 'chapter', 'chapters')}
                         {book.entryCount > 0
                           ? `, ${countLabel(book.entryCount, 'outline entry', 'outline entries')}`

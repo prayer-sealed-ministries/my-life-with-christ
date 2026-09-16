@@ -66,7 +66,7 @@ export default function TopicsView() {
   return (
     <>
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">Topics</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
+      <p className="measure mt-2 text-ink-soft">
         Life topics — money, grief, marriage, doubt, thankfulness. Each one leads to the passages
         that speak to it.
       </p>
@@ -90,7 +90,7 @@ export default function TopicsView() {
       <h2 className="mt-6 font-serif text-lg font-semibold">
         {needle ? 'Matching topics' : 'All topics'}
       </h2>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+      <p className="mt-1 text-sm text-ink-soft">
         Showing {shown.length} of {topics.length} topics.
       </p>
       {/* Filtering changes the page under the reader with no focus move, so the
@@ -115,15 +115,15 @@ export default function TopicsView() {
             <li key={topic.id} className="min-w-0">
               <Link
                 to={{ name: 'topic', topicId: topic.id }}
-                className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-500 dark:hover:bg-slate-800"
+                className="flex h-full flex-col rounded-card border border-line bg-surface p-4 transition-colors hover:border-line-strong hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
               >
-                <span className="font-serif text-lg font-semibold text-slate-900 dark:text-slate-100">
+                <span className="font-serif text-lg font-semibold text-ink">
                   {topic.name}
                 </span>
-                <span className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                <span className="mt-1 text-sm text-ink-soft">
                   {topic.description}
                 </span>
-                <span className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span className="mt-3 text-xs font-medium text-ink-muted">
                   {passageCount(topic)}
                 </span>
               </Link>

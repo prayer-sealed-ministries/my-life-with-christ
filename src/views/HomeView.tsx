@@ -10,6 +10,7 @@
 
 import { Link, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
+import { cardClasses } from '../components/styles';
 import { Spinner } from '../components/ui';
 import type { Entry, EntryKind } from '../types';
 
@@ -76,66 +77,84 @@ export default function HomeView() {
 
   return (
     <div>
-      <h1 className="font-serif text-3xl font-semibold sm:text-4xl">Journey</h1>
-      <p className="mt-3 text-lg leading-relaxed text-slate-700 dark:text-slate-200">
+      {/*
+        Vertical rhythm, deliberately uneven: the title and its opening line
+        belong together, the privacy note is a separate thought, and "Where to
+        begin" starts a new section. Equal gaps everywhere would have said all
+        three were equally related.
+      */}
+      <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Journey</h1>
+      <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">
         A place to read the Bible and keep what you hear — sermons, readings, prayers, and what they
         meant to you at the time.
       </p>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
+      <p className="measure mt-4 leading-relaxed text-ink-muted">
         Everything you write stays on this device. There is no account and nothing is uploaded.
         Because of that, the{' '}
         <Link
           to={{ name: 'data' }}
-          className="underline focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="rounded-control underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           export
         </Link>{' '}
         is what you actually own — a folder of plain files a grandchild could read without this app.
       </p>
 
-      <h2 className="mt-8 font-serif text-xl font-semibold">Where to begin</h2>
-      <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-        {DESTINATIONS.map((destination) => (
-          <li key={destination.label}>
-            <Link
-              to={destination.route}
-              className={`flex min-h-11 flex-col justify-center rounded-xl border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current ${
-                destination.primary
-                  ? 'border-slate-900 bg-slate-900 text-white hover:bg-slate-700 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
-                  : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <span className="text-base font-semibold">{destination.label}</span>
-              <span
-                className={`mt-1 text-sm ${
-                  destination.primary
-                    ? 'text-slate-200 dark:text-slate-700'
-                    : 'text-slate-600 dark:text-slate-300'
-                }`}
+      <section className="mt-10">
+        <h2 className="font-serif text-xl font-semibold tracking-tight">Where to begin</h2>
+        {/*
+          `auto-rows-fr` is what makes this one component family rather than four
+          boxes that happen to sit near each other: every row gets an equal
+          track, so a description one line longer than its neighbour's no longer
+          makes its card structurally taller. The card itself is h-full, so it
+          fills whatever the track gives it.
+        */}
+        <ul className="mt-4 grid gap-4 sm:auto-rows-fr sm:grid-cols-2">
+          {DESTINATIONS.map((destination) => (
+            <li key={destination.label} className="flex">
+              <Link
+                to={destination.route}
+                // Featured is a tint and a border, not a different component.
+                // Inverting this card to a solid fill made it a stark white
+                // rectangle in dark mode — plainly not one of the four.
+                className={`flex h-full w-full flex-col p-5 ${cardClasses({
+                  featured: destination.primary,
+                  interactive: true,
+                })}`}
               >
-                {destination.description}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+                <span className="font-serif text-base font-semibold text-ink">
+                  {destination.label}
+                </span>
+                <span className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+                  {destination.description}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {loading ? <Spinner label="Loading your journal" /> : null}
 
       {!loading && recent.length > 0 ? (
-        <section className="mt-8">
-          <h2 className="font-serif text-xl font-semibold">Recently written</h2>
-          <ul className="mt-3 space-y-3">
+        <section className="mt-10">
+          <h2 className="font-serif text-xl font-semibold tracking-tight">Recently written</h2>
+          {/*
+            A list, not four more cards. These are rows of text the reader scans;
+            boxing each one would have said they were the same kind of thing as
+            the navigation above, and doubled the number of borders on the page.
+          */}
+          <ul className="mt-2 divide-y divide-line border-y border-line">
             {recent.map((entry) => (
               <li key={entry.id}>
                 <Link
                   to={{ name: 'entry', id: entry.id }}
-                  className="block rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+                  className="block px-1 py-3.5 transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
                 >
-                  <span className="block font-medium text-slate-900 dark:text-slate-100">
+                  <span className="block font-medium text-ink">
                     {entry.title || 'Untitled entry'}
                   </span>
-                  <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mt-1 block text-sm text-ink-muted">
                     {[KIND_LABELS[entry.kind], formatDay(entry.date), entry.speaker]
                       .filter((part): part is string => Boolean(part))
                       .join(' · ')}
@@ -144,10 +163,10 @@ export default function HomeView() {
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-sm">
+          <p className="mt-4 text-sm">
             <Link
               to={{ name: 'timeline' }}
-              className="underline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="rounded-control underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               See the whole journey
             </Link>

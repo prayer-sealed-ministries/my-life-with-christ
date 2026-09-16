@@ -244,13 +244,13 @@ function nextFrame(callback: () => void): () => void {
 }
 
 const CONTROL_CLASS =
-  'mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
+  'mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
 
 /** One passage in the picker's result list. A real button, so Enter and tab work. */
 const RESULT_CLASS =
-  'block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700';
+  'block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-left text-sm text-ink hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
 
-const LABEL_CLASS = 'block text-sm font-medium text-slate-700 dark:text-slate-300';
+const LABEL_CLASS = 'block text-sm font-medium text-ink-soft';
 
 /** Book list groupings, worded as the browse view words them. */
 const TESTAMENTS = [
@@ -258,7 +258,7 @@ const TESTAMENTS = [
   { key: 'NT', label: 'New Testament' },
 ] as const;
 
-const SECTION_HEADING = 'font-serif text-lg font-semibold text-slate-900 dark:text-slate-100';
+const SECTION_HEADING = 'font-serif text-lg font-semibold text-ink';
 
 export default function EntryEditor({
   entryId,
@@ -650,7 +650,7 @@ export default function EntryEditor({
   return (
     <>
       <h1 className="font-serif text-2xl font-semibold">{heading}</h1>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+      <p className="measure mt-1 text-sm text-ink-soft">
         Write the notes now. Everything else can wait, or stay empty.
       </p>
 
@@ -659,7 +659,7 @@ export default function EntryEditor({
       {storageError ? (
         <p
           role="alert"
-          className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+          className="mt-4 rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
         >
           {storageError}
         </p>
@@ -729,7 +729,7 @@ export default function EntryEditor({
 
 
               {form.anchors.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-sm text-ink-muted">
                   Not attached to anything yet.
                 </p>
               ) : (
@@ -744,12 +744,12 @@ export default function EntryEditor({
                         // phone is easily wider than the screen, and a chip
                         // that refuses to break would scroll the whole page
                         // sideways.
-                        className="flex max-w-full items-center gap-1 rounded-2xl border border-slate-300 bg-slate-100 py-1 pl-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                        className="flex max-w-full items-center gap-1 rounded-pill border border-line-strong bg-raised py-1 pl-3 text-sm text-ink"
                       >
                         <span className="min-w-0 break-words">{label}</span>
                         <Button
                           variant="ghost"
-                          className="min-w-11 shrink-0 rounded-2xl px-2"
+                          className="min-w-11 shrink-0 rounded-pill px-2"
                           aria-label={`Remove ${label}`}
                           onClick={() => {
                             removeAnchor(key);
@@ -779,7 +779,7 @@ export default function EntryEditor({
                 </label>
                 <p
                   id={`${passagePickerId}-hint`}
-                  className="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                  className="mt-1 text-xs text-ink-muted"
                 >
                   {hasOutlineTitles
                     ? 'By name or by reference \u2014 \u201csermon on the mount\u201d, or \u201cJohn 4\u201d.'
@@ -806,7 +806,7 @@ export default function EntryEditor({
                 />
                 {/* Announced as it changes, so the count is not something only a
                     sighted reader gets. Empty until there is a query to report on. */}
-                <p aria-live="polite" className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                <p aria-live="polite" className="mt-2 text-sm text-ink-soft">
                   {passageStatusText(passageResults)}
                 </p>
                 {passageResults.matches.length ? (
@@ -830,7 +830,7 @@ export default function EntryEditor({
                               {match.title || match.reference}
                             </span>
                             {match.title ? (
-                              <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                              <span className="mt-0.5 block text-xs text-ink-muted">
                                 {match.reference}
                               </span>
                             ) : null}
@@ -853,7 +853,7 @@ export default function EntryEditor({
                   inside a collapsed <details> — a heading outline that changes
                   shape depending on whether a disclosure happens to be open. */}
               <fieldset className="mt-6">
-                <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                <legend className="text-sm font-medium text-ink-soft">
                   Or find it by book
                 </legend>
                 <div className="mt-2 flex flex-wrap items-end gap-3">
@@ -945,11 +945,11 @@ export default function EntryEditor({
         <details
           open={detailsOpen}
           onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
-          className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60"
+          className="rounded-card border border-line bg-surface p-4"
         >
-          <summary className="min-h-11 cursor-pointer py-2 text-slate-900 dark:text-slate-100">
+          <summary className="min-h-11 cursor-pointer py-2 text-ink">
             <span className="font-medium">Details</span>
-            <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="ml-2 text-xs text-ink-muted">
               Date, place, speaker, series, tags, links, prayer, topics
             </span>
           </summary>
@@ -994,14 +994,14 @@ export default function EntryEditor({
 
               <label
                 htmlFor={descendantsId}
-                className="mt-4 flex min-h-11 items-center gap-3 text-sm text-slate-700 dark:text-slate-300"
+                className="mt-4 flex min-h-11 items-center gap-3 text-sm text-ink-soft"
               >
                 <input
                   id={descendantsId}
                   type="checkbox"
                   checked={form.forDescendants}
                   onChange={(event) => update('forDescendants', event.target.checked)}
-                  className="size-5 rounded border-slate-400 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-500"
+                  className="size-5 rounded border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2"
                 />
                 <span>Include in the book for my descendants</span>
               </label>
@@ -1011,18 +1011,18 @@ export default function EntryEditor({
               <h2 className={SECTION_HEADING}>
                 Links
               </h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              <p className="mt-1 text-sm text-ink-soft">
                 Nothing is fetched. What a link pointed to is only ever what you type here.
               </p>
 
               {form.links.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No links yet.</p>
+                <p className="mt-2 text-sm text-ink-muted">No links yet.</p>
               ) : (
                 <ul ref={linksListRef} className="mt-3 space-y-4">
                   {form.links.map((link, index) => (
                     <li key={index}>
-                      <fieldset className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <legend className="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                      <fieldset className="rounded-control border border-line p-3">
+                        <legend className="px-1 text-sm font-medium text-ink-soft">
                           Link {index + 1}
                         </legend>
                         <div className="grid gap-3">
@@ -1121,7 +1121,7 @@ export default function EntryEditor({
               <h2 className={SECTION_HEADING}>
                 Topics
               </h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              <p className="mt-1 text-sm text-ink-soft">
                 Life themes, rather than a place in the text. What is attached shows above, with
                 the passages.
               </p>
@@ -1170,14 +1170,14 @@ export default function EntryEditor({
         {saveError ? (
           <p
             role="alert"
-            className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+            className="rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
           >
             {saveError}
           </p>
         ) : null}
 
         {!canSave ? (
-          <p id={reasonId} className="text-sm text-slate-600 dark:text-slate-400">
+          <p id={reasonId} className="text-sm text-ink-soft">
             Nothing to save yet — write a note, a reflection, or a title first.
           </p>
         ) : null}
@@ -1201,7 +1201,7 @@ export default function EntryEditor({
               entry" to offer — the way out of both modes is the timeline. */}
           <Link
             to={{ name: 'timeline' }}
-            className="inline-flex min-h-11 items-center rounded-lg px-4 py-2 text-sm font-medium text-slate-700 underline hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex min-h-11 items-center rounded-control px-4 py-2 text-sm font-medium text-ink-soft underline hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             {entryId ? 'Back to my journey' : 'Cancel'}
           </Link>
@@ -1209,7 +1209,7 @@ export default function EntryEditor({
       </form>
 
       {entryId ? (
-        <section className="mt-10 border-t border-slate-200 pt-6 dark:border-slate-700">
+        <section className="mt-10 border-t border-line pt-6">
           <h2 className={SECTION_HEADING}>
             Delete
           </h2>
@@ -1217,7 +1217,7 @@ export default function EntryEditor({
               the whole tab and reads badly on a phone. */}
           {confirmingDelete ? (
             <div className="mt-2">
-              <p className="text-sm text-slate-700 dark:text-slate-300">
+              <p className="text-sm text-ink-soft">
                 Delete this entry for good? It is not in the export unless you have already made
                 one, and this cannot be undone.
               </p>

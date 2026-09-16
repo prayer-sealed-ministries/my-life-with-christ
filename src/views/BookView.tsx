@@ -89,15 +89,20 @@ function SegmentItem({
     <li>
       <Link
         to={{ name: 'passage', bookId, segmentId: segment.id }}
-        className={`block min-h-11 rounded-lg border px-3 py-3 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
-          muted
-            ? 'border-dashed border-slate-300 bg-white hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800/40 dark:hover:bg-slate-700'
-            : 'border-slate-200 bg-white hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-700'
-        }`}
+        // A row in a contents list, not a card. Matthew alone has 153 of these,
+        // and a border and a radius around each one put 153 boxes on a page whose
+        // job is to be read down. The list rule below separates them for a
+        // fraction of the ink, which is what makes the BSB headings read as part
+        // of the Bible rather than as application chrome.
+        //
+        // An uncovered span keeps its distinction, carried by the muted title
+        // and by `note` below rather than by a dashed box — never by colour
+        // alone, since the note says it in words.
+        className="block min-h-11 px-3 py-3 transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         <span
           className={`block font-medium ${
-            muted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-900 dark:text-slate-100'
+            muted ? 'text-ink-soft' : 'text-ink'
           }`}
         >
           {title}
@@ -110,7 +115,7 @@ function SegmentItem({
         {showRef ? (
           <>
             <span className="sr-only">, </span>
-            <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+            <span className="mt-0.5 block text-sm text-ink-soft">
               {segment.ref}
             </span>
           </>
@@ -122,7 +127,7 @@ function SegmentItem({
         {note && hasOutlines ? (
           <>
             <span className="sr-only">, </span>
-            <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{note}</span>
+            <span className="mt-0.5 block text-sm text-ink-soft">{note}</span>
           </>
         ) : null}
 
@@ -213,7 +218,7 @@ export default function BookView({ bookId }: { bookId: string }) {
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">{name}</h1>
 
       {paragraphs.length > 0 ? (
-        <div className="mt-4 space-y-3 text-slate-700 dark:text-slate-300">
+        <div className="mt-4 space-y-3 text-ink-soft">
           {paragraphs.map((text, index) => (
             <p key={index} className="leading-relaxed">
               {text}
@@ -228,7 +233,7 @@ export default function BookView({ bookId }: { bookId: string }) {
 
       <h2 className="mt-8 font-serif text-xl font-semibold">
         Passages{' '}
-        <span className="text-sm font-normal text-slate-600 dark:text-slate-300">
+        <span className="text-sm font-normal text-ink-soft">
           ({countLabel(segments.length, 'passage', 'passages')})
         </span>
       </h2>
@@ -242,7 +247,7 @@ export default function BookView({ bookId }: { bookId: string }) {
         className={`mt-1 text-sm ${
           storageError
             ? 'text-red-800 dark:text-red-300'
-            : 'text-slate-600 dark:text-slate-300'
+            : 'text-ink-soft'
         }`}
       >
         {journalSummary}
@@ -251,12 +256,12 @@ export default function BookView({ bookId }: { bookId: string }) {
       {/* The per-row version of this belongs on the exceptions. With no outline
           layer there are no exceptions, so the promise is made once, here. */}
       {hasOutlines ? null : (
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-1 text-sm text-ink-soft">
           Open any chapter to read it and add your own note.
         </p>
       )}
 
-      <ul className="mt-4 space-y-2">
+      <ul className="mt-4 divide-y divide-line border-y border-line">
         {segments.map((segment) => (
           <SegmentItem
             key={segment.id}

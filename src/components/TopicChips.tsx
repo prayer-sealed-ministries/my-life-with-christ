@@ -29,7 +29,7 @@ export function TopicChips({
     <section aria-labelledby={headingId} className="mt-4">
       <h2
         id={headingId}
-        className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+        className="text-xs font-semibold uppercase tracking-wide text-ink-muted"
       >
         {heading}
       </h2>
@@ -38,7 +38,7 @@ export function TopicChips({
           <li key={topic.id}>
             <Link
               to={{ name: 'topic', topicId: topic.id }}
-              className="inline-flex min-h-11 max-w-full items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="inline-flex min-h-11 max-w-full items-center rounded-pill border border-line-strong bg-surface px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               {topic.name}
             </Link>
@@ -64,7 +64,7 @@ export function BookTopicList({
       <h2 id={headingId} className="font-serif text-lg font-semibold">
         Topics in this book
       </h2>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+      <p className="mt-1 text-sm text-ink-soft">
         {topics.length} {topics.length === 1 ? 'topic touches' : 'topics touch'} some part of this book.
       </p>
       <ul className="mt-3 flex flex-wrap gap-2">
@@ -72,10 +72,10 @@ export function BookTopicList({
           <li key={topic.id}>
             <Link
               to={{ name: 'topic', topicId: topic.id }}
-              className="inline-flex min-h-11 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="inline-flex min-h-11 max-w-full flex-wrap items-center gap-x-2 rounded-pill border border-line-strong bg-surface px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               {topic.name}
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+              <span className="text-xs text-ink-muted">
                 {passages} {passages === 1 ? 'passage' : 'passages'}
               </span>
             </Link>

@@ -62,8 +62,8 @@ function NotFound({ path }: { path: string }) {
   return (
     <>
       <h1 className="font-serif text-2xl font-semibold">Page not found</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
-        There is nothing at <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{path}</code>.
+      <p className="mt-2 text-ink-soft">
+        There is nothing at <code className="rounded bg-raised px-1">{path}</code>.
       </p>
       <p className="mt-4">
         <Link to={{ name: 'home' }} className="underline focus-visible:outline-2">

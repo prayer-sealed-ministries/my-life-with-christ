@@ -270,11 +270,16 @@ describe('TimelineView', () => {
 
     renderWith(provider);
 
-    // A white-on-slate-900 control focused with `outline-current` paints a white
-    // ring on the near-white page: no visible focus at all (WCAG 2.4.7).
+    // A filled control focused with `outline-current` paints its ring in its own
+    // ink — which on this button is `accent-ink`, very nearly the page colour in
+    // one theme or the other. That is no visible focus at all (WCAG 2.4.7).
+    //
+    // Asserted as "names a ring, and not the inherited one" rather than by
+    // colour name: the colours moved to semantic tokens and the literal
+    // `outline-slate-900` stopped existing, but the rule it was protecting did
+    // not change at all.
     const action = await screen.findByRole('link', { name: 'New sermon note' });
-    expect(action.className).toContain('focus-visible:outline-slate-900');
-    expect(action.className).toContain('dark:focus-visible:outline-slate-100');
+    expect(action.className).toMatch(/focus-visible:outline-(?!current)\S+/);
     expect(action.className).not.toContain('outline-current');
   });
 

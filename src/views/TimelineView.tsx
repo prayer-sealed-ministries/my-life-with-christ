@@ -27,13 +27,14 @@ import type { Entry } from '../types';
  * A focus ring named against the page, not against the control.
  *
  * The global rule in index.css draws focus in currentColor, which is right for
- * ordinary text but wrong for a filled control: white-on-slate-900 puts a white
- * ring on the near-white page, and slate-900 text on a light chip puts a dark
- * ring on the dark page. Either way there is no visible focus (2.4.7), so the
- * controls here name a ring that contrasts with what sits behind them.
+ * ordinary text but wrong for a filled control: a control whose own ink matches
+ * the page behind it draws a ring nobody can see (2.4.7). The accent button's
+ * ink is accent-ink, which is very nearly the page colour in one theme or the
+ * other, so the controls here name `ink` — which contrasts with the page in
+ * both themes by construction.
  */
 const FOCUS =
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:focus-visible:outline-slate-100';
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink';
 
 /** Long unbroken text — a pasted URL in a title or a note — must wrap, not scroll the page. */
 const WRAP = 'break-words';
@@ -113,7 +114,7 @@ function groupByMonth(entries: Entry[]): YearGroup[] {
   return years;
 }
 
-const LINK_BUTTON = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${FOCUS}`;
+const LINK_BUTTON = `inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-medium transition-colors ${FOCUS}`;
 
 function EntryRow({ entry }: { entry: Entry }) {
   // An unknown kind falls back to the raw value: an entry written by a newer
@@ -130,16 +131,16 @@ function EntryRow({ entry }: { entry: Entry }) {
     <li>
       <Link
         to={{ name: 'entry', id: entry.id }}
-        className={`block rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800 ${FOCUS}`}
+        className={`block rounded-card border border-line bg-surface p-4 transition-colors hover:bg-raised ${FOCUS}`}
       >
-        <span className={`block font-medium text-slate-900 dark:text-slate-100 ${WRAP}`}>
+        <span className={`block font-medium text-ink ${WRAP}`}>
           {entry.title || 'Untitled entry'}
         </span>
-        <span className={`mt-1 block text-sm text-slate-600 dark:text-slate-300 ${WRAP}`}>
+        <span className={`mt-1 block text-sm text-ink-soft ${WRAP}`}>
           {meta.join(' · ')}
         </span>
         {preview ? (
-          <span className={`mt-2 block text-sm text-slate-500 dark:text-slate-400 ${WRAP}`}>
+          <span className={`mt-2 block text-sm text-ink-muted ${WRAP}`}>
             {preview}
           </span>
         ) : null}
@@ -163,7 +164,7 @@ function ExportReminderBanner({
   onDismiss: () => void;
 }) {
   return (
-    <div className="mb-6 rounded-xl border border-amber-400 bg-amber-50 p-4 dark:border-amber-600/70 dark:bg-amber-950/40">
+    <div className="mb-6 rounded-card border border-amber-400 bg-amber-50 p-4 dark:border-amber-600/70 dark:bg-amber-950/40">
       <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
         Back up your journal
       </p>
@@ -171,7 +172,7 @@ function ExportReminderBanner({
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to={{ name: 'data' }}
-          className={`${LINK_BUTTON} bg-amber-900 text-white hover:bg-amber-800 dark:bg-amber-100 dark:text-amber-950 dark:hover:bg-white`}
+          className={`${LINK_BUTTON} bg-amber-900 text-white hover:bg-amber-800 dark:bg-amber-100 dark:text-amber-950 dark:hover:bg-surface`}
         >
           Export my journal
         </Link>
@@ -204,14 +205,14 @@ export default function TimelineView() {
   return (
     <div>
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">My journey</h1>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">
+      <p className="measure mt-2 text-ink-soft">
         Your journal, oldest first — the way it was lived.
       </p>
 
       <div className="mt-4">
         <Link
           to={{ name: 'newEntry' }}
-          className={`${LINK_BUTTON} w-full bg-slate-900 text-white hover:bg-slate-700 sm:w-auto dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white`}
+          className={`${LINK_BUTTON} w-full border border-accent bg-accent text-accent-ink hover:bg-accent-hover sm:w-auto`}
         >
           New sermon note
         </Link>
@@ -263,12 +264,12 @@ export default function TimelineView() {
 
         {years.map((year) => (
           <section key={year.key} className="mt-8 first:mt-0">
-            <h2 className="border-b border-slate-200 pb-1 font-serif text-xl font-semibold dark:border-slate-700">
+            <h2 className="border-b border-line pb-1 font-serif text-xl font-semibold">
               {year.label}
             </h2>
             {year.months.map((month) => (
               <section key={month.key} className="mt-5">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
                   {month.label}
                 </h3>
                 <ul className="mt-2 space-y-3">

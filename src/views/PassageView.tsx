@@ -81,10 +81,10 @@ function PassageNav({
   previous: PassageSegment | undefined;
   next: PassageSegment | undefined;
 }) {
-  const linkClass = `flex min-h-11 flex-col justify-center rounded-lg border border-slate-300 px-3 py-2 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800 ${FOCUS}`;
+  const linkClass = `flex h-full min-h-11 flex-col justify-center rounded-control border border-line-strong px-3 py-2 transition-colors hover:bg-raised ${FOCUS}`;
 
   return (
-    <nav aria-label="Passages in this book" className="mt-10 border-t border-slate-200 pt-6 dark:border-slate-700">
+    <nav aria-label="Passages in this book" className="mt-10 border-t border-line pt-6">
       <ul className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:justify-between">
         {previous ? (
           <li className="sm:flex-1">
@@ -93,7 +93,7 @@ function PassageNav({
               rel="prev"
               className={linkClass}
             >
-              <span className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span className="text-xs uppercase tracking-wide text-ink-muted">
                 Previous
               </span>
               <span className="font-medium">{segmentTitle(previous)}</span>
@@ -115,7 +115,7 @@ function PassageNav({
               rel="next"
               className={`${linkClass} sm:items-end sm:text-right`}
             >
-              <span className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span className="text-xs uppercase tracking-wide text-ink-muted">
                 Next
               </span>
               <span className="font-medium">{segmentTitle(next)}</span>
@@ -129,18 +129,18 @@ function PassageNav({
 
 function EntryCard({ entry }: { entry: Entry }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
+    <article className="rounded-card border border-line bg-surface p-4">
       <h3 className="font-serif text-lg font-semibold">
         <Link
           to={{ name: 'entry', id: entry.id }}
-          className={`inline-flex min-h-11 items-center underline decoration-slate-300 underline-offset-4 hover:decoration-current dark:decoration-slate-500 ${FOCUS}`}
+          className={`inline-flex min-h-11 items-center underline decoration-line-strong underline-offset-4 hover:decoration-current ${FOCUS}`}
         >
           {entry.title.trim() || 'Untitled entry'}
         </Link>
       </h3>
       {/* Each fact carries its own label for assistive tech; visually the gap and
           the order do the work, so nothing depends on position alone. */}
-      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-slate-600 dark:text-slate-300">
+      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-ink-soft">
         <time dateTime={entry.date}>{formatDate(entry.date)}</time>
         <span>{KIND_LABELS[entry.kind]}</span>
         {entry.speaker ? (
@@ -264,9 +264,9 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
     return (
       <>
         <h1 className="font-serif text-2xl font-semibold sm:text-3xl">Passage not found</h1>
-        <p className="mt-3 text-slate-600 dark:text-slate-300">
+        <p className="measure mt-3 text-ink-soft">
           There is no passage{' '}
-          <code className="break-words rounded bg-slate-100 px-1 dark:bg-slate-800">{segmentId}</code>{' '}
+          <code className="break-words rounded bg-raised px-1">{segmentId}</code>{' '}
           in {bookName ?? 'that book'}.{' '}
           {hasOutlines
             ? 'An outline id can change when the outlines are re-ingested.'
@@ -324,7 +324,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
   const addEntry = (
     <Link
       to={{ name: 'newEntry', anchor: segmentId }}
-      className={`inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-2.5 text-base font-medium text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white sm:w-auto ${FOCUS}`}
+      className={`inline-flex min-h-11 w-full items-center justify-center rounded-control border border-accent bg-accent text-accent-ink hover:bg-accent-hover px-5 py-2.5 text-base font-medium transition-colors sm:w-auto ${FOCUS}`}
     >
       Add entry for this passage
     </Link>
@@ -352,13 +352,13 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
       {/* For an uncovered span — and for every segment under `refs-only` — the
           heading already *is* the reference. Repeating it would be noise. */}
       {reference !== title ? (
-        <p className="mt-1 text-base text-slate-600 dark:text-slate-300">{reference}</p>
+        <p className="mt-1 text-base text-ink-soft">{reference}</p>
       ) : null}
 
       {/* Only ever set for a segment with no outline entry behind it, and worded
           by profile — under `refs-only` there is no outline layer to be missing
           from, so it must not say anything is absent. */}
-      {note ? <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{note}</p> : null}
+      {note ? <p className="mt-2 text-sm text-ink-muted">{note}</p> : null}
 
       {series || classicStory ? (
         <ul className="mt-3 flex flex-wrap gap-2">
@@ -385,11 +385,11 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
       <section aria-labelledby="scripture-heading" className="mt-8">
         <h2
           id="scripture-heading"
-          className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+          className="text-sm font-semibold uppercase tracking-wide text-ink-muted"
         >
           King James Version
         </h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-ink-muted">
           Scripture, word for word. Your own notes are further down this page.
         </p>
         <LiveRegion message={scriptureStatus} />
@@ -406,7 +406,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
             </EmptyState>
           </div>
         ) : (
-          <div className="mt-4 font-serif text-lg leading-loose text-slate-900 dark:text-slate-100">
+          <div className="measure mt-4 font-serif text-lg leading-loose text-ink">
             {chapters.map((group, groupIndex) => (
               <div key={group.chapter}>
                 {/* A passage may run across a chapter boundary. When it does, every
@@ -417,8 +417,8 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
                     so `first:` would match every heading. */}
                 {multiChapter ? (
                   <h3
-                    className={`font-sans text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 ${
-                      groupIndex === 0 ? '' : 'mt-8 border-t border-slate-200 pt-4 dark:border-slate-700'
+                    className={`font-sans text-sm font-semibold uppercase tracking-wide text-ink-muted ${
+                      groupIndex === 0 ? '' : 'mt-8 border-t border-line pt-4'
                     }`}
                   >
                     {bookName ?? bookId} chapter {group.chapter}
@@ -433,7 +433,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
                         would otherwise hear it twice. */}
                     <sup
                       aria-hidden="true"
-                      className="mr-1 align-super font-sans text-xs font-semibold text-slate-500 dark:text-slate-400"
+                      className="mr-1 align-super font-sans text-xs font-semibold text-ink-muted"
                     >
                       {verse.number}
                     </sup>

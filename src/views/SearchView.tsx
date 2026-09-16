@@ -37,12 +37,23 @@ const OUTLINE_LIMIT = 50;
 const ECHO_LIMIT = 60;
 
 const FOCUS =
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:focus-visible:outline-slate-100';
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink';
 
 /** Long unbroken text — a pasted URL in a title, a pasted paragraph in the box — must wrap. */
 const WRAP = 'break-words';
 
-const RESULT_CARD = `block rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800 ${FOCUS}`;
+/**
+ * A result row, not a result card.
+ *
+ * Every hit here is two lines — a title and a line of metadata. A border and a
+ * radius around each one put four boxes on the page to carry eight lines of
+ * text, and the borders read louder than the results did. The list rule below
+ * separates them for a fraction of the ink.
+ */
+const RESULT_ROW = `block px-1 py-3.5 transition-colors hover:bg-raised ${FOCUS}`;
+
+/** The list those rows sit in: hairlines between, and one at each end. */
+const RESULT_LIST = 'mt-2 divide-y divide-line border-y border-line';
 
 interface OutlineMatch {
   id: string;
@@ -127,11 +138,11 @@ function EntryResult({ entry }: { entry: Entry }) {
 
   return (
     <li>
-      <Link to={{ name: 'entry', id: entry.id }} className={RESULT_CARD}>
-        <span className={`block font-medium text-slate-900 dark:text-slate-100 ${WRAP}`}>
+      <Link to={{ name: 'entry', id: entry.id }} className={RESULT_ROW}>
+        <span className={`block font-medium text-ink ${WRAP}`}>
           {entry.title || 'Untitled entry'}
         </span>
-        <span className={`mt-1 block text-sm text-slate-600 dark:text-slate-300 ${WRAP}`}>
+        <span className={`mt-1 block text-sm text-ink-soft ${WRAP}`}>
           {meta.join(' · ')}
         </span>
       </Link>
@@ -142,17 +153,17 @@ function EntryResult({ entry }: { entry: Entry }) {
 function OutlineResult({ match }: { match: OutlineMatch }) {
   return (
     <li>
-      <Link to={match.to} className={RESULT_CARD}>
-        <span className={`block font-medium text-slate-900 dark:text-slate-100 ${WRAP}`}>
+      <Link to={match.to} className={RESULT_ROW}>
+        <span className={`block font-medium text-ink ${WRAP}`}>
           {match.title}
         </span>
-        <span className={`mt-1 block text-sm text-slate-600 dark:text-slate-300 ${WRAP}`}>
+        <span className={`mt-1 block text-sm text-ink-soft ${WRAP}`}>
           {match.ref}
         </span>
         {/* Said in words, not signalled by styling: this result goes somewhere
             other than where the rest of them go. */}
         {match.unplaced ? (
-          <span className={`mt-1 block text-sm text-slate-500 dark:text-slate-400 ${WRAP}`}>
+          <span className={`mt-1 block text-sm text-ink-muted ${WRAP}`}>
             This reference has not been resolved — opens all of {match.bookName}.
           </span>
         ) : null}
@@ -162,7 +173,7 @@ function OutlineResult({ match }: { match: OutlineMatch }) {
 }
 
 const SECTION_HEADING =
-  'border-b border-slate-200 pb-1 font-serif text-xl font-semibold dark:border-slate-700';
+  'border-b border-line pb-1 font-serif text-xl font-semibold';
 
 /**
  * Where a typed reference should land.
@@ -328,7 +339,7 @@ export default function SearchView({ query }: { query: string }) {
                   {source.available ? (
                     <span>{source.label}</span>
                   ) : (
-                    <span className="text-slate-400 dark:text-slate-500">
+                    <span className="text-ink-muted">
                       {source.label} — {source.reason}
                     </span>
                   )}
@@ -345,15 +356,15 @@ export default function SearchView({ query }: { query: string }) {
       {showResults && catalogue.references.length > 0 ? (
         <section className="mt-8">
           <h2 className={SECTION_HEADING}>Go to a passage</h2>
-          <ul className="mt-3 space-y-3">
+          <ul className={RESULT_LIST}>
             {catalogue.references.map((hit) => (
               <li key={hit.label}>
                 <Link
                   to={passageRouteFor(hit.ref)}
-                  className="block rounded-lg border border-slate-200 p-3 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:hover:bg-slate-800"
+                  className="block rounded-control border border-line p-3 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   <span className="font-serif text-lg font-semibold">{hit.label}</span>
-                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mt-0.5 block text-sm text-ink-soft">
                     Read it in the King James Version
                   </span>
                 </Link>
@@ -366,23 +377,23 @@ export default function SearchView({ query }: { query: string }) {
       {showResults && catalogue.topics.length > 0 ? (
         <section className="mt-8">
           <h2 className={SECTION_HEADING}>Topics ({catalogue.topics.length})</h2>
-          <ul className="mt-3 space-y-3">
+          <ul className={RESULT_LIST}>
             {catalogue.topics.map(({ topic, matchedAlias }) => (
               <li key={topic.id}>
                 <Link
                   to={{ name: 'topic', topicId: topic.id }}
-                  className="block rounded-lg border border-slate-200 p-3 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-700 dark:hover:bg-slate-800"
+                  className="block rounded-control border border-line p-3 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   <span className="font-medium">{topic.name}</span>
                   {matchedAlias ? (
-                    <span className="ml-2 text-sm text-slate-500 dark:text-slate-400">
+                    <span className="ml-2 text-sm text-ink-muted">
                       matched “{matchedAlias}”
                     </span>
                   ) : null}
-                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+                  <span className="mt-0.5 block text-sm text-ink-soft">
                     {topic.description}
                   </span>
-                  <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  <span className="mt-1 block text-xs text-ink-muted">
                     {topic.refs.length} passages
                   </span>
                 </Link>
@@ -400,7 +411,7 @@ export default function SearchView({ query }: { query: string }) {
               <li key={book.id}>
                 <Link
                   to={{ name: 'book', bookId: book.id }}
-                  className="inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white px-4 py-1 text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="inline-flex min-h-11 items-center rounded-pill border border-line-strong bg-surface px-4 py-1 text-sm text-ink-soft hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   {book.name}
                 </Link>
@@ -416,11 +427,11 @@ export default function SearchView({ query }: { query: string }) {
             Your journal ({entries.length})
           </h2>
           {entries.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-3 text-sm text-ink-soft">
               No entries of your own match this.
             </p>
           ) : (
-            <ul className="mt-3 space-y-3">
+            <ul className={RESULT_LIST}>
               {entries.map((entry) => (
                 <EntryResult key={entry.id} entry={entry} />
               ))}
@@ -434,22 +445,22 @@ export default function SearchView({ query }: { query: string }) {
           that the data was never shipped. */}
       {showResults && hasOutlineTitles ? (
         <section className="mt-8">
-          <h2 className="border-b border-slate-200 pb-1 font-serif text-xl font-semibold dark:border-slate-700">
+          <h2 className="border-b border-line pb-1 font-serif text-xl font-semibold">
             Bible outline ({outlineMatches.length})
           </h2>
           {outlineMatches.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-3 text-sm text-ink-soft">
               No outline passages match this.
             </p>
           ) : (
             <>
-              <ul className="mt-3 space-y-3">
+              <ul className={RESULT_LIST}>
                 {outlineMatches.slice(0, OUTLINE_LIMIT).map((match) => (
                   <OutlineResult key={match.id} match={match} />
                 ))}
               </ul>
               {outlineMatches.length > OUTLINE_LIMIT ? (
-                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                <p className="mt-3 text-sm text-ink-soft">
                   Showing the first {OUTLINE_LIMIT} of {outlineMatches.length}. Narrow the search to
                   see fewer.
                 </p>

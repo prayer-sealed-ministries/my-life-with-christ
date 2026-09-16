@@ -47,7 +47,7 @@ function ThemeToggle() {
         id="theme-choice"
         value={choice}
         onChange={(event) => setChoice(event.target.value as 'light' | 'dark' | 'system')}
-        className="min-h-11 max-w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+        className="min-h-11 max-w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -79,15 +79,15 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
   }, [route, title]);
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+    <div className="min-h-dvh bg-app text-ink">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-2 focus:text-white dark:focus:bg-slate-100 dark:focus:text-slate-900"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-ink"
       >
         Skip to main content
       </a>
 
-      <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+      <header className="border-b border-line bg-surface">
         {/*
           Two rows on a phone, one row on a desktop.
 
@@ -97,7 +97,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
           block 217px tall — a quarter of the viewport spent on chrome, above a
           page meant for writing.
         */}
-        <div className="mx-auto flex max-w-3xl flex-col gap-1 px-4 py-2 sm:flex-row sm:items-center sm:gap-4 sm:py-3">
+        <div className="mx-auto flex max-w-3xl flex-col gap-1 px-5 py-2 sm:flex-row sm:items-center sm:gap-5 sm:py-2.5">
           {/* `flex-wrap` and `min-w-0` are what make 1.4.4 and 1.4.12 survivable.
               A flex item defaults to min-width:auto, so it refuses to shrink below
               its content and pushes the page wider instead of letting the nav's
@@ -106,7 +106,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:contents">
             <Link
               to={{ name: 'home' }}
-              className="font-serif text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="rounded-control font-serif text-lg font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               Journey
             </Link>
@@ -120,10 +120,10 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
               <Link
                 to={{ name: 'data' }}
                 aria-current={route.name === 'data' ? 'page' : undefined}
-                className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                className={`inline-flex min-h-11 items-center gap-1.5 rounded-control border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
                   route.name === 'data'
-                    ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
+                    ? 'border-accent bg-accent text-accent-ink'
+                    : 'border-line-strong bg-surface text-ink-soft hover:bg-raised'
                 }`}
               >
                 <span aria-hidden="true">↓</span> Export
@@ -139,7 +139,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
           */}
           <nav
             aria-label="Main"
-            className="-mx-4 min-w-0 overflow-x-auto px-4 sm:mx-0 sm:flex-1 sm:overflow-visible sm:px-0"
+            className="-mx-5 min-w-0 overflow-x-auto px-5 sm:mx-0 sm:flex-1 sm:overflow-visible sm:px-0"
           >
             <ul className="flex gap-1 whitespace-nowrap">
               {NAV.map((item) => {
@@ -149,10 +149,13 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
                     <Link
                       to={item.route}
                       aria-current={current ? 'page' : undefined}
-                      className={`inline-flex min-h-11 items-center rounded-lg px-3 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                      className={`inline-flex min-h-11 items-center rounded-control border px-3 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                        // A quiet tinted chip, not a filled slab. Weight carries
+                        // the state as well as colour does, so the cue is not
+                        // colour alone — and aria-current says it outright.
                         current
-                          ? 'bg-slate-900 font-medium text-white dark:bg-slate-100 dark:text-slate-900'
-                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+                          ? 'border-accent/40 bg-accent-soft font-semibold text-ink'
+                          : 'border-transparent text-ink-soft hover:bg-raised hover:text-ink'
                       }`}
                     >
                       {item.label}
@@ -172,14 +175,14 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
         {announcement}
       </p>
 
-      <main id="main" className="mx-auto max-w-3xl px-4 py-6">
+      <main id="main" className="mx-auto max-w-3xl px-5 py-8 sm:py-10">
         {/* Focus lands here after navigation, ahead of the page heading. */}
         <div ref={headingRef} tabIndex={-1} className="outline-none">
           {children}
         </div>
       </main>
 
-      <footer className="mx-auto max-w-3xl px-4 pb-10 pt-4 text-xs text-slate-500 dark:text-slate-400">
+      <footer className="mx-auto max-w-3xl border-t border-line px-5 pb-12 pt-6 text-xs text-ink-muted">
         <p>
           Everything here stays on this device.{' '}
           <Link to={{ name: 'data' }} className="underline focus-visible:outline-2">

@@ -1,18 +1,164 @@
 @import "tailwindcss";
 
 /**
- * Light and dark, both first-class. The default follows the system; an explicit
- * choice stamps data-theme on the root and wins in either direction.
+ * Light and dark, both first-class.
+ *
+ * Two selectors, not one, and the second is load-bearing. An explicit choice
+ * stamps data-theme on the root; the default choice is "system", which stamps
+ * NOTHING — so a variant that only matched [data-theme="dark"] left every
+ * system-dark reader who had never touched the control looking at the light
+ * theme. That was the shipped default, and no test caught it because every e2e
+ * run writes an explicit choice to localStorage before it loads the page.
+ *
+ * So: the attribute wins in either direction when present, and the media query
+ * decides when it is absent.
  */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  /*
+   * One radius scale, three steps. There were four values in use — lg, xl, 2xl
+   * and full — with no rule saying which belonged where, so equivalent things
+   * were rounded differently on different pages.
+   *
+   *   control  buttons, inputs, selects, nav items
+   *   card     any panel or clickable card
+   *   pill     tags and chips
+   */
+  --radius-control: 0.5rem;
+  --radius-card: 0.875rem;
+  --radius-pill: 9999px;
 }
 
+/**
+ * The semantic palette.
+ *
+ * Defined as plain custom properties rather than Tailwind colours because they
+ * have to change with the theme. `@theme inline` below maps them to utility
+ * names, so a component writes `bg-surface` once instead of
+ * `bg-white dark:bg-slate-800/60` — which is how two different shades of the
+ * same surface (slate-800 and slate-800/60) ended up in the codebase at the
+ * same time, on components meant to look identical.
+ *
+ * The ramp is deliberate and every step earns its place:
+ *   app       the page itself
+ *   surface   a panel or card resting on it
+ *   raised    that same card under the pointer, or a stronger inset
+ *   line      the ordinary border
+ *   line-strong  a form control, which needs to read as an affordance
+ *   ink / soft / muted   primary, secondary, metadata
+ *   accent    ONE accent, for interaction and selection. Not a second brand.
+ */
 :root {
   color-scheme: light dark;
+
+  /* Light: warm paper, not blue-white. Restrained, for long reading. */
+  --app: #f5f5f3;
+  --surface: #ffffff;
+  --raised: #efeeea;
+  --sunken: #faf9f7;
+  --line: #e2e0da;
+  --line-strong: #c9c6be;
+  --ink: #1b1b19;
+  --ink-soft: #4a4843;
+  --ink-muted: #66635c;
+  --accent: #33506b;
+  --accent-hover: #26405a;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6edf4;
+}
+
+/* Dark, by explicit choice. */
+:root[data-theme='dark'] {
+  --app: #14161a;
+  --surface: #1c1f24;
+  --raised: #24282e;
+  --sunken: #191c21;
+  --line: #2e333a;
+  --line-strong: #3e444c;
+  --ink: #ecebe8;
+  --ink-soft: #bab7b1;
+  --ink-muted: #918d86;
+  --accent: #a8c4dd;
+  --accent-hover: #c2d8ec;
+  --accent-ink: #14161a;
+  --accent-soft: #263749;
+}
+
+/* Dark, by system preference, when no choice has been stamped. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --app: #14161a;
+    --surface: #1c1f24;
+    --raised: #24282e;
+    --sunken: #191c21;
+    --line: #2e333a;
+    --line-strong: #3e444c;
+    --ink: #ecebe8;
+    --ink-soft: #bab7b1;
+    --ink-muted: #918d86;
+    --accent: #a8c4dd;
+    --accent-hover: #c2d8ec;
+    --accent-ink: #14161a;
+    --accent-soft: #263749;
+  }
+}
+
+/*
+ * `inline` matters: it makes the utility emit `var(--surface)` rather than the
+ * value resolved at build time, so one class follows the theme by itself.
+ */
+@theme inline {
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+}
+
+/**
+ * Reading measure.
+ *
+ * The shell is 48rem, which is right for the application chrome and too wide
+ * for prose: body text ran to about 86 characters a line and scripture to 83.
+ * Typographic convention is 45-75, and this is an app built for reading at
+ * length.
+ *
+ * In rem, NOT ch, and that is the whole lesson of this rule. `ch` is the width
+ * of the "0" glyph, which in both of these faces is a third wider than the
+ * average letter — so `68ch` computed to 751px against a 728px container and
+ * silently did nothing at all. The widths below were measured by counting
+ * characters on the rendered line, not derived from a unit that sounded right.
+ */
+@utility measure {
+  /*
+   * One width, not one per size. Measured on the rendered page: 38rem gives 73
+   * characters at the 16px sans body size and 72 at the 18px serif reading
+   * size, because the serif's wider glyphs are offset by its larger size almost
+   * exactly. A second token for scripture was written first and then deleted —
+   * it computed to the same line length as this one.
+   */
+  max-width: 38rem;
 }
 
 /**

@@ -149,7 +149,7 @@ function byBook(entries: Entry[]): Section[] {
 function EntryPart({ heading, text, tone }: { heading: string; text: string; tone?: 'reflection' }) {
   return (
     <div className="mt-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <h4 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
         {heading}
       </h4>
       {/*
@@ -161,7 +161,7 @@ function EntryPart({ heading, text, tone }: { heading: string; text: string; ton
           tone === 'reflection'
             ? // Set apart by shape, not by colour: an indent rule, italics, and
               // its own heading all survive a black-and-white print.
-              'mt-1 whitespace-pre-wrap break-words border-l-4 border-slate-300 pl-4 italic leading-relaxed dark:border-slate-600'
+              'mt-1 whitespace-pre-wrap break-words border-l-4 border-line-strong pl-4 italic leading-relaxed'
             : 'mt-1 whitespace-pre-wrap break-words leading-relaxed'
         }
       >
@@ -178,14 +178,14 @@ function JournalEntry({ entry }: { entry: Entry }) {
   const date = localDate(entry.date);
 
   return (
-    <article className="break-inside-avoid border-t border-slate-200 pt-6 dark:border-slate-700">
+    <article className="break-inside-avoid border-t border-line pt-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="font-serif text-lg font-semibold break-words">{entry.title || 'Untitled'}</h3>
         {/* An unknown kind still prints its own word rather than a blank tag. */}
         <Tag>{KIND_LABELS[entry.kind] ?? entry.kind}</Tag>
       </div>
 
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+      <p className="mt-1 text-sm text-ink-soft">
         {/* <time> only when the date actually parses: datetime="" is not a date,
             and a machine reading this page should not be told that it is. */}
         {date ? (
@@ -199,7 +199,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       </p>
 
       {about.length > 0 ? (
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">On: {about.join('; ')}</p>
+        <p className="mt-1 text-sm text-ink-soft">On: {about.join('; ')}</p>
       ) : null}
 
       {entry.notes.trim() ? <EntryPart heading="Notes" text={entry.notes} /> : null}
@@ -209,7 +209,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       {entry.prayer?.trim() ? <EntryPart heading="Prayer" text={entry.prayer} /> : null}
 
       {mentioned.length > 0 ? (
-        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-3 text-sm text-ink-soft">
           Scripture mentioned: {mentioned.join('; ')}
         </p>
       ) : null}
@@ -217,7 +217,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       {/* break-words: a URL is one long unbreakable word, and would otherwise
           scroll a 360px page sideways. */}
       {entry.links.length > 0 ? (
-        <ul className="mt-2 space-y-1 break-words text-sm text-slate-600 dark:text-slate-300">
+        <ul className="mt-2 space-y-1 break-words text-sm text-ink-soft">
           {/* The same URL can legitimately appear twice on one entry, so the
               index is part of the key: url alone collides and drops a line. */}
           {entry.links.map((link, index) => (
@@ -229,7 +229,7 @@ function JournalEntry({ entry }: { entry: Entry }) {
       ) : null}
 
       {tags.length > 0 ? (
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Tags: {tags.join(', ')}</p>
+        <p className="mt-2 text-sm text-ink-soft">Tags: {tags.join(', ')}</p>
       ) : null}
     </article>
   );
@@ -276,7 +276,7 @@ export default function LegacyView() {
       {storageError ? (
         <p
           role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+          className="rounded-control border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
         >
           {storageError} Nothing can be gathered or printed until that is fixed — and this page
           being empty does not mean your journal is.
@@ -286,7 +286,7 @@ export default function LegacyView() {
       {/* Only once the journal is actually read: "0 entries" during the load,
           or while storage is broken, is a claim about someone's life's work. */}
       {!loading && !storageError ? (
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-ink-soft">
           {entryWords(entries.length)}
           {span ? `, ${span}` : ''}. Ordered by{' '}
           {order === 'date' ? 'the day each was written' : 'book of the Bible'}.
@@ -294,16 +294,16 @@ export default function LegacyView() {
       ) : null}
 
       {/* The controls are not part of the book. */}
-      <div className="print-hidden space-y-4 rounded-xl border border-slate-200 p-4 print:hidden dark:border-slate-700">
+      <div className="print-hidden space-y-4 rounded-card border border-line p-4 print:hidden">
         <fieldset className="border-0 p-0">
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          <legend className="text-sm font-medium text-ink-soft">
             Order the journal by
           </legend>
           <div className="mt-1 flex flex-col gap-x-6 sm:flex-row">
             {orderOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex min-h-11 items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+                className="flex min-h-11 items-center gap-3 text-sm text-ink-soft"
               >
                 <input
                   type="radio"
@@ -323,7 +323,7 @@ export default function LegacyView() {
           Print or save as PDF
         </Button>
 
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-ink-soft">
           Printing uses the order chosen above. Your browser’s print dialog can save this as a PDF
           instead of sending it to a printer. For a copy that needs no browser at all,{' '}
           <Link to={{ name: 'data' }} className="underline">
@@ -367,7 +367,7 @@ export default function LegacyView() {
             >
               For those who come after
             </h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-1 text-sm text-ink-soft">
               These entries were marked, as they were written, as meant for whoever came later. They
               appear again below in their place in the journal; they are gathered here first because
               they were not meant to be come upon by accident.
