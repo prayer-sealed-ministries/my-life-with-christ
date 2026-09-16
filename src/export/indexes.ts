@@ -291,7 +291,7 @@ function footer(current: IndexKey): string[] {
     '',
     'The entries themselves are plain text files in the `notes` folder beside this one, one file for each entry.',
     '',
-    `[README.txt](${UP}README.txt) says what this archive is and how to read it with no program from anyone. [my-journey-with-God.html](${UP}book/my-journey-with-God.html) is the same journal laid out as one page you can read straight through.`,
+    `[README.txt](${UP}README.txt) says what this archive is and how to read it with no program from anyone. [my-journey-with-christ.html](${UP}book/my-journey-with-christ.html) is the same journal laid out as one page you can read straight through.`,
     '',
     `The other indexes: ${others.join(' · ')}.`,
     '',

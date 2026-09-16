@@ -59,6 +59,25 @@ function holdFrames() {
   vi.stubGlobal('cancelAnimationFrame', () => {});
   return {
     count: () => pending.length,
+    /**
+     * Wait until the claim has actually queued its frame.
+     *
+     * `findByLabelText` resolves the moment the textarea is in the DOM, which is
+     * NOT the moment React has finished running the effect that schedules the
+     * frame. Those are two different instants, and under load they separate:
+     * this file began failing about one run in four purely because a 48th test
+     * file changed how vitest distributes work across workers, widening the gap.
+     * Nothing about the component changed.
+     *
+     * Waiting for the frame is not a weaker assertion than asserting it is
+     * already there — the claim under test is "the focus claim is deferred by a
+     * frame", and that is still exactly what is required and then flushed. What
+     * is dropped is an assumption about effect ordering that was never the
+     * subject.
+     */
+    queued: async () => {
+      await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    },
     flush: () => {
       for (const cb of pending.splice(0)) cb();
     },
@@ -86,7 +105,7 @@ describe('fast-capture focus claim, frame boundary pinned', () => {
     setup();
     await screen.findByLabelText('Notes');
 
-    expect(frames.count(), 'the claim should be waiting on a frame').toBeGreaterThan(0);
+    await frames.queued();
     frames.flush();
 
     const notes = screen.getByLabelText('Notes');
@@ -103,6 +122,8 @@ describe('fast-capture focus claim, frame boundary pinned', () => {
     const addLink = await screen.findByRole('button', { name: 'Add a link' });
     fireEvent.click(addLink);
     await waitFor(() => expect(screen.getByLabelText('Web address for link 1')).toHaveFocus());
+
+    await frames.queued();
 
     const remove = screen.getByRole('button', { name: 'Remove link 1' });
     remove.focus();
@@ -123,6 +144,8 @@ describe('fast-capture focus claim, frame boundary pinned', () => {
     const frames = holdFrames();
     setup();
     await screen.findByLabelText('Notes');
+
+    await frames.queued();
 
     const shellTarget = document.querySelector('main [tabindex="-1"]') as HTMLElement | null;
     expect(shellTarget, 'the shell focus target is missing').not.toBeNull();

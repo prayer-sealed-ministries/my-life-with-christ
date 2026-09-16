@@ -1,7 +1,7 @@
 /**
  * The book, on screen: one long page that prints straight to PDF.
  *
- * The archive already contains `book/my-journey-with-God.html`, which is the
+ * The archive already contains `book/my-journey-with-christ.html`, which is the
  * copy meant to outlive the app. This view is the same idea reached in one tap
  * from the app itself, for the person who wants paper now — a printed copy for
  * a parent, a folder in a drawer, something a grandchild can hold.
@@ -275,7 +275,7 @@ export default function LegacyView() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-serif text-3xl font-semibold">My Journey with God</h1>
+      <h1 className="font-serif text-3xl font-semibold">My Journey With Christ</h1>
 
       {storageError ? (
         <p

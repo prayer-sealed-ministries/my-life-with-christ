@@ -58,7 +58,8 @@ describe('HomeView', () => {
 
     renderHome(provider);
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Journey');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Life With Christ');
+    expect(screen.getByText('Your walk with God, remembered.')).toBeInTheDocument();
     expect(screen.getByText(/stays on this device/i)).toBeInTheDocument();
     expect(screen.getByText(/no account/i)).toBeInTheDocument();
   });

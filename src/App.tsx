@@ -33,7 +33,7 @@ const LegacyView = lazy(() => import('./views/LegacyView'));
 function titleFor(route: ReturnType<typeof useRouter>['route']): string {
   switch (route.name) {
     case 'home':
-      return 'Journey';
+      return 'Life With Christ';
     case 'browse':
       return 'The Bible';
     case 'book':
@@ -57,7 +57,7 @@ function titleFor(route: ReturnType<typeof useRouter>['route']): string {
     case 'import':
       return 'Import notes';
     case 'legacy':
-      return 'My Journey with God';
+      return 'My Journey With Christ';
     default:
       return 'Not found';
   }

@@ -160,7 +160,7 @@ describe('LegacyView', () => {
     await db.putEntries([GENESIS, ROMANS]);
     renderView();
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'My Journey with God' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'My Journey With Christ' })).toBeInTheDocument();
 
     const titles = await screen.findAllByRole('heading', { level: 3 });
     expect(titles.map((node) => node.textContent)).toEqual([

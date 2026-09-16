@@ -525,7 +525,7 @@ export default function DataView() {
               <dt className="font-medium">indexes/ and book/</dt>
               <dd className="text-ink-soft">
                 Cross-references into notes/, and one self-contained HTML file —{' '}
-                <em>My Journey with God</em> — that prints as a book.{' '}
+                <em>My Journey With Christ</em> — that prints as a book.{' '}
                 <Link to={{ name: 'legacy' }} className="underline">
                   You can read and print that here too
                 </Link>

@@ -140,13 +140,13 @@ describe('renderReadme', () => {
 
   it('names the first file to open and the complete data file', () => {
     const text = flat(renderReadme(makeCtx()));
-    expect(text).toContain('book/my-journey-with-God.html');
+    expect(text).toContain('book/my-journey-with-christ.html');
     expect(text).toContain('data/journey.json');
     expect(text).toContain('data/schema.json');
     expect(text).toContain('data/entries.csv');
     // "Start here" must be attached to the book, not buried.
     expect(text.slice(text.indexOf('START HERE'), text.indexOf('START HERE') + 400)).toContain(
-      'my-journey-with-God.html',
+      'my-journey-with-christ.html',
     );
   });
 
@@ -222,7 +222,7 @@ describe('renderReadme', () => {
     const text = flat(raw);
     expect(text).toContain('ABOUT THE PASSAGE NAMES');
     expect(text).toMatch(/book, chapter and verse/);
-    expect(text).toContain('book/my-journey-with-God.html');
+    expect(text).toContain('book/my-journey-with-christ.html');
     expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 
@@ -253,7 +253,7 @@ describe('renderReadme', () => {
   it('survives an empty journal without pretending it holds something', () => {
     const raw = renderReadme(makeCtx({ entries: [] }));
     expect(flat(raw)).toContain('no entries');
-    expect(flat(raw)).toContain('book/my-journey-with-God.html');
+    expect(flat(raw)).toContain('book/my-journey-with-christ.html');
     expect(longestLine(raw)).toBeLessThanOrEqual(76);
   });
 

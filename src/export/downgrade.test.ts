@@ -139,11 +139,11 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
     const archive = await buildArchive({
       entries: ALL_ENTRIES, outlineBooks: refsOnlyBooks, topics, profile: 'refs-only', now: NOW,
     });
-    expect(archive.paths).toContain('book/my-journey-with-God.html');
+    expect(archive.paths).toContain('book/my-journey-with-christ.html');
     expect(archive.paths.filter((p) => p.startsWith('notes/'))).toHaveLength(5);
 
     const files = await readZip(archive.bytes);
-    const book = zipEntryText(files.find((f) => f.path === 'book/my-journey-with-God.html')!);
+    const book = zipEntryText(files.find((f) => f.path === 'book/my-journey-with-christ.html')!);
     expect(book).toContain('The Beatitudes');
   });
 });

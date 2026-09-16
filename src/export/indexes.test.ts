@@ -144,7 +144,7 @@ function noteLinks(markdown: string): string[] {
 const NAVIGATION = new Set([
   ...PATHS.map((path) => path.replace('indexes/', '')),
   '../README.txt',
-  '../book/my-journey-with-God.html',
+  '../book/my-journey-with-christ.html',
 ]);
 
 /** The headings at one level, in the order they appear. */

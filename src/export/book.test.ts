@@ -166,7 +166,7 @@ describe('renderBook: the document', () => {
 
     const doc = parse(html);
     expect(doc.documentElement.getAttribute('lang')).toBe('en');
-    expect(doc.title).toBe('My Journey with God');
+    expect(doc.title).toBe('My Journey With Christ');
     expect(doc.querySelector('meta[charset]')).not.toBeNull();
     expect(doc.querySelector('meta[name="viewport"]')).not.toBeNull();
   });
@@ -243,7 +243,7 @@ describe('renderBook: front and back matter', () => {
   it('states the date range, the entry count and the export date', () => {
     const page = parse(renderBook(makeContext(RICH_JOURNAL))).querySelector('.title-page')!;
 
-    expect(page.querySelector('h1')!.textContent).toBe('My Journey with God');
+    expect(page.querySelector('h1')!.textContent).toBe('My Journey With Christ');
     expect(page.querySelector('.span')!.textContent).toBe('January 4, 2026 – June 20, 2027');
     expect(page.querySelector('.count')!.textContent).toBe('2 entries');
     expect(page.querySelector('.exported')!.textContent).toBe('Made September 13, 2026');
@@ -551,7 +551,7 @@ describe('renderBook: profiles and edges', () => {
   it('still produces a whole book from an empty journal', () => {
     const doc = parse(renderBook(makeContext([])));
 
-    expect(doc.title).toBe('My Journey with God');
+    expect(doc.title).toBe('My Journey With Christ');
     expect(doc.querySelector('.count')!.textContent).toBe('0 entries');
     expect(doc.querySelector('.span')).toBeNull();
     expect(doc.querySelector('#journal .absent')!.textContent).toContain('no entries');

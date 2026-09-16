@@ -16,9 +16,16 @@ npm run dev            # Vite dev server
 npm test               # Vitest
 npm run typecheck      # tsc -b
 npm run lint           # eslint
-npm run build          # full data profile
+npm run build          # full data profile — local only, never published
+npm run build:public   # the profile the Pages workflow deploys
 npm run build:refs-only
-npm run verify:bundle -- --profile refs-only
+npm run verify:bundle -- --profile public
+npm run gate           # workflow policy + probe integrity + a refs-only bundle check
+```
+
+```bash
+npm run test:e2e       # Playwright, against the built site
+npm run test:a11y      # axe + keyboard + contrast + reflow
 ```
 
 ## Regenerating data
@@ -96,7 +103,7 @@ empty state names every source it searched and any the build cannot.
 
 ### 3. Every passage is reachable and journalable
 
-The outlines cover 30,816 of 31,102 verses. The remaining 286, across 46 gaps,
+The outlines cover 30,876 of 31,102 verses. The remaining 226, across 42 gaps,
 are not defects — they are the shape of the source. Browsing a book shows every
 chapter: outline entries render as titled sections, uncovered spans render as
 plain chapters with the identical "Add entry" action.
@@ -405,7 +412,7 @@ of the compilation and keep the whole risk.
 | Profile | Divisions | Use |
 | --- | --- | --- |
 | `full` | purchased [licensed content removed] | local only, by the purchaser. The default. |
-| `public` | **BSB section headings** — public domain since 2023-04-30 — plus intros written here | publishable, owned outright |
+| `public` | **BSB section headings** — public domain since 2023-04-30 — plus intros written here | publishable, owned outright. **This is what `pages.yml` deploys.** |
 | `refs-only` | none; whole chapters from KJV versification | the fallback |
 
 Each profile reads only the file it ships: under `public` and `refs-only` the
@@ -421,11 +428,13 @@ side by side.
 Attribution for the BSB and KJV is not legally required and is given anyway —
 `src/lib/attribution.ts`, shown on the site and written into every export.
 
-`scripts/verify-bundle.mjs` proves it against the built artefact with five named
+`scripts/verify-bundle.mjs` proves it against the built artefact with seven named
 assertions. **The flag is not evidence; the assertions are.**
 
 | Assertion | What it means |
 | --- | --- |
+| `BUNDLE_WAS_READ` | files were actually opened and three known-present sentinels found |
+| `EXCLUSIONS_TRACEABLE` | every exclusion resolves to a source this project owns |
 | `PROBE_SET_INTACT` | the gate is at least as strong as its frozen baseline |
 | `NO_SOURCE_FILES` | no PDFs, reports or `outlines.json` in `dist/` |
 | `NO_SOURCE_MAPS` | no `.map` files — they can carry a whole module post-tree-shake |
@@ -452,7 +461,8 @@ data shrank first.
 **2. The workflow is edited.** The realistic path to an accidental publication is
 not a bug in the verifier; it is one line in `.github/workflows/pages.yml`.
 `scripts/__tests__/workflow-policy.test.mjs` parses both workflows and asserts
-the profile is pinned to `refs-only`, that no step sets it to `full`, that no
+the deployed profile is pinned to the exact value it expects — `public` — that
+no step sets it to `full`, that no
 build step omits it (which would default to `full`), that verification happens
 *before* the artefact upload, that `deploy` needs `build`, and that the deploy
 job builds nothing of its own.
@@ -515,6 +525,32 @@ src/
   export/              zip, archive, generators, importer, migration
   types/               the domain contract
 ```
+
+## Names that are deliberately not the brand
+
+The product is **Life With Christ**; the book it exports is **My Journey With
+Christ**, at `book/my-journey-with-christ.html`. Those are user-facing names and
+they are expected to move again — a product can be renamed twice more before it
+ships.
+
+The identifiers below are NOT user-facing. They are stable machine names, and
+they are short, boring and independent of branding precisely so that a rename
+never has to touch stored data. **Do not "clean them up" for consistency.**
+
+| Identifier | Where | Why it stays |
+| --- | --- | --- |
+| `data/journey.json` | the archive's canonical record | A filename inside every exported archive. Renaming it breaks every reader ever written against the format, in exchange for nothing a user sees. |
+| `format: 'journey-export'` | the export envelope | The schema identifier. It is how a file declares what it is; it must outlive any brand. |
+| `journey-export-<date>.zip` | the downloaded filename | Matches the `format` value above, so a stranger can connect the file to the schema that describes it. |
+| `journey` | the IndexedDB database name | Renaming it orphans every existing local journal. There is no migration worth writing for a cosmetic gain. |
+| `journey:theme`, `journey:welcomed` | localStorage keys | Same reason, smaller stakes: a rename silently resets people's preferences. |
+| `name: "journey"` | `package.json` | Never published; the package is private. |
+| "My journey" | the timeline nav label | Refers to the reader's own entries, not to the exported book. It is not a brand surface. |
+
+`scripts/__tests__/branding.test.mjs` enforces the other direction: the retired
+wording cannot return, and the current wording must actually be present — a
+guard that only forbade the old name would be satisfied by deleting the title
+altogether.
 
 ## Conventions
 

@@ -107,7 +107,7 @@ describe('the archive itself', () => {
       'data/journey.json',
       'data/schema.json',
       'data/entries.csv',
-      'book/my-journey-with-God.html',
+      'book/my-journey-with-christ.html',
       'indexes/by-date.md',
       'indexes/by-book.md',
       'indexes/by-topic.md',
@@ -117,6 +117,25 @@ describe('the archive itself', () => {
     ]) {
       expect(paths, required).toContain(required);
     }
+
+    // The retired filename, asserted absent from a REAL archive rather than
+    // merely absent from the source. No journal was ever exported under it, so
+    // nothing reads it and nothing should write it.
+    expect(paths).not.toContain('book/my-journey-with-God.html');
+    expect(
+      paths.filter((path) => /my-journey-with-god/i.test(path)),
+      'an archive still carries the retired book filename',
+    ).toEqual([]);
+
+    // And the book it did write says the current name, in both the places a
+    // person sees it.
+    const entries = await readZip(archive.bytes);
+    const book = zipEntryText(
+      entries.find((file) => file.path === 'book/my-journey-with-christ.html')!,
+    );
+    expect(book).toContain('<title>My Journey With Christ</title>');
+    expect(book).toContain('<h1>My Journey With Christ</h1>');
+    expect(book).not.toMatch(/My Journey with God/i);
 
     expect(paths.filter((path) => path.startsWith('notes/'))).toHaveLength(5);
   });

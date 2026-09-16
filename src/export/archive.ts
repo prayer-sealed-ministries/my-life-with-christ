@@ -197,7 +197,7 @@ export async function buildArchive(options: BuildArchiveOptions): Promise<BuiltA
     files.push({ path, content });
   }
 
-  files.push({ path: 'book/my-journey-with-God.html', content: renderBook(ctx) });
+  files.push({ path: 'book/my-journey-with-christ.html', content: renderBook(ctx) });
 
   const manifest = await renderManifest(files, ctx);
   // Second position, right after the README: a reader looking for the inventory

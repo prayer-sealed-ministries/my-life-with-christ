@@ -1,5 +1,5 @@
 /**
- * The book: `book/my-journey-with-God.html`.
+ * The book: `book/my-journey-with-christ.html`.
  *
  * One file, and the whole journal is in it. No script, no stylesheet, no font,
  * no image, nothing fetched from anywhere — open it from a USB stick on a
@@ -651,7 +651,7 @@ function describeFilter(ctx: ExportContext): string {
 
 function renderTitlePage(ctx: ExportContext): string {
   const range = dateRange(ctx.entries);
-  const parts: string[] = ['<header class="title-page">', '<h1>My Journey with God</h1>'];
+  const parts: string[] = ['<header class="title-page">', '<h1>My Journey With Christ</h1>'];
 
   if (range) {
     const span =
@@ -1030,7 +1030,7 @@ export function renderBook(ctx: ExportContext): string {
   parts.push('<head>');
   parts.push('<meta charset="utf-8">');
   parts.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
-  parts.push('<title>My Journey with God</title>');
+  parts.push('<title>My Journey With Christ</title>');
   parts.push('<meta name="generator" content="Journey">');
   parts.push(`<style>\n${STYLES}\n</style>`);
   parts.push('</head>');

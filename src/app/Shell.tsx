@@ -66,7 +66,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
   const firstRender = useRef(true);
 
   useEffect(() => {
-    document.title = title === 'Journey' ? 'Journey' : `${title} — Journey`;
+    document.title = title === 'Life With Christ' ? 'Life With Christ' : `${title} — Life With Christ`;
 
     // Do not steal focus on first paint; only on an actual navigation.
     if (firstRender.current) {
@@ -108,7 +108,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
               to={{ name: 'home' }}
               className="rounded-control font-serif text-lg font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2"
             >
-              Journey
+              Life With Christ
             </Link>
 
             {/*
@@ -199,6 +199,11 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
           </Link>
           .
         </p>
+        {/* The product home, as text rather than a link.
+            A link would be a destination this application does not need and
+            cannot vouch for offline; naming it costs nothing and adds no
+            network dependency of any kind. */}
+        <p className="mt-1">Life With Christ · myjourneywithchrist.com</p>
       </footer>
     </div>
   );

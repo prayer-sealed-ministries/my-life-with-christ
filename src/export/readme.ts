@@ -132,7 +132,7 @@ export function renderReadme(ctx: ExportContext): string {
 
   blocks.push(
     [
-      'MY JOURNEY WITH GOD',
+      'MY JOURNEY WITH CHRIST',
       `A Bible journal, saved as plain files on ${longDate(ctx.exportedAt)}.`,
       `Exported ${ctx.exportedAt}`,
       RULE,
@@ -184,7 +184,7 @@ export function renderReadme(ctx: ExportContext): string {
       // another generator's business, and a promise made here that it stops
       // keeping is a lie told to somebody who cannot check it.
       para(
-        'Open the file book/my-journey-with-God.html. Double-click it and it ' +
+        'Open the file book/my-journey-with-christ.html. Double-click it and it ' +
           'opens in whatever web browser the machine has; it is the whole ' +
           'journal, laid out to read front to back. It needs no internet ' +
           'connection, and nothing in it is loaded from anywhere else.',
@@ -397,7 +397,7 @@ function inventory(ctx: ExportContext): string {
   rows.push(
     labelled(
       'book/',
-      'The whole journal as one web page. Open my-journey-with-God.html in any web browser. Start here.',
+      'The whole journal as one web page. Open my-journey-with-christ.html in any web browser. Start here.',
       width,
     ),
     // The example goes on a line of its own. A long title makes a long

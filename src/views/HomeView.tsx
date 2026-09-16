@@ -83,10 +83,17 @@ export default function HomeView() {
         begin" starts a new section. Equal gaps everywhere would have said all
         three were equally related.
       */}
-      <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Journey</h1>
-      <p className="measure mt-4 text-lg leading-relaxed text-ink-soft">
+      <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">
+        Life With Christ
+      </h1>
+      {/* The tagline sits with the name, not as a second paragraph: it finishes
+          the title rather than starting a new thought. */}
+      <p className="mt-1 text-lg text-ink-soft">Your walk with God, remembered.</p>
+
+      <p className="measure mt-5 text-lg leading-relaxed text-ink-soft">
         A place to read the Bible and keep what you hear — sermons, readings, prayers, and what they
-        meant to you at the time.
+        meant to you at the time. Over the years it becomes{' '}
+        <em>My Journey With Christ</em>: a record you can keep, print and pass on.
       </p>
       <p className="measure mt-4 leading-relaxed text-ink-muted">
         Everything you write stays on this device. There is no account and nothing is uploaded.
@@ -98,6 +105,7 @@ export default function HomeView() {
           export
         </Link>{' '}
         is what you actually own — a folder of plain files a grandchild could read without this app.
+        These are your words, your prayers, your story.
       </p>
 
       <section className="mt-10">
