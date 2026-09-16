@@ -111,6 +111,7 @@ export async function resolveViews(page: Page): Promise<ViewTarget[]> {
     { key: 'entry-edit', hash: '#/entry/seed-01' },
     { key: 'entry-new', hash: '#/entry/new' },
     { key: 'data', hash: '#/data' },
+    { key: 'import', hash: '#/import' },
     { key: 'legacy', hash: '#/legacy' },
   ];
 }

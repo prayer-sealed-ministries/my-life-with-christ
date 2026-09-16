@@ -66,12 +66,19 @@ function safeHref(url: string): string | null {
 /**
  * Inline markup, matched in one ordered pass.
  *
- * Bold comes before italic so `**x**` is not read as an empty italic. The
- * underscore forms require a non-word character on each side, so `file_name_2`
- * and `snake_case` survive untouched — people write those in notes.
+ * Code and links first, so a `*` inside a URL cannot start emphasis. Bold
+ * before italic, so `**x**` is not read as an empty italic.
+ *
+ * The emphasis forms carry flanking guards — an opening marker may not be
+ * followed by a space, and a closing one may not be preceded by one — and they
+ * are load-bearing, not pedantry. Without them "Costs $5 * 3 items and 2 * 4"
+ * has its two asterisks read as an italic span and comes out as "Costs $5  3
+ * items and 2  4", silently eating characters out of a note somebody wrote
+ * years before this renderer existed. The underscore forms additionally require
+ * a non-word character on each side, so `file_name_2` and `snake_case` survive.
  */
 const INLINE =
-  /`([^`\n]+)`|\[([^\]\n]+)\]\(\s*([^)\s]+)\s*\)|\*\*([^*\n]+)\*\*|(?<![A-Za-z0-9])__([^_\n]+)__(?![A-Za-z0-9])|\*([^*\n]+)\*|(?<![A-Za-z0-9])_([^_\n]+)_(?![A-Za-z0-9])/g;
+  /`([^`\n]+)`|\[([^\]\n]+)\]\(\s*([^)\s]+)\s*\)|\*\*(?!\s)([^*\n]*?)(?<!\s)\*\*|(?<![A-Za-z0-9])__(?!\s)([^_\n]*?)(?<!\s)__(?![A-Za-z0-9])|\*(?!\s)([^*\n]*?)(?<!\s)\*|(?<![A-Za-z0-9])_(?!\s)([^_\n]*?)(?<!\s)_(?![A-Za-z0-9])/g;
 
 /**
  * Render one line of markdown inline markup.

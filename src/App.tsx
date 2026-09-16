@@ -24,6 +24,9 @@ const TimelineView = lazy(() => import('./views/TimelineView'));
 const SearchView = lazy(() => import('./views/SearchView'));
 const EntryEditor = lazy(() => import('./views/EntryEditor'));
 const DataView = lazy(() => import('./views/DataView'));
+// Its own chunk: the document parsers, and the PDF engine behind them, are
+// downloaded only by someone who actually opens Import.
+const ImportView = lazy(() => import('./views/ImportView'));
 const LegacyView = lazy(() => import('./views/LegacyView'));
 
 /** The document title for a route, also announced after navigation. */
@@ -51,6 +54,8 @@ function titleFor(route: ReturnType<typeof useRouter>['route']): string {
       return 'New entry';
     case 'data':
       return 'Your journal';
+    case 'import':
+      return 'Import notes';
     case 'legacy':
       return 'My Journey with God';
     default:
@@ -103,6 +108,8 @@ function CurrentView() {
       return <EntryEditor key={`new:${route.anchor ?? ''}`} anchorParam={route.anchor} />;
     case 'data':
       return <DataView />;
+    case 'import':
+      return <ImportView />;
     case 'legacy':
       return <LegacyView />;
     default:

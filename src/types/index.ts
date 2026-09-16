@@ -217,6 +217,32 @@ export type EntryAnchor =
   | { kind: 'book'; book: string };
 
 /**
+ * Where an entry came from, when it did not come from the editor.
+ *
+ * Optional, and absent on everything written in the app — an entry someone
+ * typed here has no provenance to record. It is set only by the document
+ * importer, so a note brought in from a file can still say what file, years
+ * later, without the reading views having to care.
+ *
+ * Deliberately small and free of anything the reader should not see: no local
+ * paths, no byte offsets, no stack traces. `filename` is the name the browser
+ * reported for the chosen file, which the user picked themselves.
+ */
+export interface EntrySource {
+  /** ISO timestamp of the import that created this entry. */
+  importedAt: string;
+  /** The name of the file it came from, as the user saw it. */
+  filename: string;
+  format: 'txt' | 'markdown' | 'docx' | 'pdf';
+  /** Which candidate within that file, 1-based, so an order can be recovered. */
+  itemIndex: number;
+  /** 1-based page, where the format has pages and the text could be placed. */
+  page?: number;
+  /** Which parser produced it, so a later fix can find what an older one wrote. */
+  parserVersion: number;
+}
+
+/**
  * A journal entry.
  *
  * `notes` and `reflection` are deliberately separate fields: what was taught,
@@ -250,6 +276,8 @@ export interface Entry {
   tags: string[];
   /** Include in the legacy export's front section. */
   forDescendants: boolean;
+  /** Set only on an imported entry. Absent on anything written here. */
+  source?: EntrySource;
   /** Private is the default, always. */
   visibility: Visibility;
   createdAt: string;

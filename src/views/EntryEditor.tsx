@@ -26,6 +26,7 @@ import {
 } from '../app/data';
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { shouldRestoreFocus } from '../lib/focus-restore';
 import { refToString } from '../lib/bible';
@@ -695,12 +696,12 @@ export default function EntryEditor({
             labelled "Notes" said the same thing twice and bought nothing, and
             wrapping a bordered textarea in a bordered card was a box in a box. */}
         <div ref={notesBoxRef}>
-          <TextArea
+          <MarkdownEditor
             label="Notes"
             hint="What was taught"
             rows={8}
             value={form.notes}
-            onChange={(event) => update('notes', event.target.value)}
+            onChange={(value) => update('notes', value)}
           />
         </div>
 
@@ -709,12 +710,12 @@ export default function EntryEditor({
             helper — "what it meant to me" against "what was taught" — which say
             it plainly, where a rule or a tinted box only gestured at it. */}
         <div>
-          <TextArea
+          <MarkdownEditor
             label="Reflection"
             hint="What it meant to me"
             rows={5}
             value={form.reflection}
-            onChange={(event) => update('reflection', event.target.value)}
+            onChange={(value) => update('reflection', value)}
           />
         </div>
 

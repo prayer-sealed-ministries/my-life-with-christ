@@ -25,6 +25,7 @@ import { Button, EmptyState, LiveRegion, Spinner, Tag } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES, BOOK_ORDER } from '../lib/canon';
+import { Markdown } from '../components/Markdown';
 import type { Entry, EntryAnchor } from '../types';
 
 type Order = 'date' | 'book';
@@ -153,20 +154,23 @@ function EntryPart({ heading, text, tone }: { heading: string; text: string; ton
         {heading}
       </h4>
       {/*
-        break-words alongside whitespace-pre-wrap: pre-wrap breaks at spaces
-        only, so one pasted URL in a note would push a 360px page sideways.
+        Rendered as Markdown, which is what this field has always been typed as.
+        A note written before anything rendered it is plain text, and plain text
+        is valid Markdown, so it comes out looking exactly as it did.
+
+        break-words is inside the renderer for the same reason it was here: one
+        pasted URL would otherwise push a 360px page sideways.
       */}
-      <div
+      <Markdown
+        source={text}
         className={
           tone === 'reflection'
             ? // Set apart by shape, not by colour: an indent rule, italics, and
               // its own heading all survive a black-and-white print.
-              'mt-1 whitespace-pre-wrap break-words border-l-4 border-line-strong pl-4 italic leading-relaxed'
-            : 'mt-1 whitespace-pre-wrap break-words leading-relaxed'
+              'mt-1 border-l-4 border-line-strong pl-4 italic leading-relaxed'
+            : 'mt-1 leading-relaxed'
         }
-      >
-        {text}
-      </div>
+      />
     </div>
   );
 }

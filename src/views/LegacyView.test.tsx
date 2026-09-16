@@ -183,8 +183,14 @@ describe('LegacyView', () => {
 
     const reflection = screen.getByText('I have been living as though the list were still open.');
     // Set apart by shape, so the distinction survives a black-and-white print.
-    expect(reflection.className).toMatch(/italic/);
-    expect(reflection.className).toMatch(/border-l-4/);
+    //
+    // Asserted on the block that carries the shape rather than on the text node
+    // itself: the body is rendered as Markdown now, so the words sit in a
+    // paragraph inside that block. The claim is the same one — an indent rule
+    // and italics, neither of which is a colour.
+    const shaped = reflection.closest('div');
+    expect(shaped?.className).toMatch(/italic/);
+    expect(shaped?.className).toMatch(/border-l-4/);
   });
 
   it('puts the entries marked for descendants in a front section, before the body', async () => {

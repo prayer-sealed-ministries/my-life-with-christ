@@ -29,6 +29,7 @@ export type Route =
   | { name: 'entry'; id: string }
   | { name: 'newEntry'; anchor?: string }
   | { name: 'data' }
+  | { name: 'import' }
   | { name: 'legacy' }
   | { name: 'notFound'; path: string };
 
@@ -66,6 +67,8 @@ export function parseHash(hash: string): Route {
       return parts[1] ? { name: 'entry', id: parts[1] } : { name: 'timeline' };
     case 'data':
       return { name: 'data' };
+    case 'import':
+      return { name: 'import' };
     case 'legacy':
       return { name: 'legacy' };
     default:
@@ -98,6 +101,8 @@ export function href(route: Route): string {
       return route.anchor ? `#/entry/new?anchor=${encodeURIComponent(route.anchor)}` : '#/entry/new';
     case 'data':
       return '#/data';
+    case 'import':
+      return '#/import';
     case 'legacy':
       return '#/legacy';
     default:

@@ -237,7 +237,9 @@ test('searching for a passage does not submit the entry form', async ({ page }) 
 
   // There has to be something worth saving, or the form would refuse to submit
   // for an unrelated reason and this test would pass having proved nothing.
-  const notes = page.getByLabel('Notes');
+  // exact: the notes box now sits under a formatting toolbar labelled
+  // "Formatting for Notes", and Playwright's getByLabel matches substrings.
+  const notes = page.getByLabel('Notes', { exact: true });
   await expect(notes).toBeVisible();
   await notes.fill('Written in the pew, not finished yet.');
   await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();

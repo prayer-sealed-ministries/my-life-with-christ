@@ -21,6 +21,7 @@ import { Button, EmptyState, LiveRegion, Spinner, Tag } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { exportReminder } from '../export/reminder';
 import { formatDay, formatMonth, localDate } from '../lib/dates';
+import { markdownToPlainText } from '../lib/markdown';
 import type { Entry } from '../types';
 
 /**
@@ -41,7 +42,10 @@ const WRAP = 'break-words';
 
 /** First line or so of the notes, flattened for a one-glance preview. */
 function excerpt(text: string, limit = 140): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  // Through the Markdown reader rather than straight off the string: a preview
+  // is one line of plain words, and "**He opened by saying**" should read as
+  // words, not as punctuation. The stored field is untouched; only this glance.
+  const flat = markdownToPlainText(text).replace(/\s+/g, ' ').trim();
   if (flat.length <= limit) return flat;
   return `${flat.slice(0, limit).trimEnd()}…`;
 }
@@ -256,6 +260,19 @@ export default function TimelineView() {
                 className="underline focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 the Bible
+              </Link>
+              .
+            </p>
+            {/* The one place this is most wanted. Somebody looking at an empty
+                journey is exactly the person with a folder of sermon notes
+                already written somewhere else. */}
+            <p className="mt-2">
+              Already have notes elsewhere?{' '}
+              <Link
+                to={{ name: 'import' }}
+                className="underline focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                Import them from a document
               </Link>
               .
             </p>

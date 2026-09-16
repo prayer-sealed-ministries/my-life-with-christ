@@ -8,15 +8,55 @@
  * and reported, rather than discarded.
  */
 
-import type { Entry, EntryAnchor, EntryKind, EntryLink, ScriptureRef, Visibility } from '../types';
+import type {
+  Entry,
+  EntryAnchor,
+  EntryKind,
+  EntryLink,
+  EntrySource,
+  ScriptureRef,
+  Visibility,
+} from '../types';
 
 export const CURRENT_VERSION = 1;
 
 const KNOWN_FIELDS = new Set([
   'id', 'kind', 'title', 'date', 'place', 'speaker', 'sermonSeries', 'anchors',
   'scriptureRefs', 'notes', 'reflection', 'prayer', 'links', 'tags',
-  'forDescendants', 'visibility', 'createdAt', 'updatedAt', '_unmigrated',
+  'forDescendants', 'visibility', 'createdAt', 'updatedAt', 'source', '_unmigrated',
 ]);
+
+const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
+
+/**
+ * Read an import-provenance block, or nothing.
+ *
+ * Validated field by field rather than spread: this arrives from a file, and an
+ * entry's provenance must not become a place to smuggle arbitrary keys into the
+ * journal. Anything malformed yields undefined, and the whole block then falls
+ * through to `_unmigrated` like any other unrecognised value would.
+ */
+function migrateSource(raw: unknown): EntrySource | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+
+  const format = str(value.format);
+  if (!SOURCE_FORMATS.has(format)) return undefined;
+  if (typeof value.importedAt !== 'string' || typeof value.filename !== 'string') return undefined;
+
+  const source: EntrySource = {
+    importedAt: value.importedAt,
+    filename: value.filename,
+    format: format as EntrySource['format'],
+    itemIndex: typeof value.itemIndex === 'number' && Number.isFinite(value.itemIndex) ? value.itemIndex : 0,
+    parserVersion:
+      typeof value.parserVersion === 'number' && Number.isFinite(value.parserVersion)
+        ? value.parserVersion
+        : 0,
+  };
+  if (typeof value.page === 'number' && Number.isFinite(value.page)) source.page = value.page;
+  return source;
+}
 
 const KINDS: EntryKind[] = ['sermon', 'reading', 'service', 'prayer', 'reflection', 'letter'];
 
@@ -157,10 +197,20 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
       : {}),
   };
   for (const [key, item] of Object.entries(value)) {
-    if (!KNOWN_FIELDS.has(key)) {
-      unmigrated[key] = item;
-      warnings.push(`Entry ${id}: unrecognised field "${key}" preserved in _unmigrated.`);
-    }
+    if (KNOWN_FIELDS.has(key)) continue;
+    // `JSON.parse` makes "__proto__" an OWN property, and `unmigrated[key] = item`
+    // on a plain object then runs the __proto__ setter: it re-points this
+    // object's prototype and stores nothing. The field would be dropped in
+    // silence, which is precisely what this module exists not to do. (It cannot
+    // reach Object.prototype — the target is a fresh literal — so this is a
+    // loss-of-data bug rather than a privilege one, but it is still a bug.)
+    Object.defineProperty(unmigrated, key, {
+      value: item,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    warnings.push(`Entry ${id}: unrecognised field "${key}" preserved in _unmigrated.`);
   }
   if (unmappedAnchors.length > 0) unmigrated.anchors = unmappedAnchors;
 
@@ -186,6 +236,15 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
   if (typeof value.speaker === 'string') entry.speaker = value.speaker;
   if (typeof value.sermonSeries === 'string') entry.sermonSeries = value.sermonSeries;
   if (typeof value.prayer === 'string') entry.prayer = value.prayer;
+
+  const source = migrateSource(value.source);
+  if (source) entry.source = source;
+  else if (value.source !== undefined) {
+    // Present but unreadable: keep it rather than drop it, and say so.
+    unmigrated.source = value.source;
+    warnings.push(`Entry ${id}: import provenance was malformed and is preserved in _unmigrated.`);
+  }
+
   if (Object.keys(unmigrated).length > 0) entry._unmigrated = unmigrated;
 
   return entry;

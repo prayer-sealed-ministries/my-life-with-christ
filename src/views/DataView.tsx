@@ -536,6 +536,32 @@ export default function DataView() {
         </Card>
       </section>
 
+      {/*
+        Two ways in, kept apart because they are not the same operation. This
+        one reads an archive this app wrote and restores ids, dates and anchors
+        exactly. The other reads somebody's Word document and can only ever
+        propose what it thinks it found. Merging them into one control would
+        promise a fidelity the document path cannot deliver.
+      */}
+      <section aria-labelledby="documents-heading" className="space-y-4">
+        <h2 id="documents-heading" className="font-serif text-xl font-semibold">
+          Bring in notes you already have
+        </h2>
+        <p className="text-sm leading-relaxed text-ink-soft">
+          Sermon notes, devotionals, prayer lists or study notes from a .txt, .md, .docx or
+          text-based .pdf file. Everything is read on this device, you review what was found before
+          anything is saved, and your original file is not changed.
+        </p>
+        <p>
+          <Link
+            to={{ name: 'import' }}
+            className="inline-flex min-h-11 items-center rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Import notes from a document
+          </Link>
+        </p>
+      </section>
+
       <section aria-labelledby="import-heading" className="space-y-4">
         <h2 id="import-heading" className="font-serif text-xl font-semibold">
           Bring a journal back in

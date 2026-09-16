@@ -112,21 +112,30 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
             </Link>
 
             {/*
-              Export is not in the nav list and not buried in settings. Data
-              durability is the whole point of the product, so the way out of it
-              is visible on every view, always in the same place.
+              The journal page is not in the nav list and not buried in
+              settings. Data durability is the whole point of the product, so
+              the way out of it — and, now, the way in — is visible on every
+              view, always in the same place.
+
+              One control rather than two. Import belongs beside Export because
+              they are the same subject, and a third button in a header that
+              already has to survive 200% text at 320px would cost more than it
+              bought. `aria-current` marks it on either page.
             */}
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:order-last">
               <Link
                 to={{ name: 'data' }}
-                aria-current={route.name === 'data' ? 'page' : undefined}
+                aria-current={route.name === 'data' || route.name === 'import' ? 'page' : undefined}
                 className={`inline-flex min-h-11 items-center gap-1.5 rounded-control border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                  route.name === 'data'
+                  route.name === 'data' || route.name === 'import'
                     ? 'border-accent bg-accent text-accent-ink'
                     : 'border-line-strong bg-surface text-ink-soft hover:bg-raised'
                 }`}
               >
-                <span aria-hidden="true">↓</span> Export
+                {/* Named for both directions now that it is both. "Journal"
+                    alone would sit next to "My journey" in the same bar and
+                    mean something different. */}
+                <span aria-hidden="true">↓</span> Import / export
               </Link>
               <ThemeToggle />
             </div>
