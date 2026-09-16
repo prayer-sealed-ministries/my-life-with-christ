@@ -48,6 +48,25 @@ async function focused(page: Page) {
   });
 }
 
+/** How many entries the real IndexedDB holds. -1 if it could not be opened. */
+async function storedEntryCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const open = indexedDB.open('journey');
+        open.onsuccess = () => {
+          const db = open.result;
+          const count = db.transaction('entries').objectStore('entries').count();
+          count.onsuccess = () => {
+            db.close();
+            resolve(count.result);
+          };
+        };
+        open.onerror = () => resolve(-1);
+      }),
+  );
+}
+
 test('the first-visit dialog traps focus and gives it back', async ({ page }) => {
   test.setTimeout(90_000);
   await forceTheme(page, 'light');
@@ -184,22 +203,78 @@ test('write and save an entry using only the keyboard', async ({ page }) => {
   expect(saved, 'could not reach the Save button by tabbing').toBe(true);
 
   await page.waitForTimeout(900);
-  const stored = await page.evaluate(
-    () =>
-      new Promise<number>((resolve) => {
-        const open = indexedDB.open('journey');
-        open.onsuccess = () => {
-          const db = open.result;
-          const count = db.transaction('entries').objectStore('entries').count();
-          count.onsuccess = () => {
-            db.close();
-            resolve(count.result);
-          };
-        };
-        open.onerror = () => resolve(-1);
-      }),
-  );
+  const stored = await storedEntryCount(page);
   expect(stored, 'the entry was not written to the database').toBeGreaterThan(0);
+});
+
+/**
+ * Searching for a passage must not save the note.
+ *
+ * The picker's search field sits inside the entry form, and a form with a submit
+ * button submits on Enter from any text input. Somebody halfway through a
+ * sermon, looking for where to file what they have written, would have it saved
+ * and be navigated away mid-thought. Measured, not assumed: with the handler
+ * deleted entirely, this exact path saves the entry and lands on #/entry/<id>.
+ *
+ * The Enter is pressed with NO results showing, and that is the point. The
+ * handler does two things — cancel the keystroke, and move the keyboard onto the
+ * first result — and in Chrome the focus move alone is enough to suppress the
+ * submission, because implicit submission needs the input still focused when the
+ * default action runs. So a test that presses Enter on a list of results passes
+ * with preventDefault deleted, masked by the focus move. With nothing to focus,
+ * only the cancel is left standing.
+ *
+ * This lives here rather than in the unit suite because jsdom does not implement
+ * implicit submission at all: the jsdom version asserted an empty database and
+ * passed with the guard deleted, which is how it was caught being a decoration.
+ */
+test('searching for a passage does not submit the entry form', async ({ page }) => {
+  test.setTimeout(90_000);
+  await forceTheme(page, 'light');
+  await page.addInitScript(() => localStorage.setItem('journey:welcomed', '1'));
+  await page.goto('#/entry/new');
+  await page.waitForLoadState('networkidle');
+
+  // There has to be something worth saving, or the form would refuse to submit
+  // for an unrelated reason and this test would pass having proved nothing.
+  const notes = page.getByLabel('Notes');
+  await expect(notes).toBeVisible();
+  await notes.fill('Written in the pew, not finished yet.');
+  await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+
+  // Open Details from the keyboard: Enter on a <summary> toggles it.
+  await page.locator('details summary').first().focus();
+  await page.keyboard.press('Enter');
+
+  const search = page.getByLabel('Add a passage');
+  await expect(search).toBeVisible();
+  await search.focus();
+
+  // A query with no results: nothing for the focus move to land on, so the
+  // cancel is the only thing between this keystroke and a saved entry.
+  await page.keyboard.type('zzzzznotathing');
+  await expect(page.getByText(/Nothing matched/)).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(600);
+
+  expect(new URL(page.url()).hash, 'searching navigated away from the blank entry').toBe(
+    '#/entry/new',
+  );
+  expect(await storedEntryCount(page), 'searching saved the entry').toBeLessThanOrEqual(0);
+
+  // And with results, the keystroke puts the keyboard on the first one.
+  await search.fill('');
+  await search.focus();
+  await page.keyboard.type('John 4');
+  await expect(page.getByRole('button', { name: /^Add John 4/ }).first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(400);
+
+  const landed = await focused(page);
+  expect(landed.tag).toBe('BUTTON');
+  expect(landed.label).toMatch(/^Add John 4/);
+  expect(new URL(page.url()).hash).toBe('#/entry/new');
+  expect(await storedEntryCount(page), 'picking a passage saved the entry').toBeLessThanOrEqual(0);
 });
 
 test('no keyboard trap anywhere in the journal views', async ({ page }) => {

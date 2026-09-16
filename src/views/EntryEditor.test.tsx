@@ -9,7 +9,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 
-import { hasOutlineTitles, segmentsForBook } from '../app/data';
+import { hasOutlineTitles, segmentTitle, segmentsForBook } from '../app/data';
+import { CANON } from '../lib/canon';
+import { examinedAtLeast } from '../testing/floor';
 import { RouterProvider } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
 import { refToString } from '../lib/bible';
@@ -277,9 +279,10 @@ describe('EntryEditor — anchors', () => {
     fireEvent.click(chip);
 
     // The clicked button is gone. Focus must not fall to <body>, which would
-    // drop a keyboard user back at the top of the document.
+    // drop a keyboard user back at the top of the document. It lands on the
+    // control that directly follows the chip list, not one further down.
     expect(document.body).not.toHaveFocus();
-    expect(screen.getByLabelText('Add a topic')).toHaveFocus();
+    expect(screen.getByLabelText('Add a passage')).toHaveFocus();
     expect(await screen.findByText(/removed\.$/)).toHaveAttribute('aria-live', 'polite');
   });
 
@@ -296,6 +299,330 @@ describe('EntryEditor — anchors', () => {
     // disabled element cannot hold focus.
     expect(add).toBeDisabled();
     expect(screen.getByLabelText('Add a topic')).toHaveFocus();
+  });
+});
+
+/**
+ * The passage picker: how somebody files a note against what they actually
+ * heard. The pastor preached on the sermon on the mount; nobody remembers that
+ * Jesus at the well is John 4.
+ *
+ * Nothing here hardcodes a title. The two published schemes word John 4
+ * differently and `refs-only` gives it no title at all, so the words to search
+ * are taken from the build under test — see passage-search.test.ts for why.
+ */
+describe('EntryEditor — the passage picker', () => {
+  const johnFour = segmentsForBook('john').find((segment) => segment.chapterStart === 4);
+
+  const search = () => screen.getByLabelText('Add a passage');
+
+  it('is offered on a blank entry, and says how it can be searched', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+    expect(search()).toBeInTheDocument();
+    // The hint must be a real description, not a placeholder.
+    const hintId = search().getAttribute('aria-describedby');
+    expect(hintId).toBeTruthy();
+    expect(document.getElementById(hintId!)?.textContent).toMatch(/reference/i);
+  });
+
+  it('finds a passage by a typed reference and attaches it as a scripture range', async () => {
+    expect(johnFour).toBeDefined();
+    const { storage } = setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(search(), { target: { value: 'John 4:7' } });
+    const result = await screen.findByRole('button', { name: /^Add John 4/ });
+    fireEvent.click(result);
+
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'At the well.' } });
+    fireEvent.click(save());
+    const entry = await savedEntry(storage);
+
+    expect(entry.anchors).toHaveLength(1);
+    const anchor = entry.anchors[0];
+    expect(anchor).toMatchObject({ kind: 'scripture', book: 'john' });
+    // Rule 2: the portable range is always there. The outline id is an extra,
+    // present only where this build has a titled division to point at.
+    expect(anchor).toMatchObject(segmentRef(johnFour!, 'john'));
+    if (johnFour!.kind === 'outline') {
+      expect(anchor).toMatchObject({ outlineEntryId: johnFour!.id });
+    } else {
+      expect(anchor).not.toHaveProperty('outlineEntryId');
+    }
+  });
+
+  it.runIf(hasOutlineTitles)('finds a passage by the name the Bible view shows', async () => {
+    expect(johnFour?.kind).toBe('outline');
+    const title = segmentTitle(johnFour!);
+    const { storage } = setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(search(), { target: { value: title } });
+    // Named by its reference first, because that is what is stored — the title
+    // is what was remembered, and both are shown.
+    const result = await screen.findByRole('button', {
+      name: `Add ${refToString(segmentRef(johnFour!, 'john'), 'John')} — ${title}`,
+    });
+    fireEvent.click(result);
+
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'At the well.' } });
+    fireEvent.click(save());
+    const entry = await savedEntry(storage);
+    expect(entry.anchors[0]).toMatchObject({
+      kind: 'scripture',
+      book: 'john',
+      outlineEntryId: johnFour!.id,
+    });
+  });
+
+  it('says what it searched when a name finds nothing', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(search(), { target: { value: 'zzzzznotathing' } });
+    const status = await screen.findByText(/Nothing matched/);
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    // Under refs-only "no such passage" would be a lie about the data rather
+    // than about the query: there are no titles to have matched.
+    if (hasOutlineTitles) expect(status.textContent).not.toMatch(/no passage titles/);
+    else expect(status.textContent).toMatch(/no passage titles/);
+  });
+
+  /**
+   * The search field sits inside the entry form, so in a browser Enter submits
+   * it — saving a half-written note the moment somebody looked for where to
+   * file it.
+   *
+   * What is asserted here is that the keystroke was *cancelled*, not that
+   * nothing was saved. jsdom does not implement a form's implicit submission at
+   * all, so "the database is still empty" passes whether the guard exists or
+   * not: deleting preventDefault left that assertion green, which is how this
+   * test was caught being a decoration. The browser half of the claim — that an
+   * uncancelled Enter really would save — is in tests/e2e/keyboard.spec.ts,
+   * where a real form can do it.
+   */
+  it('cancels an Enter keystroke rather than letting the form submit it', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Half a thought.' } });
+
+    // A whole chapter, which every profile divides into at least one passage.
+    fireEvent.change(search(), { target: { value: 'John 4' } });
+    const results = await screen.findAllByRole('button', { name: /^Add John 4/ });
+
+    // fireEvent returns false when the handler called preventDefault.
+    const uncancelled = fireEvent.keyDown(search(), { key: 'Enter' });
+    expect(uncancelled, 'Enter was left to the form, which would submit it').toBe(false);
+    // And the keyboard is put on the first result instead.
+    expect(results[0]).toHaveFocus();
+  });
+
+  it('keeps focus on the page after a passage is added, and clears the search', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(search(), { target: { value: 'John 4:7' } });
+    const result = await screen.findByRole('button', { name: /^Add John 4/ });
+    result.focus();
+    fireEvent.click(result);
+
+    // Clearing the query unmounts the clicked button.
+    expect(search()).toHaveValue('');
+    expect(document.body).not.toHaveFocus();
+    expect(search()).toHaveFocus();
+    expect(await screen.findByText(/added\.$/)).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('says so rather than claiming a second add, when the passage is already attached', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    for (let round = 0; round < 2; round += 1) {
+      fireEvent.change(search(), { target: { value: 'John 4:7' } });
+      fireEvent.click(await screen.findByRole('button', { name: /^Add John 4/ }));
+    }
+
+    expect(await screen.findByText(/is already attached\.$/)).toBeInTheDocument();
+    // And the chip list did not grow a duplicate.
+    expect(screen.getAllByRole('button', { name: /^Remove John 4/ })).toHaveLength(1);
+  });
+});
+
+/**
+ * The other way to attach a passage: book first, then the passage within it.
+ *
+ * Searching only helps somebody who remembers a name. This is for "it was
+ * somewhere in Acts" — and it has to land the identical anchor the search box
+ * lands, or two routes to the same passage would write two different things.
+ */
+/**
+ * Where the passage controls SIT, not merely that they exist.
+ *
+ * This is a containment test on purpose. Every other test in this file passed
+ * with the picker buried at the bottom of a collapsed <details>, because
+ * Testing Library queries find elements inside a shut disclosure perfectly
+ * well — jsdom renders them, the browser just does not show them. So "the test
+ * finds it" and "a person can see it" are different claims, and only the second
+ * one was the complaint.
+ */
+describe('EntryEditor — the passage controls are not hidden', () => {
+  it('puts passage selection on the form itself, not behind the Details disclosure', async () => {
+    const { container } = setup(<EntryEditor />);
+    await notesBox();
+
+    const details = container.querySelector('details');
+    expect(details).not.toBeNull();
+    // A new entry opens with the disclosure shut, so anything inside it is
+    // invisible until clicked.
+    expect((details as HTMLDetailsElement).open).toBe(false);
+
+    for (const label of ['Add a passage', 'Book', 'Passage']) {
+      expect(
+        details!.contains(screen.getByLabelText(label)),
+        `"${label}" is inside the collapsed Details panel, where nobody finds it`,
+      ).toBe(false);
+    }
+  });
+
+  it('leaves the genuinely optional half folded away', async () => {
+    const { container } = setup(<EntryEditor />);
+    await notesBox();
+    const details = container.querySelector('details')!;
+
+    // Topics, tags, links and the rest are still optional extras.
+    expect(details.contains(screen.getByLabelText('Add a topic'))).toBe(true);
+    expect(details.contains(screen.getByLabelText('Tags'))).toBe(true);
+  });
+});
+
+describe('EntryEditor — the book-first picker', () => {
+  const segments = segmentsForBook('john');
+  const target = segments.find((segment) => segment.chapterStart === 4)!;
+
+  const bookPicker = () => screen.getByLabelText('Book');
+  const passagePicker = () => screen.getByLabelText('Passage');
+
+  it('will not offer passages until a book is chosen', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    expect(passagePicker()).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add passage' })).toBeDisabled();
+    expect(passagePicker()).toHaveTextContent('Choose a book first');
+  });
+
+  it('lists a chosen book\u2019s passages in the order the Bible view lists them', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    expect(passagePicker()).toBeEnabled();
+
+    const options = within(passagePicker())
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter(Boolean);
+    expect(options).toEqual(segments.map((segment) => segment.id));
+  });
+
+  /**
+   * Rule 3: a passage reachable by browsing must be reachable here too.
+   *
+   * John cannot carry this claim — it has no gaps under any profile, so a
+   * picker that silently dropped every uncovered span would still list all of
+   * John and pass. Filtering the list to outline-backed divisions was tried as
+   * a deliberate sabotage and John noticed nothing. So the book under test is
+   * whichever one this build actually leaves a hole in.
+   *
+   * Which build that is matters, and all three differ: `full` leaves 42 real
+   * gaps, `refs-only` is nothing BUT uncovered chapters, and the BSB scheme
+   * under `public` is a complete partition with no gap anywhere. The last of
+   * those cannot be tested, only stated — so it is stated, rather than passed
+   * off as a test that ran.
+   */
+  it('offers uncovered passages too, not only the titled ones', async () => {
+    const gapped = CANON.map((bookId) => ({ bookId, list: segmentsForBook(bookId) })).find(
+      ({ list }) => list.some((segment) => segment.kind === 'uncovered'),
+    );
+
+    if (!gapped) {
+      // Not a skip dressed up as a pass: assert the reason no gap was found,
+      // so this fails loudly if a build ever loses coverage silently.
+      const everySegment = CANON.flatMap((bookId) => segmentsForBook(bookId));
+      examinedAtLeast(everySegment.length, 100, 'divisions across the canon');
+      expect(everySegment.every((segment) => segment.kind === 'outline')).toBe(true);
+      return;
+    }
+
+    setup(<EntryEditor />);
+    await notesBox();
+    fireEvent.change(bookPicker(), { target: { value: gapped.bookId } });
+
+    const options = within(passagePicker())
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter(Boolean);
+
+    const uncovered = gapped.list.filter((segment) => segment.kind === 'uncovered');
+    examinedAtLeast(uncovered.length, 1, `uncovered spans in ${gapped.bookId}`);
+    for (const segment of uncovered) expect(options).toContain(segment.id);
+  });
+
+  it('attaches the same anchor the search box would attach', async () => {
+    const { storage } = setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(passagePicker(), { target: { value: target.id } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add passage' }));
+
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'At the well.' } });
+    fireEvent.click(save());
+    const entry = await savedEntry(storage);
+
+    expect(entry.anchors).toHaveLength(1);
+    expect(entry.anchors[0]).toMatchObject({
+      kind: 'scripture',
+      ...segmentRef(target, 'john'),
+    });
+    if (target.kind === 'outline') {
+      expect(entry.anchors[0]).toMatchObject({ outlineEntryId: target.id });
+    } else {
+      expect(entry.anchors[0]).not.toHaveProperty('outlineEntryId');
+    }
+  });
+
+  it('clears the section but keeps the book, so a second passage is one click away', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(passagePicker(), { target: { value: target.id } });
+    const add = screen.getByRole('button', { name: 'Add passage' });
+    add.focus();
+    fireEvent.click(add);
+
+    expect(bookPicker()).toHaveValue('john');
+    expect(passagePicker()).toHaveValue('');
+    // Adding disables the button under the user's own finger.
+    expect(add).toBeDisabled();
+    expect(document.body).not.toHaveFocus();
+    expect(passagePicker()).toHaveFocus();
+  });
+
+  it('drops a stale section when the book changes', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(passagePicker(), { target: { value: target.id } });
+    expect(screen.getByRole('button', { name: 'Add passage' })).toBeEnabled();
+
+    // A section id from John means nothing in Acts, and must not survive.
+    fireEvent.change(bookPicker(), { target: { value: 'acts' } });
+    expect(passagePicker()).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Add passage' })).toBeDisabled();
   });
 });
 

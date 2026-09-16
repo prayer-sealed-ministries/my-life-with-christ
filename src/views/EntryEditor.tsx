@@ -13,15 +13,29 @@
  * boxes, separate headings and separate storage.
  */
 
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 
-import { canonBooks, findSegment, hasOutlineTitles, segmentTitle, topics, topicsById } from '../app/data';
+import {
+  canonBooks,
+  findSegment,
+  hasOutlineTitles,
+  segmentTitle,
+  segmentsForBook,
+  topics,
+  topicsById,
+} from '../app/data';
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { shouldRestoreFocus } from '../lib/focus-restore';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
+import {
+  findPassages,
+  passageStatusText,
+  toPassageMatch,
+  type PassageMatch,
+} from '../lib/passage-search';
 import { segmentRef } from '../lib/passages';
 import { todayIso } from '../storage/db';
 import type { Entry, EntryAnchor, EntryKind, EntryLink } from '../types';
@@ -110,8 +124,7 @@ const hasDetails = (form: FormState): boolean =>
       form.sermonSeries ||
       form.prayer ||
       form.tagsText ||
-      form.links.length ||
-      form.anchors.length,
+      form.links.length,
   );
 
 /**
@@ -230,10 +243,20 @@ function nextFrame(callback: () => void): () => void {
   return () => clearTimeout(handle);
 }
 
-const SELECT_CLASS =
+const CONTROL_CLASS =
   'mt-1 block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
 
+/** One passage in the picker's result list. A real button, so Enter and tab work. */
+const RESULT_CLASS =
+  'block w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700';
+
 const LABEL_CLASS = 'block text-sm font-medium text-slate-700 dark:text-slate-300';
+
+/** Book list groupings, worded as the browse view words them. */
+const TESTAMENTS = [
+  { key: 'OT', label: 'Old Testament' },
+  { key: 'NT', label: 'New Testament' },
+] as const;
 
 const SECTION_HEADING = 'font-serif text-lg font-semibold text-slate-900 dark:text-slate-100';
 
@@ -276,6 +299,9 @@ export default function EntryEditor({
   const [createdId, setCreatedId] = useState<string | null>(null);
   const descendantsId = useId();
   const topicPickerId = useId();
+  const passagePickerId = useId();
+  const bookPickerId = useId();
+  const sectionPickerId = useId();
   const reasonId = useId();
 
   const notesBoxRef = useRef<HTMLDivElement>(null);
@@ -286,6 +312,10 @@ export default function EntryEditor({
   // the click handler itself.
   const addLinkRef = useRef<HTMLButtonElement>(null);
   const topicPickerRef = useRef<HTMLSelectElement>(null);
+  const passageSearchRef = useRef<HTMLInputElement>(null);
+  const passageResultsRef = useRef<HTMLUListElement>(null);
+  const bookPickerRef = useRef<HTMLSelectElement>(null);
+  const sectionPickerRef = useRef<HTMLSelectElement>(null);
   const linksListRef = useRef<HTMLUListElement>(null);
   const deleteRef = useRef<HTMLButtonElement>(null);
   /**
@@ -299,6 +329,10 @@ export default function EntryEditor({
    */
   const focusAfterRender = useRef<(() => void) | null>(null);
   const [topicChoice, setTopicChoice] = useState('');
+  const [passageQuery, setPassageQuery] = useState('');
+  /** Book chosen in the browse picker, and the section chosen within it. */
+  const [browseBook, setBrowseBook] = useState('');
+  const [browseSegmentId, setBrowseSegmentId] = useState('');
 
   const loaded = form !== null;
   const dirty = form !== null && JSON.stringify(form) !== baseline;
@@ -450,6 +484,51 @@ export default function EntryEditor({
         ? { ...current, anchors: current.anchors.filter((anchor) => anchorKey(anchor) !== key) }
         : current,
     );
+
+  // Recomputed per keystroke, which is cheap: this is string matching over a few
+  // thousand titles, and nothing is fetched or parsed. `segmentsForBook` caches
+  // each book the first time it is asked.
+  const passageResults = useMemo(
+    () => findPassages(passageQuery, { segmentsForBook, segmentTitle, hasOutlineTitles }),
+    [passageQuery],
+  );
+
+  /**
+   * The chosen book's divisions, exactly as the Bible view lists them.
+   *
+   * Deliberately the same `segmentsForBook` the browse view uses, so a reader
+   * who found "Jesus and the Samaritan Woman" by browsing sees that same wording
+   * in this dropdown. Uncovered gaps are included for the reason rule 3 exists:
+   * leaving them out would make Genesis 35 pickable everywhere except here.
+   */
+  const browseSegments = useMemo(
+    () => (browseBook ? segmentsForBook(browseBook) : []),
+    [browseBook],
+  );
+
+  /**
+   * Attach the passage a result row names.
+   *
+   * The scripture range is what is stored; `outlineEntryId` only ever goes on
+   * top of it, never instead of it, so this entry still names a real passage
+   * after an export into a build with no divisions at all.
+   */
+  const addPassage = (match: PassageMatch) => {
+    const anchor: EntryAnchor = match.outlineEntryId
+      ? { kind: 'scripture', ...match.ref, outlineEntryId: match.outlineEntryId }
+      : { kind: 'scripture', ...match.ref };
+    const label = anchorLabel(anchor);
+    // addAnchor de-duplicates, so a second tap is harmless — but saying "added"
+    // when nothing changed is a small lie to somebody who cannot see the chips.
+    const already = form?.anchors.some((existing) => anchorKey(existing) === anchorKey(anchor));
+
+    addAnchor(anchor);
+    // Clearing the query unmounts the very button that was clicked, so focus
+    // goes back to the field that found it rather than falling to <body>.
+    setPassageQuery('');
+    passageSearchRef.current?.focus();
+    setMessage(already ? `${label} is already attached.` : `${label} added.`);
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -639,6 +718,230 @@ export default function EntryEditor({
           />
         </div>
 
+        {/* Promoted out of the Details panel deliberately. For a sermon note the
+            passage is not an optional extra — it is most of what the note is
+            about, and behind a collapsed disclosure it was never found. Topics
+            stay folded away; they are the genuinely optional half. */}
+        <section>
+          <h2 className={SECTION_HEADING}>
+            What this entry is about
+          </h2>
+
+
+              {form.anchors.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  Not attached to anything yet.
+                </p>
+              ) : (
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {form.anchors.map((anchor) => {
+                    const key = anchorKey(anchor);
+                    const label = anchorLabel(anchor);
+                    return (
+                      <li
+                        key={key}
+                        // max-w-full and the wrap: an outline title on a 360px
+                        // phone is easily wider than the screen, and a chip
+                        // that refuses to break would scroll the whole page
+                        // sideways.
+                        className="flex max-w-full items-center gap-1 rounded-2xl border border-slate-300 bg-slate-100 py-1 pl-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                      >
+                        <span className="min-w-0 break-words">{label}</span>
+                        <Button
+                          variant="ghost"
+                          className="min-w-11 shrink-0 rounded-2xl px-2"
+                          aria-label={`Remove ${label}`}
+                          onClick={() => {
+                            removeAnchor(key);
+                            // Same as the link rows: this button is about to be
+                            // unmounted, so focus moves to the control that
+                            // follows it rather than falling to <body>.
+                            passageSearchRef.current?.focus();
+                            setMessage(`${label} removed.`);
+                          }}
+                        >
+                          <span aria-hidden="true">✕</span>
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {/* A pastor preached on the sermon on the mount, or Jesus at the well.
+                  Nobody remembers that the second one is John 4, so the passage
+                  is found by the name the Bible view shows it under — and by a
+                  typed reference, which is the only name it has under a build
+                  with no titles. */}
+              <div className="mt-4">
+                <label htmlFor={passagePickerId} className={LABEL_CLASS}>
+                  Add a passage
+                </label>
+                <p
+                  id={`${passagePickerId}-hint`}
+                  className="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                >
+                  {hasOutlineTitles
+                    ? 'By name or by reference \u2014 \u201csermon on the mount\u201d, or \u201cJohn 4\u201d.'
+                    : 'By reference \u2014 \u201cJohn 4\u201d. This version of the site carries no passage titles.'}
+                </p>
+                <input
+                  id={passagePickerId}
+                  ref={passageSearchRef}
+                  type="search"
+                  autoComplete="off"
+                  aria-describedby={`${passagePickerId}-hint`}
+                  value={passageQuery}
+                  onChange={(event) => setPassageQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    // This field sits inside the entry form, so Enter would
+                    // submit it — saving a half-written note the moment somebody
+                    // searched for where to file it. Take the keystroke and put
+                    // the keyboard on the first result instead.
+                    event.preventDefault();
+                    passageResultsRef.current?.querySelector('button')?.focus();
+                  }}
+                  className={CONTROL_CLASS}
+                />
+                {/* Announced as it changes, so the count is not something only a
+                    sighted reader gets. Empty until there is a query to report on. */}
+                <p aria-live="polite" className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  {passageStatusText(passageResults)}
+                </p>
+                {passageResults.matches.length ? (
+                  <ul ref={passageResultsRef} className="mt-1 space-y-2">
+                    {passageResults.matches.map((match) => {
+                      const named = match.title
+                        ? `${match.reference} \u2014 ${match.title}`
+                        : match.reference;
+                      return (
+                        <li key={match.key}>
+                          <button
+                            type="button"
+                            aria-label={`Add ${named}`}
+                            className={RESULT_CLASS}
+                            onClick={() => addPassage(match)}
+                          >
+                            {/* The title leads because it is what was
+                                remembered; the reference is always under it
+                                because it is what actually gets stored. */}
+                            <span className="block break-words font-medium">
+                              {match.title || match.reference}
+                            </span>
+                            {match.title ? (
+                              <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                                {match.reference}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+
+              {/* The other way in: browse to it. Searching only helps somebody who
+                  remembers a name, and half the time the memory is "it was
+                  somewhere in Acts". Book first, then that book's sections in
+                  the order they occur — the same list, in the same words, that
+                  the Bible view shows. */}
+              {/* A fieldset, not a heading: this is a group of related controls,
+                  which is what a legend is for. An <h3> here would also be the
+                  only level-3 heading in the view, under an <h2> that is itself
+                  inside a collapsed <details> — a heading outline that changes
+                  shape depending on whether a disclosure happens to be open. */}
+              <fieldset className="mt-6">
+                <legend className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Or find it by book
+                </legend>
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <div className="min-w-0 flex-1 basis-40">
+                    <label htmlFor={bookPickerId} className={LABEL_CLASS}>
+                      Book
+                    </label>
+                    <select
+                      id={bookPickerId}
+                      ref={bookPickerRef}
+                      value={browseBook}
+                      onChange={(event) => {
+                        setBrowseBook(event.target.value);
+                        // The old section id belongs to the old book. Left
+                        // standing it would either name nothing or, worse, name
+                        // a real division in a book nobody chose.
+                        setBrowseSegmentId('');
+                      }}
+                      className={CONTROL_CLASS}
+                    >
+                      <option value="">Choose a book…</option>
+                      {TESTAMENTS.map((testament) => (
+                        <optgroup key={testament.key} label={testament.label}>
+                          {canonBooks
+                            .filter((book) => book.testament === testament.key)
+                            .map((book) => (
+                              <option key={book.id} value={book.id}>
+                                {book.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="min-w-0 flex-1 basis-56">
+                    <label htmlFor={sectionPickerId} className={LABEL_CLASS}>
+                      Passage
+                    </label>
+                    <select
+                      id={sectionPickerId}
+                      ref={sectionPickerRef}
+                      value={browseSegmentId}
+                      disabled={!browseBook}
+                      onChange={(event) => setBrowseSegmentId(event.target.value)}
+                      className={CONTROL_CLASS}
+                    >
+                      <option value="">
+                        {browseBook ? 'Choose a passage…' : 'Choose a book first'}
+                      </option>
+                      {browseSegments.map((segment) => {
+                        // An <option> is plain text, so the title and reference
+                        // share one line here rather than stacking as they do on
+                        // a result row.
+                        const title = segmentTitle(segment);
+                        const reference = refToString(
+                          segmentRef(segment, browseBook),
+                          BOOK_NAMES[browseBook] ?? browseBook,
+                        );
+                        return (
+                          <option key={segment.id} value={segment.id}>
+                            {title && title !== reference ? `${title} — ${reference}` : reference}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <Button
+                    disabled={!browseSegmentId}
+                    onClick={() => {
+                      const segment = browseSegments.find((row) => row.id === browseSegmentId);
+                      if (!segment) return;
+                      addPassage(toPassageMatch(segment, browseBook, segmentTitle));
+                      // Adding clears the choice, which disables this very
+                      // button, and a disabled element cannot hold focus. The
+                      // book stays chosen: picking two passages from one sermon
+                      // is the common case, not the rare one.
+                      setBrowseSegmentId('');
+                      sectionPickerRef.current?.focus();
+                    }}
+                  >
+                    Add passage
+                  </Button>
+                </div>
+              </fieldset>
+        </section>
+
         <details
           open={detailsOpen}
           onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
@@ -647,7 +950,7 @@ export default function EntryEditor({
           <summary className="min-h-11 cursor-pointer py-2 text-slate-900 dark:text-slate-100">
             <span className="font-medium">Details</span>
             <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-              Date, place, speaker, series, tags, links, prayer, what it is about
+              Date, place, speaker, series, tags, links, prayer, topics
             </span>
           </summary>
 
@@ -816,50 +1119,14 @@ export default function EntryEditor({
 
             <section>
               <h2 className={SECTION_HEADING}>
-                What this entry is about
+                Topics
               </h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                Life themes, rather than a place in the text. What is attached shows above, with
+                the passages.
+              </p>
 
-              {form.anchors.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  Not attached to anything yet.
-                </p>
-              ) : (
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {form.anchors.map((anchor) => {
-                    const key = anchorKey(anchor);
-                    const label = anchorLabel(anchor);
-                    return (
-                      <li
-                        key={key}
-                        // max-w-full and the wrap: an outline title on a 360px
-                        // phone is easily wider than the screen, and a chip
-                        // that refuses to break would scroll the whole page
-                        // sideways.
-                        className="flex max-w-full items-center gap-1 rounded-2xl border border-slate-300 bg-slate-100 py-1 pl-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                      >
-                        <span className="min-w-0 break-words">{label}</span>
-                        <Button
-                          variant="ghost"
-                          className="min-w-11 shrink-0 rounded-2xl px-2"
-                          aria-label={`Remove ${label}`}
-                          onClick={() => {
-                            removeAnchor(key);
-                            // Same as the link rows: this button is about to be
-                            // unmounted, so focus moves to the control that
-                            // follows it rather than falling to <body>.
-                            topicPickerRef.current?.focus();
-                            setMessage(`${label} removed.`);
-                          }}
-                        >
-                          <span aria-hidden="true">✕</span>
-                        </Button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              <div className="mt-4 flex flex-wrap items-end gap-3">
+              <div className="mt-6 flex flex-wrap items-end gap-3">
                 <div className="min-w-0 flex-1">
                   <label htmlFor={topicPickerId} className={LABEL_CLASS}>
                     Add a topic
@@ -869,7 +1136,7 @@ export default function EntryEditor({
                     ref={topicPickerRef}
                     value={topicChoice}
                     onChange={(event) => setTopicChoice(event.target.value)}
-                    className={SELECT_CLASS}
+                    className={CONTROL_CLASS}
                   >
                     <option value="">Choose a topic…</option>
                     {topics.map((topic) => (
