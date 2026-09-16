@@ -74,6 +74,27 @@ export async function resolvePassageHash(page: Page, bookId = 'matthew'): Promis
   return href!;
 }
 
+/**
+ * Open every collapsed disclosure in the page before measuring it.
+ *
+ * A closed `<details>` renders none of its content, so axe skips it and the
+ * contrast walker has nothing to sample. The entry editor folds almost
+ * everything optional away behind one — date, place, speaker, series, tags,
+ * links, prayer, the passage picker and the topic picker — which meant the
+ * accessibility pass was sweeping the two textareas and calling the editor
+ * clean. Ten controls were never looked at.
+ *
+ * Returns how many it opened, so a caller can assert it actually found them
+ * rather than trusting a sweep that silently opened nothing.
+ */
+export async function openDisclosures(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const closed = [...document.querySelectorAll('main details:not([open])')];
+    for (const node of closed) (node as HTMLDetailsElement).open = true;
+    return closed.length;
+  });
+}
+
 /** Every view, with the passage resolved against the running build. */
 export async function resolveViews(page: Page): Promise<ViewTarget[]> {
   const passage = await resolvePassageHash(page);

@@ -12,7 +12,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
 import { dismissWelcome, forceTheme, seedEntries } from './seed';
-import { detectProfile, resolveViews, type ViewTarget } from './views';
+import { detectProfile, openDisclosures, resolveViews, type ViewTarget } from './views';
 
 const WIDTHS = [
   { name: '390', width: 390, height: 844 },
@@ -29,6 +29,23 @@ async function settle(page: Page) {
   await page.waitForLoadState('networkidle');
   await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(400);
+}
+
+/**
+ * How many disclosures were opened across the whole sweep.
+ *
+ * Tracked and asserted because the editor's <details> is where most of its
+ * controls live: a sweep that opened none would report the editor clean having
+ * measured two textareas.
+ */
+let opened = 0;
+
+async function settleAndReveal(page: Page, view: string) {
+  await settle(page);
+  await assertRendered(page, view);
+  opened += await openDisclosures(page);
+  // Give the revealed content a frame to lay out before anything measures it.
+  await page.waitForTimeout(200);
 }
 
 async function ready(
@@ -59,13 +76,15 @@ test.describe('axe-core, WCAG 2.1 AA', () => {
         const found: string[] = [];
         let totalChecks = 0;
 
+        opened = 0;
+
         for (const view of VIEWS) {
           await page.goto(view.hash);
-          await settle(page);
-
           // A view that failed to render still has an <h1> and still passes
-          // every axe rule, because there is nothing there to violate.
-          await assertRendered(page, view.key);
+          // every axe rule, because there is nothing there to violate — and a
+          // control folded inside a closed <details> is invisible to axe, so
+          // the disclosures are opened before anything is analysed.
+          await settleAndReveal(page, view.key);
 
           const { violations, passes } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
 
@@ -86,6 +105,9 @@ test.describe('axe-core, WCAG 2.1 AA', () => {
         }
 
         examinedAtLeast(totalChecks, VIEWS.length * 10, 'axe rule results across all views');
+        // The editor has one on both its routes. If this is zero, every control
+        // behind a disclosure went unexamined and the pass means much less.
+        examinedAtLeast(opened, 2, 'collapsed disclosures opened before analysis');
         expect(found.join('\n')).toBe('');
       });
     }

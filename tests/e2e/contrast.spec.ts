@@ -19,7 +19,7 @@ import { expect, test } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
 import { dismissWelcome, forceTheme, seedEntries } from './seed';
-import { detectProfile, resolveViews } from './views';
+import { detectProfile, openDisclosures, resolveViews } from './views';
 
 
 interface Sample {
@@ -167,6 +167,7 @@ for (const theme of ['light', 'dark'] as const) {
     const VIEWS = (await resolveViews(page)).map((target) => target.hash);
 
     const all: Array<Sample & { view: string }> = [];
+    let opened = 0;
 
     for (const view of VIEWS) {
       await page.goto(view);
@@ -174,6 +175,12 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(page.locator('main h1').first()).toBeVisible({ timeout: 15_000 });
       await page.waitForTimeout(300);
       await assertRendered(page, view);
+
+      // Nothing inside a closed <details> is rendered, so it has no computed
+      // colour to sample. The editor folds most of its controls behind one; left
+      // shut, this suite measured two textareas and called the editor clean.
+      opened += await openDisclosures(page);
+      await page.waitForTimeout(200);
 
       const measured = await page.evaluate(measureContrast);
       // A view that measured no colour pair contributes nothing, and its
@@ -209,6 +216,9 @@ for (const theme of ['light', 'dark'] as const) {
     );
     examinedAtLeast(all.length, 40, 'colour pairs across all views');
     examinedAtLeast(disabled.length, 1, 'disabled controls');
+    // The editor has one on each of its two routes. Zero means every colour
+    // behind a disclosure went unsampled.
+    examinedAtLeast(opened, 2, 'collapsed disclosures opened before sampling');
     console.log(`  including ${disabled.length} disabled-control samples`);
 
     const report = failures
