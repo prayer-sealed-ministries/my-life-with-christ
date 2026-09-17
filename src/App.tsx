@@ -28,6 +28,11 @@ const DataView = lazy(() => import('./views/DataView'));
 // downloaded only by someone who actually opens Import.
 const ImportView = lazy(() => import('./views/ImportView'));
 const LegacyView = lazy(() => import('./views/LegacyView'));
+// The application pages: reached from the menu rather than the primary nav, and
+// lazy like every other route so the journal does not pay for them at startup.
+const SettingsView = lazy(() => import('./views/SettingsView'));
+const HelpView = lazy(() => import('./views/HelpView'));
+const AboutView = lazy(() => import('./views/AboutView'));
 
 /** The document title for a route, also announced after navigation. */
 function titleFor(route: ReturnType<typeof useRouter>['route']): string {
@@ -58,6 +63,12 @@ function titleFor(route: ReturnType<typeof useRouter>['route']): string {
       return 'Import notes';
     case 'legacy':
       return 'My Journey With Christ';
+    case 'settings':
+      return 'Settings';
+    case 'help':
+      return 'Help';
+    case 'about':
+      return 'About';
     default:
       return 'Not found';
   }
@@ -112,6 +123,12 @@ function CurrentView() {
       return <ImportView />;
     case 'legacy':
       return <LegacyView />;
+    case 'settings':
+      return <SettingsView />;
+    case 'help':
+      return <HelpView />;
+    case 'about':
+      return <AboutView />;
     default:
       return <NotFound path={route.path} />;
   }

@@ -6,6 +6,7 @@ import { DATA_PROFILE } from './app/data';
 import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
 import { ThemeProvider } from './app/theme';
+import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
 import { PlatformProvider } from './platform/provider';
 import './index.css';
@@ -23,7 +24,11 @@ if (!root) throw new Error('No #root element');
 // Android's system back, bound once at startup inside the platform layer.
 // A no-op everywhere else, so the web build is unaffected and no view learns
 // that Android exists. Failure to bind must not stop the app from starting.
-void bindAndroidBack(browserHistoryHost()).catch(() => undefined);
+void bindAndroidBack(
+  // The one place that knows both halves: the app's overlay registry and the
+  // native binding. Neither imports the other.
+  browserHistoryHost({ overlayOpen, closeOverlay: () => void closeOverlay() }),
+).catch(() => undefined);
 
 // The native persistence contract, run inside the real application.
 //

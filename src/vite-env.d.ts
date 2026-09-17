@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected from package.json by vite.config.ts. */
+declare const __APP_VERSION__: string;
+
 /** Injected by scripts/vite-plugin-data-profile.mjs. */
 declare const __DATA_PROFILE__: 'full' | 'public' | 'refs-only';
 

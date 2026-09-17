@@ -285,6 +285,39 @@ describe('storage selection fails closed', () => {
   });
 });
 
+describe('back, when the menu is on top', () => {
+  // The rule: an open menu is the thing the person is looking at, so back puts
+  // it away. Without this the gesture navigates the page underneath — or, at
+  // the root of the app, closes the application while the menu sits over it.
+  it('closes the overlay before anything else', () => {
+    expect(decideBack({ overlayOpen: true, canGoBack: true, hasUnsavedWork: false })).toBe(
+      'close-overlay',
+    );
+    expect(decideBack({ overlayOpen: true, canGoBack: false, hasUnsavedWork: false })).toBe(
+      'close-overlay',
+    );
+  });
+
+  it('outranks even unsaved work, because dismissing a menu loses nothing', () => {
+    // The menu holds no state of its own; closing it cannot discard an entry.
+    // Asking "are you sure?" for a menu would train people to dismiss the
+    // prompt that DOES matter.
+    expect(decideBack({ overlayOpen: true, canGoBack: false, hasUnsavedWork: true })).toBe(
+      'close-overlay',
+    );
+  });
+
+  it('goes back to the ordinary rules once the menu is shut', () => {
+    expect(decideBack({ overlayOpen: false, canGoBack: true, hasUnsavedWork: false })).toBe(
+      'navigate-back',
+    );
+    expect(decideBack({ overlayOpen: false, canGoBack: false, hasUnsavedWork: false })).toBe('exit');
+    expect(decideBack({ overlayOpen: false, canGoBack: false, hasUnsavedWork: true })).toBe(
+      'confirm-discard',
+    );
+  });
+});
+
 describe('compression capability', () => {
   it('reports what this runtime can do', () => {
     // Both present in the test environment; the point is that the answer comes
@@ -318,17 +351,17 @@ describe('compression capability', () => {
 
 describe('back navigation decision', () => {
   it('goes back when there is somewhere to go', () => {
-    expect(decideBack({ canGoBack: true, hasUnsavedWork: false })).toBe('navigate-back');
+    expect(decideBack({ overlayOpen: false, canGoBack: true, hasUnsavedWork: false })).toBe('navigate-back');
   });
 
   it('exits only when there is nothing left', () => {
-    expect(decideBack({ canGoBack: false, hasUnsavedWork: false })).toBe('exit');
+    expect(decideBack({ overlayOpen: false, canGoBack: false, hasUnsavedWork: false })).toBe('exit');
   });
 
   it('asks before discarding unsaved work, even at the root', () => {
     // The ordering that matters: a gesture made fifty times a day must not be
     // able to throw away a half-written entry.
-    expect(decideBack({ canGoBack: false, hasUnsavedWork: true })).toBe('confirm-discard');
-    expect(decideBack({ canGoBack: true, hasUnsavedWork: true })).toBe('confirm-discard');
+    expect(decideBack({ overlayOpen: false, canGoBack: false, hasUnsavedWork: true })).toBe('confirm-discard');
+    expect(decideBack({ overlayOpen: false, canGoBack: true, hasUnsavedWork: true })).toBe('confirm-discard');
   });
 });

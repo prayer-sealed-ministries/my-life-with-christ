@@ -31,6 +31,9 @@ export type Route =
   | { name: 'data' }
   | { name: 'import' }
   | { name: 'legacy' }
+  | { name: 'settings' }
+  | { name: 'help' }
+  | { name: 'about' }
   | { name: 'notFound'; path: string };
 
 /** Parse a location hash into a route. */
@@ -71,6 +74,12 @@ export function parseHash(hash: string): Route {
       return { name: 'import' };
     case 'legacy':
       return { name: 'legacy' };
+    case 'settings':
+      return { name: 'settings' };
+    case 'help':
+      return { name: 'help' };
+    case 'about':
+      return { name: 'about' };
     default:
       return { name: 'notFound', path };
   }
@@ -105,6 +114,12 @@ export function href(route: Route): string {
       return '#/import';
     case 'legacy':
       return '#/legacy';
+    case 'settings':
+      return '#/settings';
+    case 'help':
+      return '#/help';
+    case 'about':
+      return '#/about';
     default:
       return '#/';
   }

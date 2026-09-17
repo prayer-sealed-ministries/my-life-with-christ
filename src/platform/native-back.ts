@@ -26,7 +26,11 @@ import { nativePlatform } from './runtime';
  * be tested by handing it a fake.
  */
 export interface BackBindingHost {
-  /** Is there an in-app destination behind this one? */
+  /** Is a modal overlay — the application menu — on top? */
+  overlayOpen: () => boolean;
+  /** Dismiss it. */
+  closeOverlay: () => void;
+  /** Is there there an in-app destination behind this one? */
   canGoBack: () => boolean;
   /** Is there edited-but-unsaved work on screen? */
   hasUnsavedWork: () => boolean;
@@ -49,11 +53,18 @@ export async function bindAndroidBack(host: BackBindingHost): Promise<() => void
 
   const handle = await App.addListener('backButton', () => {
     const context: BackContext = {
+      overlayOpen: host.overlayOpen(),
       canGoBack: host.canGoBack(),
       hasUnsavedWork: host.hasUnsavedWork(),
     };
 
     switch (decideBack(context)) {
+      case 'close-overlay':
+        // Back put the menu away and went nowhere, which is what a person
+        // expects of the topmost thing on screen.
+        host.closeOverlay();
+        return;
+
       case 'navigate-back':
         host.goBack();
         return;
@@ -77,6 +88,11 @@ export async function bindAndroidBack(host: BackBindingHost): Promise<() => void
 /** The default host: the browser history the hash router already uses. */
 export function browserHistoryHost(overrides: Partial<BackBindingHost> = {}): BackBindingHost {
   return {
+    // Supplied by the composition root, which knows about both the app's
+    // overlay registry and this binding. Defaults keep the web and the tests
+    // working without one.
+    overlayOpen: () => false,
+    closeOverlay: () => {},
     // `history.length > 1` is the honest answer available to a hash router:
     // it cannot distinguish our entries from any the webview created before us,
     // but on a native shell the app IS the whole session, so they are the same.

@@ -23,6 +23,8 @@
  */
 
 export type BackOutcome =
+  /** Dismiss the thing on top — the menu — and go nowhere. */
+  | 'close-overlay'
   /** Go back one step in application history. */
   | 'navigate-back'
   /** Ask before leaving; there is work that would be lost. */
@@ -31,6 +33,14 @@ export type BackOutcome =
   | 'exit';
 
 export interface BackContext {
+  /**
+   * Is a modal overlay — today, the application menu — on top?
+   *
+   * It outranks everything below, including unsaved work: the menu is what the
+   * person is looking at, and back means "put that away". Dismissing it cannot
+   * lose anything, because the menu holds no state of its own.
+   */
+  overlayOpen: boolean;
   /**
    * Is there an in-app destination behind this one?
    *
@@ -50,7 +60,11 @@ export interface BackContext {
  * That ordering is the whole reason this is a function rather than two lines at
  * the call site.
  */
-export function decideBack({ canGoBack, hasUnsavedWork }: BackContext): BackOutcome {
+export function decideBack({ overlayOpen, canGoBack, hasUnsavedWork }: BackContext): BackOutcome {
+  // First, because it is the topmost thing on screen. Without this, back with
+  // the menu open would navigate the page underneath it, or — at the root of
+  // the app — close the application outright while the menu sat over it.
+  if (overlayOpen) return 'close-overlay';
   if (hasUnsavedWork) return 'confirm-discard';
   return canGoBack ? 'navigate-back' : 'exit';
 }

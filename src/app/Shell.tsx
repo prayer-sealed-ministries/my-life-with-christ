@@ -12,8 +12,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { FirstVisitNotice } from '../components/FirstVisitNotice';
+import { AppMenu } from './AppMenu';
 import { Link, useRouter, type Route } from './router';
-import { useTheme } from './theme';
 
 const NAV: Array<{ route: Route; label: string }> = [
   { route: { name: 'browse' }, label: 'Bible' },
@@ -30,34 +30,7 @@ const isCurrent = (route: Route, nav: Route): boolean => {
   return false;
 };
 
-function ThemeToggle() {
-  const { choice, setChoice } = useTheme();
-  const options: Array<{ value: 'light' | 'dark' | 'system'; label: string }> = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
-  ];
 
-  return (
-    <div className="flex min-w-0 items-center gap-1">
-      <label htmlFor="theme-choice" className="sr-only">
-        Colour theme
-      </label>
-      <select
-        id="theme-choice"
-        value={choice}
-        onChange={(event) => setChoice(event.target.value as 'light' | 'dark' | 'system')}
-        className="min-h-11 max-w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 export function Shell({ children, title }: { children: ReactNode; title: string }) {
   const { route } = useRouter();
@@ -123,10 +96,16 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
               bought. `aria-current` marks it on either page.
             */}
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:order-last">
+              {/* The menu is the only navigation on a phone and the way to the
+                  application pages on a desktop, so it is always present. */}
+              <AppMenu isCurrent={(nav) => isCurrent(route, nav)} />
+              {/* Desktop only. Data durability stays one click away on a wide
+                  screen, where there is room; on a phone it is in the drawer as
+                  "Data & Backup" rather than spending a second header row. */}
               <Link
                 to={{ name: 'data' }}
                 aria-current={route.name === 'data' || route.name === 'import' ? 'page' : undefined}
-                className={`inline-flex min-h-11 items-center gap-1.5 rounded-control border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                className={`hidden min-h-11 items-center gap-1.5 rounded-control border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 sm:inline-flex ${
                   route.name === 'data' || route.name === 'import'
                     ? 'border-accent bg-accent text-accent-ink'
                     : 'border-line-strong bg-surface text-ink-soft hover:bg-raised'
@@ -137,7 +116,6 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
                     mean something different. */}
                 <span aria-hidden="true">↓</span> Import / export
               </Link>
-              <ThemeToggle />
             </div>
           </div>
 
@@ -148,7 +126,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
           */}
           <nav
             aria-label="Main"
-            className="-mx-5 min-w-0 overflow-x-auto px-5 sm:mx-0 sm:flex-1 sm:overflow-visible sm:px-0"
+            className="hidden min-w-0 overflow-x-auto sm:mx-0 sm:block sm:flex-1 sm:overflow-visible sm:px-0"
           >
             <ul className="flex gap-1 whitespace-nowrap">
               {NAV.map((item) => {
