@@ -283,3 +283,33 @@ input[type='week'] {
     box-shadow: none !important;
   }
 }
+
+/**
+ * The system's own furniture, kept out of the app's way.
+ *
+ * `index.html` sets `viewport-fit=cover`, which is right — the page should
+ * reach the edges of the screen rather than sitting in a letterbox. What was
+ * missing is the other half of that bargain: with `cover`, the webview extends
+ * UNDER the status bar and the home indicator, so on a phone the header drew
+ * beneath the clock and the battery. It looked wrong, and worse, taps in that
+ * strip went to the system rather than to the header — the "Import / export"
+ * button was unreachable on iOS.
+ *
+ * `env(safe-area-inset-*)` is zero on every device without that furniture, so
+ * the web edition and the emulator are unaffected.
+ */
+@layer base {
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Landscape notches eat into the sides, not just the top. */
+  .safe-sides {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}

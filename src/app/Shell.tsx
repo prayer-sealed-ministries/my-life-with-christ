@@ -87,7 +87,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
         Skip to main content
       </a>
 
-      <header className="border-b border-line bg-surface">
+      <header className="safe-top safe-sides border-b border-line bg-surface">
         {/*
           Two rows on a phone, one row on a desktop.
 
@@ -195,7 +195,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
         <p>
           Everything here stays on this device.{' '}
           <Link to={{ name: 'data' }} className="underline focus-visible:outline-2">
-            Browser storage is not a backup — export your journal
+            The copy on this device is not a backup — export your journal
           </Link>
           .
         </p>

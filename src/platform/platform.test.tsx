@@ -17,7 +17,13 @@ import { examinedAtLeast } from '../testing/floor';
 import DataView from '../views/DataView';
 import LegacyView from '../views/LegacyView';
 import { decideBack } from './back';
-import { CANNOT_DECOMPRESS, canCompress, canDecompress, requireDecompression } from './compression';
+import {
+  CANNOT_DECOMPRESS,
+  canCompress,
+  canDecompress,
+  hasNativeDecompression,
+  requireDecompression,
+} from './compression';
 import { PlatformProvider } from './provider';
 import type { OutgoingFile, Platform } from './ports';
 import { StorageUnavailableError, selectStorageProvider } from './storage';
@@ -287,10 +293,21 @@ describe('compression capability', () => {
     expect(canCompress()).toBe(true);
   });
 
-  it('refuses to read an archive where inflate is missing, in neutral words', () => {
+  it('can still read an archive where the platform has no inflate', () => {
+    // This asserted the opposite until Phase 3, and the change is deliberate.
+    //
+    // The supported range declares iOS 15.0 and minSdk 24, and part of it has
+    // no `DecompressionStream` — so the old behaviour meant a person could
+    // export a journal for years on such a device and then be unable to restore
+    // it. A bundled inflate is carried for exactly that reason, so the answer
+    // is now yes everywhere. `compression.test.ts` exercises both paths against
+    // real archives; this only pins the capability.
     vi.stubGlobal('DecompressionStream', undefined);
-    expect(canDecompress()).toBe(false);
-    expect(() => requireDecompression()).toThrow(CANNOT_DECOMPRESS);
+    expect(hasNativeDecompression()).toBe(false);
+    expect(canDecompress(), 'a runtime with no platform inflate must still read archives').toBe(
+      true,
+    );
+    expect(() => requireDecompression()).not.toThrow();
   });
 
   it('says "device", never "browser" — this string is reachable inside an app', () => {

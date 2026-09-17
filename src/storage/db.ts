@@ -128,6 +128,15 @@ export class DexieStorageProvider implements StorageProvider {
     await this.db.entries.bulkPut(entries.map(toRow));
   }
 
+  async replaceEntries(entries: Entry[]): Promise<void> {
+    // Dexie's transaction covers both operations, matching SQLite: either the
+    // incoming journal replaces the old one or the old one is still there.
+    await this.db.transaction('rw', this.db.entries, async () => {
+      await this.db.entries.clear();
+      await this.db.entries.bulkPut(entries.map(toRow));
+    });
+  }
+
   async clearEntries(): Promise<void> {
     await this.db.entries.clear();
   }

@@ -9,16 +9,16 @@
 
 import type { ReactNode } from 'react';
 
-import { PlatformContext } from './context';
+import { PlatformContext, platformForEdition } from './context';
 import type { Platform } from './ports';
-import { webPlatform } from './web';
 
 export function PlatformProvider({
   children,
-  platform = webPlatform,
+  platform,
 }: {
   children: ReactNode;
   platform?: Platform;
 }) {
-  return <PlatformContext.Provider value={platform}>{children}</PlatformContext.Provider>;
+  const chosen = platform ?? platformForEdition();
+  return <PlatformContext.Provider value={chosen}>{children}</PlatformContext.Provider>;
 }

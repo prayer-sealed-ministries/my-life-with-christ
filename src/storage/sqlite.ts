@@ -595,6 +595,16 @@ export class SqliteStorageProvider implements StorageProvider {
     });
   }
 
+  async replaceEntries(entries: Entry[]): Promise<void> {
+    // The delete and every write share one transaction, so a failure part way
+    // through rolls back to the journal the reader already had rather than to
+    // no journal at all.
+    await this.inTransaction(async () => {
+      await this.write(`DELETE FROM entries;`);
+      for (const entry of entries) await this.writeEntry(entry);
+    });
+  }
+
   async clearEntries(): Promise<void> {
     // Settings are a different table and are deliberately untouched — a
     // replace-mode import must not forget when the reader last exported.

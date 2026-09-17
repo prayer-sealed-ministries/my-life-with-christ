@@ -61,6 +61,22 @@ export interface OutgoingFile {
  */
 export interface FilePicker {
   pick(options?: PickOptions): Promise<PickedFile | null>;
+
+  /**
+   * Does this picker present its own interface?
+   *
+   * The one thing a view legitimately needs to know, and it is a property of
+   * the CAPABILITY rather than of the platform. The web picker has no interface
+   * of its own: the page must render an `<input type="file">`, which is
+   * keyboard reachable, label-associated and covered by the accessibility
+   * suite, and it stays. A native picker IS an interface — the operating
+   * system's document UI — so the page offers a button and gets out of the way.
+   *
+   * A view reads this to choose which control to render. It still cannot learn
+   * which platform it is on, and it must not try: `false` means "you render the
+   * control", not "you are in a browser".
+   */
+  readonly presentsOwnUI?: boolean;
 }
 
 export interface PickOptions {
@@ -88,6 +104,17 @@ export interface PickedFile {
  */
 export interface Printer {
   print(): void;
+
+  /**
+   * Can this platform actually print?
+   *
+   * A capability, not a platform question. `window.print()` inside a native
+   * webview produces nothing at all, and a button that silently does nothing is
+   * worse than one that is honestly absent — the reader taps it, waits, and
+   * concludes the app is broken. A view reads this to decide whether to offer
+   * printing, and says something useful when it cannot.
+   */
+  readonly canPrint?: boolean;
 }
 
 /**

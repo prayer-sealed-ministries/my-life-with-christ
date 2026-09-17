@@ -27,7 +27,7 @@ import {
 } from '../app/data';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
-import { useFileSaver } from '../platform/context';
+import { useFilePicker, useFileSaver } from '../platform/context';
 import type { PickedFile } from '../platform/ports';
 import { pickedFromDomFile } from '../platform/web';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
@@ -95,6 +95,7 @@ function lastExportedWords(iso: string | undefined, now: Date): string {
 export default function DataView() {
   const { storage, settings, updateSettings, touch, error: storageError } = useStorage();
   const files = useFileSaver();
+  const picker = useFilePicker();
 
   const { data: entryCount, loading: counting } = useStorageQuery(
     async (provider) => (await provider.listEntries()).length,
@@ -217,7 +218,10 @@ export default function DataView() {
     );
 
   // --- import ------------------------------------------------------------
-  const fileInput = useRef<HTMLInputElement>(null);
+  // Either the `<input type="file">` the page draws, or the button that opens
+  // the platform's own picker. Typed as the common ancestor rather than cast at
+  // each use: it is genuinely one or the other.
+  const fileInput = useRef<HTMLElement>(null);
   const [fileName, setFileName] = useState('');
   const [reading, setReading] = useState(false);
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
@@ -251,8 +255,9 @@ export default function DataView() {
     setFileName('');
     setReading(false);
     // Clearing the element's value lets the same file be chosen again, which is
-    // exactly what someone does after cancelling.
-    if (fileInput.current) fileInput.current.value = '';
+    // exactly what someone does after cancelling. Only an `<input>` carries a
+    // value; a button that opens the OS picker has nothing to reset.
+    if (fileInput.current instanceof HTMLInputElement) fileInput.current.value = '';
     // The card holding this button is about to unmount; keep focus on the page.
     if (fileInput.current) refocus.current = { target: fileInput.current, from: document.activeElement };
   };
@@ -345,12 +350,12 @@ export default function DataView() {
       <div className="rounded-card border-2 border-amber-500 bg-amber-50 p-4 text-amber-950 dark:border-amber-400 dark:bg-amber-950/40 dark:text-amber-100">
         <p className="text-base font-semibold">
           <span aria-hidden="true">⚠ </span>
-          Warning: browser storage is not a backup.
+          Warning: the copy on this device is not a backup.
         </p>
         <p className="mt-2 text-sm leading-relaxed">
-          Everything you have written lives in this browser on this device. Clearing site data,
-          reinstalling the browser, a private window closing, or a lost phone takes it with it. No
-          copy exists anywhere else until you export one.
+          Everything you have written lives on this device and nowhere else. Clearing this
+          app&rsquo;s data, removing it, or losing the device takes your journal with it. No copy
+          exists anywhere else until you export one.
         </p>
         <p className="mt-2 text-sm leading-relaxed">{lastExportedWords(settings.lastExportAt, new Date())}</p>
       </div>
@@ -591,21 +596,50 @@ export default function DataView() {
           <p id="import-file-hint" className="mt-0.5 text-xs text-ink-muted">
             A Journey export: a .zip archive, or a bare journey.json.
           </p>
-          <input
-            id="import-file"
-            ref={fileInput}
-            type="file"
-            accept=".zip,.json,application/zip,application/json"
-            aria-describedby="import-file-hint"
-            onChange={(event) => {
-              const chosen = event.target.files?.[0];
-              // The web binding: a DOM File becomes the shape every edition uses.
-              if (chosen) void pickedFromDomFile(chosen).then(onFileChosen);
-              else void onFileChosen(null);
-            }}
-            disabled={importing || blocked}
-            className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
-          />
+          {/*
+            Which control depends on whether the picker has an interface of its
+            own — a property of the capability, not a question about the
+            platform. Where the page must draw it, the `<input type="file">`
+            stays: it is keyboard reachable, label-associated and covered by the
+            accessibility suite. Where the operating system draws it, a second
+            in-page control would be a worse one that saves into the sandbox.
+          */}
+          {picker.presentsOwnUI ? (
+            <button
+              id="import-file"
+              ref={fileInput as React.RefObject<HTMLButtonElement>}
+              type="button"
+              aria-describedby="import-file-hint"
+              disabled={importing || blocked}
+              onClick={() => {
+                void picker
+                  .pick({ accept: ['application/zip', 'application/json', '.zip', '.json'] })
+                  .then(onFileChosen)
+                  // Cancelling is not a failure, and neither is a picker that
+                  // could not open: the journal is untouched either way.
+                  .catch(() => onFileChosen(null));
+              }}
+              className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+            >
+              Choose a journal file…
+            </button>
+          ) : (
+            <input
+              id="import-file"
+              ref={fileInput as React.RefObject<HTMLInputElement>}
+              type="file"
+              accept=".zip,.json,application/zip,application/json"
+              aria-describedby="import-file-hint"
+              onChange={(event) => {
+                const chosen = event.target.files?.[0];
+                // The web binding: a DOM File becomes the shape every edition uses.
+                if (chosen) void pickedFromDomFile(chosen).then(onFileChosen);
+                else void onFileChosen(null);
+              }}
+              disabled={importing || blocked}
+              className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
+            />
+          )}
         </div>
 
         {reading ? <Spinner label={`Reading ${fileName}`} /> : null}

@@ -72,6 +72,7 @@ function brokenSqlite(): StorageProvider & { calls: string[] } {
     deleteEntry: record('deleteEntry'),
     findEntriesForAnchor: record('findEntriesForAnchor'),
     putEntries: record('putEntries'),
+    replaceEntries: record('replaceEntries'),
     clearEntries: record('clearEntries'),
     getSettings: record('getSettings'),
     updateSettings: record('updateSettings'),

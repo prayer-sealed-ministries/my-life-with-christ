@@ -168,8 +168,10 @@ export async function applyImport(
   const preview = previewImport(incoming, existing, mode);
 
   if (mode === 'replace') {
-    await storage.clearEntries();
-    await storage.putEntries(incoming.entries);
+    // One atomic swap rather than clear-then-write. The two-step version could
+    // leave a reader with neither journal if the write failed after the delete
+    // succeeded, which is reachable from an ordinary restore.
+    await storage.replaceEntries(incoming.entries);
     return { imported: incoming.entries.length, replaced: true, preview };
   }
 

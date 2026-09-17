@@ -59,7 +59,7 @@ export function exportReminder(settings: Settings, entryCount: number, now = new
       neverExported: true,
       message:
         `You have ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'} and have never exported. ` +
-        'Browser storage is not a backup — clearing your browser data would erase all of it.',
+        'The copy on this device is not a backup — losing the device, or clearing this app\u2019s data, would erase all of it.',
     };
   }
 
@@ -73,7 +73,7 @@ export function exportReminder(settings: Settings, entryCount: number, now = new
     daysSinceExport: days,
     neverExported: false,
     message:
-      `Your last export was ${days} days ago. Browser storage is not a backup — ` +
+      `Your last export was ${days} days ago. The copy on this device is not a backup — ` +
       'export now to keep a copy you actually own.',
   };
 }

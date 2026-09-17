@@ -38,6 +38,7 @@
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2",
     "dexie": "^4.4.6",
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

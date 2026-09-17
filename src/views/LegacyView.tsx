@@ -325,18 +325,38 @@ export default function LegacyView() {
           </div>
         </fieldset>
 
-        <Button variant="primary" className="w-full sm:w-auto" onClick={() => printer.print()}>
-          Print or save as PDF
-        </Button>
+        {/*
+          Offered only where the platform can actually print. A button that does
+          nothing is worse than an absent one: the reader taps it, waits, and
+          concludes the app is broken. Where printing is unavailable the book is
+          still obtainable — it is inside every archive they export — so the
+          alternative is named rather than the capability quietly missing.
+        */}
+        {printer.canPrint === false ? (
+          <p className="text-sm text-ink-soft">
+            Printing is not available in the app. The same book is inside every archive you
+            export, as a single HTML file you can open and print on a computer —{' '}
+            <Link to={{ name: 'data' }} className="underline">
+              export your journal
+            </Link>
+            .
+          </p>
+        ) : (
+          <>
+            <Button variant="primary" className="w-full sm:w-auto" onClick={() => printer.print()}>
+              Print or save as PDF
+            </Button>
 
-        <p className="text-sm text-ink-soft">
-          Printing uses the order chosen above. Your browser’s print dialog can save this as a PDF
-          instead of sending it to a printer. For a copy that needs no browser at all,{' '}
-          <Link to={{ name: 'data' }} className="underline">
-            export your journal
-          </Link>
-          .
-        </p>
+            <p className="text-sm text-ink-soft">
+              Printing uses the order chosen above. Your device’s print dialog can save this as a
+              PDF instead of sending it to a printer. For a copy that needs no app at all,{' '}
+              <Link to={{ name: 'data' }} className="underline">
+                export your journal
+              </Link>
+              .
+            </p>
+          </>
+        )}
       </div>
 
       <LiveRegion

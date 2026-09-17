@@ -21,7 +21,7 @@
  * as it is spent.
  */
 
-import { CANNOT_DECOMPRESS, canDecompress } from '../platform/compression';
+import { CANNOT_DECOMPRESS, canDecompress, inflateRawChunks } from '../platform/compression';
 import { ImportError, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_TOTAL_BYTES, describeBytes } from './limits';
 
 /**
@@ -76,44 +76,24 @@ async function inflateBounded(data: Uint8Array, limit: number, path: string): Pr
     throw new ImportError(CANNOT_DECOMPRESS);
   }
 
-  // A ReadableStream built here rather than `new Blob([...]).stream()`.
-  //
-  // Not a style choice: jsdom's Blob has no `stream()` method, so the Blob form
-  // throws there and every caller falls back to treating the data as stored.
-  // The DOCX path would then be exercised by no test at all — a deflated Word
-  // document, which is every real Word document, would go down a code path the
-  // suite never ran. This form works in both.
-  const source = new ReadableStream<BufferSource>({
-    start(controller) {
-      controller.enqueue(data as BufferSource);
-      controller.close();
-    },
-  });
-  const stream = source.pipeThrough(new DecompressionStream('deflate-raw'));
-  const reader = stream.getReader();
-
   const chunks: Uint8Array[] = [];
   let total = 0;
 
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > limit) {
-        // Cancelled mid-stream: the remaining chunks are never produced, so a
-        // 3GB payload costs `limit` bytes rather than 3GB.
-        await reader.cancel();
-        throw new DecompressionLimit(
-          `That file expands to more than ${describeBytes(limit)} when opened, which is far larger than a document. It has not been read.`,
-          true,
-        );
-      }
-      chunks.push(value);
+  // Chunk by chunk on BOTH paths — the platform's stream and the bundled
+  // inflate. The budget is checked while it is being spent, so a member that
+  // expands to three gigabytes costs `limit` bytes rather than three gigabytes.
+  // A fallback that buffered the whole output first would have removed that
+  // protection silently, which is why the streaming API is used.
+  await inflateRawChunks(data, (chunk) => {
+    total += chunk.byteLength;
+    if (total > limit) {
+      throw new DecompressionLimit(
+        `That file expands to more than ${describeBytes(limit)} when opened, which is far larger than a document. It has not been read.`,
+        true,
+      );
     }
-  } finally {
-    reader.releaseLock();
-  }
+    chunks.push(chunk);
+  });
 
   const out = new Uint8Array(total);
   let at = 0;

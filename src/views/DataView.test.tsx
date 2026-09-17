@@ -30,6 +30,7 @@ const brokenStorage = (): StorageProvider => {
     deleteEntry: fail,
     findEntriesForAnchor: fail,
     putEntries: fail,
+    replaceEntries: fail,
     clearEntries: fail,
     getSettings: fail,
     updateSettings: fail,
@@ -131,13 +132,13 @@ describe('DataView', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Your journal' })).toBeInTheDocument();
     expect(
-      screen.getByText(/Warning: browser storage is not a backup/i),
+      screen.getByText(/Warning: the copy on this device is not a backup/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Never exported/i)).toBeInTheDocument();
 
     // The warning is the first thing after the heading, not a footnote.
     const heading = screen.getByRole('heading', { level: 1 });
-    const warning = screen.getByText(/Warning: browser storage is not a backup/i);
+    const warning = screen.getByText(/Warning: the copy on this device is not a backup/i);
     expect(heading.compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

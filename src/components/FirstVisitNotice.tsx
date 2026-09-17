@@ -81,11 +81,11 @@ export function FirstVisitNotice() {
             nobody else can read it — not even whoever runs this site.
           </li>
           <li>
-            <strong>Your notes live in this browser, on this device.</strong> They will not appear on
-            your phone, or in another browser, or after you clear your browsing data.
+            <strong>Your notes live on this device.</strong> They will not appear on your other
+            devices, and nothing is uploaded anywhere.
           </li>
           <li>
-            <strong>Clearing your browser data will destroy them permanently.</strong> There is no
+            <strong>Clearing this app&rsquo;s data will destroy them permanently.</strong> There is no
             copy anywhere else to restore from.
           </li>
           <li>

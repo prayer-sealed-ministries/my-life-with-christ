@@ -679,6 +679,97 @@ export const CONTRACT_CASES: ContractCase[] = [
 
   // -------------------------------------------------------------------------
   {
+    group: 'replacing the whole journal',
+    name: 'swaps the journal for the incoming one',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'old-1' }), entry({ id: 'old-2' })]);
+
+      await storage.replaceEntries([entry({ id: 'new-1', title: 'Restored' })]);
+
+      const ids = (await storage.listEntries()).map((e) => e.id);
+      assert.equal(ids, ['new-1'], 'the journal is exactly what was given');
+      assert.undefined(await storage.getEntry('old-1'), 'an old entry survived the replace');
+    },
+  },
+  {
+    group: 'replacing the whole journal',
+    name: 'writes the incoming entries verbatim, defaulting nothing',
+    run: async (env) => {
+      // Restore is not authoring. An entry coming back from an archive keeps
+      // its own dates and ids, or the journal that returns is not the journal
+      // that left.
+      const storage = await env.fresh();
+      const original = entry({
+        id: 'verbatim-replace',
+        date: '2018-05-06',
+        createdAt: '2018-05-06T07:00:00.000Z',
+        updatedAt: '2018-05-07T07:00:00.000Z',
+      });
+      await storage.replaceEntries([original]);
+      assert.equal(await storage.getEntry('verbatim-replace'), original, 'replace wrote verbatim');
+    },
+  },
+  {
+    group: 'replacing the whole journal',
+    name: 'leaves settings alone, exactly as clearing does',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.updateSettings({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+      await storage.replaceEntries([entry({ id: 'r1' })]);
+
+      assert.is(
+        (await storage.getSettings()).lastExportAt,
+        '2026-01-01T00:00:00.000Z',
+        'settings survived a replace',
+      );
+    },
+  },
+  {
+    group: 'replacing the whole journal',
+    name: 'replacing with nothing empties the journal',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'doomed' })]);
+      await storage.replaceEntries([]);
+      assert.equal(await storage.listEntries(), [], 'an empty replace empties the journal');
+    },
+  },
+  {
+    group: 'replacing the whole journal',
+    name: 'is atomic: a failure leaves the journal that was already there',
+    run: async (env) => {
+      // The reason this method exists. `clearEntries()` then `putEntries()` is
+      // two transactions, and a failure between them leaves a person with
+      // neither journal — the old one deleted, the new one never written. That
+      // is reachable from an ordinary "restore from my archive" tap.
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'mine', notes: 'Years of this.' })]);
+
+      // An entry with no id: neither store can write it, and neither can be
+      // talked into inventing one. Chosen deliberately over a circular object,
+      // which fails `JSON.stringify` but not structured clone — a poison that
+      // only one engine rejects would make this case pass for the wrong reason
+      // on the other.
+      const unwritable = { ...entry({ id: 'incoming-2' }), id: undefined } as unknown as Entry;
+
+      await assert.rejects(
+        () => storage.replaceEntries([entry({ id: 'incoming' }), unwritable]),
+        'a replace containing unwritable data',
+      );
+
+      const survivors = (await storage.listEntries()).map((e) => e.id);
+      assert.equal(survivors, ['mine'], 'the original journal did not survive a failed replace');
+      assert.is(
+        (await storage.getEntry('mine'))?.notes,
+        'Years of this.',
+        'the original entry was altered by a failed replace',
+      );
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  {
     group: 'clearing',
     name: 'removes every entry',
     run: async (env) => {

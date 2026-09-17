@@ -9,7 +9,9 @@
 
 import { createContext, useContext } from 'react';
 
+import { nativePlatformAdapters } from './native';
 import type { Platform } from './ports';
+import { edition } from './runtime';
 import { webPlatform } from './web';
 
 /**
@@ -33,3 +35,18 @@ export const useFileSaver = () => useContext(PlatformContext).files;
 export const useFilePicker = () => useContext(PlatformContext).picker;
 export const usePrinter = () => useContext(PlatformContext).printer;
 export const useUnsavedWorkGuard = () => useContext(PlatformContext).unsavedWork;
+
+/**
+ * Which set of adapters this edition gets.
+ *
+ * The one place the choice is made, and it is made by edition rather than by
+ * feature detection: a webview can often be talked into `<a download>` or
+ * `<input type="file">`, and on a native shell those produce a file inside the
+ * sandbox or no file at all. "It appeared to work" is the failure mode this
+ * avoids.
+ *
+ * Exported so a test can assert the mapping without rendering anything.
+ */
+export function platformForEdition(): Platform {
+  return edition() === 'native' ? nativePlatformAdapters : webPlatform;
+}

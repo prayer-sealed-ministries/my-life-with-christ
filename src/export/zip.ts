@@ -12,7 +12,7 @@
  * everywhere, so a missing CompressionStream costs bytes, never readability.
  */
 
-import { requireDecompression } from '../platform/compression';
+import { inflateRaw } from '../platform/compression';
 
 export interface ZipEntry {
   /** Path within the archive, using forward slashes. */
@@ -275,11 +275,11 @@ export async function readZip(data: Uint8Array): Promise<ReadZipEntry[]> {
 
 async function inflate(data: Uint8Array): Promise<Uint8Array> {
   // Centralised, so the one runtime assumption that can make an archive
-  // unreadable lives in a single place with its reasoning attached. "Device",
-  // not "browser": this string is reachable inside an installed application.
-  requireDecompression();
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  // unreadable lives in a single place with its reasoning attached. The
+  // platform's inflate where it exists, a bundled one where it does not — the
+  // supported OS range includes versions with no `DecompressionStream`, and an
+  // archive a person cannot restore is not an archive.
+  return inflateRaw(data);
 }
 
 /** Read one entry's bytes as UTF-8 text. */

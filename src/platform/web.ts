@@ -64,6 +64,9 @@ export const webFileSaver: FileSaver = {
  * rest.
  */
 export const webFilePicker: FilePicker = {
+  // The page renders the control here; see `presentsOwnUI` on the port.
+  presentsOwnUI: false,
+
   pick(options: PickOptions = {}): Promise<PickedFile | null> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
@@ -110,6 +113,8 @@ export const webFilePicker: FilePicker = {
 
 /** The browser's own print dialog. */
 export const webPrinter: Printer = {
+  canPrint: true,
+
   print(): void {
     window.print();
   },

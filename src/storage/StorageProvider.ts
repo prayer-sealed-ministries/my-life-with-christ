@@ -51,6 +51,19 @@ export interface StorageProvider {
   putEntries(entries: Entry[]): Promise<void>;
   /** Used by `replace`-mode import and by the round-trip test. */
   clearEntries(): Promise<void>;
+  /**
+   * Swap the whole journal for another one, atomically.
+   *
+   * Exists because `clearEntries()` followed by `putEntries()` is two
+   * transactions, and a failure between them leaves the reader with neither
+   * journal — the old one deleted, the new one not written. For a replace-mode
+   * restore that is the worst outcome the product can produce, and it is
+   * reachable from an ordinary "restore from my archive" tap.
+   *
+   * Either every entry given here is the journal afterwards, or nothing changed.
+   * Settings are untouched, exactly as `clearEntries` leaves them.
+   */
+  replaceEntries(entries: Entry[]): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
