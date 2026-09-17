@@ -8,14 +8,90 @@
  * product makes, so it is stated at the entrance rather than buried in settings.
  */
 
+import { useEffect, useId, useState } from 'react';
+
 import { Link, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
+import { readIntro, rememberIntro } from './home-intro';
 import { cardClasses } from '../components/styles';
 import { Spinner } from '../components/ui';
 import type { Entry, EntryKind } from '../types';
 
 /** How many recent entries the front page shows. A glance, not a list. */
 const RECENT_COUNT = 3;
+
+/**
+ * The two paragraphs that say what this is.
+ *
+ * A real disclosure: a button that owns the region, says whether it is open,
+ * and can be reached and operated from the keyboard. Collapsed content is
+ * removed from the tree rather than visually hidden, so a screen reader is not
+ * offered prose the page is pretending is not there.
+ *
+ * What is NOT in here: the durability warning. "The copy on this device is not
+ * a backup" sits in the footer of every page, including this one, and that is
+ * the sentence a person must not be able to collapse away.
+ */
+function Introduction() {
+  // Never seen before means open. Anything else is what the reader last left.
+  const [open, setOpen] = useState(() => readIntro() !== 'closed');
+  const regionId = useId();
+
+  // Record that it has now been seen, so the next visit is quiet. In an effect
+  // rather than in the initializer above: this is a side effect, it must not
+  // run during render, and running it twice changes nothing.
+  useEffect(() => {
+    if (readIntro() === null) rememberIntro(false);
+  }, []);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    rememberIntro(next);
+  };
+
+  return (
+    <div className="mt-5">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-controls={regionId}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-control text-sm font-medium text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        <span
+          aria-hidden="true"
+          className={`inline-block transition-transform ${open ? 'rotate-90' : ''}`}
+        >
+          ›
+        </span>
+        What is this?
+      </button>
+
+      {open ? (
+        <div id={regionId} className="mt-2">
+          <p className="measure text-lg leading-relaxed text-ink-soft">
+            A place to read the Bible and keep what you hear — sermons, readings, prayers, and what
+            they meant to you at the time. Over the years it becomes{' '}
+            <em>My Journey With Christ</em>: a record you can keep, print and pass on.
+          </p>
+          <p className="measure mt-4 leading-relaxed text-ink-muted">
+            Everything you write stays on this device. There is no account and nothing is uploaded.
+            Because of that, the{' '}
+            <Link
+              to={{ name: 'data' }}
+              className="rounded-control underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              export
+            </Link>{' '}
+            is what you actually own — a folder of plain files a grandchild could read without this
+            app. These are your words, your prayers, your story.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const KIND_LABELS: Record<EntryKind, string> = {
   sermon: 'Sermon',
@@ -90,23 +166,7 @@ export default function HomeView() {
           the title rather than starting a new thought. */}
       <p className="mt-1 text-lg text-ink-soft">Your walk with God, remembered.</p>
 
-      <p className="measure mt-5 text-lg leading-relaxed text-ink-soft">
-        A place to read the Bible and keep what you hear — sermons, readings, prayers, and what they
-        meant to you at the time. Over the years it becomes{' '}
-        <em>My Journey With Christ</em>: a record you can keep, print and pass on.
-      </p>
-      <p className="measure mt-4 leading-relaxed text-ink-muted">
-        Everything you write stays on this device. There is no account and nothing is uploaded.
-        Because of that, the{' '}
-        <Link
-          to={{ name: 'data' }}
-          className="rounded-control underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-          export
-        </Link>{' '}
-        is what you actually own — a folder of plain files a grandchild could read without this app.
-        These are your words, your prayers, your story.
-      </p>
+      <Introduction />
 
       <section className="mt-10">
         <h2 className="font-serif text-xl font-semibold tracking-tight">Where to begin</h2>
