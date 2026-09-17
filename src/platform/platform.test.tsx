@@ -226,16 +226,32 @@ describe('storage selection fails closed', () => {
     expect(selection.provider.constructor.name).toBe('DexieStorageProvider');
   });
 
-  it('refuses to substitute when the required store is unavailable', () => {
-    // The rule this encodes: a native build that cannot open SQLite must NOT
+  it('returns SQLite — not Dexie — when the native store is required', () => {
+    // Phase 2 registered SQLite. The wiring matters as much as the refusal: a
+    // native edition that asked for `sqlite` and received Dexie would be the
+    // exact failure the rest of this block exists to prevent.
+    const selection = selectStorageProvider('sqlite');
+    expect(selection.kind).toBe('sqlite');
+    expect(selection.provider.constructor.name).toBe('SqliteStorageProvider');
+  });
+
+  it('refuses to substitute when the required store has no implementation', () => {
+    // The rule this encodes: a native build that cannot obtain SQLite must NOT
     // silently write a paid user's journal into webview IndexedDB. It throws.
-    expect(() => selectStorageProvider('sqlite')).toThrow(StorageUnavailableError);
+    //
+    // Stated against a factory set that has no `sqlite` rather than against the
+    // real one. Until Phase 2 those were the same thing, and the test happened
+    // to pass because SQLite did not exist yet — which tested the absence of an
+    // implementation, not the refusal to substitute. Dexie is offered here
+    // precisely so a substitution would succeed if the rule were broken.
+    expect(() => selectStorageProvider('sqlite', { indexeddb: () => new DexieStorageProvider() }))
+      .toThrow(StorageUnavailableError);
   });
 
   it('never hands back a kind other than the one asked for', () => {
     let selection;
     try {
-      selection = selectStorageProvider('sqlite');
+      selection = selectStorageProvider('sqlite', { indexeddb: () => new DexieStorageProvider() });
     } catch {
       selection = undefined;
     }
@@ -254,7 +270,7 @@ describe('storage selection fails closed', () => {
 
   it('says nothing was written, because nothing was', () => {
     try {
-      selectStorageProvider('sqlite');
+      selectStorageProvider('sqlite', { indexeddb: () => new DexieStorageProvider() });
       expect.unreachable('selection should have thrown');
     } catch (cause) {
       expect((cause as Error).message).toMatch(/Nothing has been written/);

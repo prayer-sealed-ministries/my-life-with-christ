@@ -12,8 +12,26 @@
 
 import Dexie, { type EntityTable } from 'dexie';
 
-import type { Entry, EntryKind, NewEntry, Settings } from '../types';
+import type { Entry, NewEntry, Settings } from '../types';
+import {
+  PLACES,
+  SPEAKERS,
+  TAGS,
+  anchorLookupKey,
+  applyPatch,
+  byDateDescending,
+  chronologically,
+  distinctValues,
+  entryToCreate,
+  indexed,
+  matches,
+} from './semantics';
 import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
+
+// Re-exported for the views and tests that already import them from here. The
+// definitions moved to `semantics.ts` so the SQLite provider can share them
+// without importing Dexie.
+export { anchorKeys, searchableText, todayIso, EMPTY_ENTRY } from './semantics';
 
 const SETTINGS_KEY = 'singleton';
 
@@ -36,50 +54,12 @@ class JourneyDatabase extends Dexie {
   }
 }
 
-/** Flatten an entry's anchors into indexable strings. */
-export function anchorKeys(entry: Pick<Entry, 'anchors'>): string[] {
-  const keys = new Set<string>();
-  for (const anchor of entry.anchors) {
-    if (anchor.kind === 'topic') {
-      keys.add(`topic:${anchor.topicId}`);
-    } else if (anchor.kind === 'book') {
-      keys.add(`book:${anchor.book}`);
-    } else {
-      keys.add(`book:${anchor.book}`);
-      keys.add(
-        `ref:${anchor.book}:${anchor.chapterStart}:${anchor.verseStart}:${anchor.chapterEnd}:${anchor.verseEnd}`,
-      );
-      if (anchor.outlineEntryId) keys.add(`outline:${anchor.outlineEntryId}`);
-    }
-  }
-  return [...keys];
-}
-
-/** The text that free-text search runs over. */
-export function searchableText(entry: Entry): string {
-  return [
-    entry.title,
-    entry.notes,
-    entry.reflection,
-    entry.prayer ?? '',
-    entry.speaker ?? '',
-    entry.place ?? '',
-    entry.sermonSeries ?? '',
-    entry.tags.join(' '),
-    entry.scriptureRefs.join(' '),
-    ...entry.links.map((link) => `${link.label ?? ''} ${link.capturedTitle ?? ''}`),
-  ]
-    .join('\n')
-    .toLowerCase();
-}
-
 type EntryRow = Entry & { anchorKeys: string[]; searchText: string };
 
-const toRow = (entry: Entry): EntryRow => ({
-  ...entry,
-  anchorKeys: anchorKeys(entry),
-  searchText: searchableText(entry),
-});
+const toRow = (entry: Entry): EntryRow => {
+  const { anchorKeys: keys, searchText } = indexed(entry);
+  return { ...entry, anchorKeys: keys, searchText };
+};
 
 /** Strip the derived index columns so what comes out is exactly what went in. */
 const fromRow = (row: EntryRow | Entry): Entry => {
@@ -87,33 +67,10 @@ const fromRow = (row: EntryRow | Entry): Entry => {
   return entry as Entry;
 };
 
-/** Stable id. Uses crypto.randomUUID where available. */
-function newId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `e-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/** Today, as a local ISO date — the default for a fast capture. */
-export function todayIso(now = new Date()): string {
-  const offset = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
-}
-
-export const EMPTY_ENTRY: Omit<Entry, 'id' | 'createdAt' | 'updatedAt'> = {
-  kind: 'sermon',
-  title: '',
-  date: '',
-  anchors: [],
-  scriptureRefs: [],
-  notes: '',
-  reflection: '',
-  links: [],
-  tags: [],
-  forDescendants: false,
-  visibility: 'private',
-};
-
 export class DexieStorageProvider implements StorageProvider {
+  /** Counterpart to the SQLite tag, so a substitution is visible, not inferred. */
+  readonly engine = 'indexeddb' as const;
+
   private db: JourneyDatabase;
 
   constructor(name = 'journey') {
@@ -137,21 +94,14 @@ export class DexieStorageProvider implements StorageProvider {
   async listEntriesChronological(query: EntryQuery = {}): Promise<Entry[]> {
     const rows = (await this.db.entries.toArray()) as EntryRow[];
     return rows
+      .map((row) => ({ entry: fromRow(row), anchorKeys: row.anchorKeys, searchText: row.searchText }))
       .filter((row) => matches(row, query))
-      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
-      .map(fromRow);
+      .map((row) => row.entry)
+      .sort(chronologically);
   }
 
   async createEntry(input: NewEntry): Promise<Entry> {
-    const now = new Date().toISOString();
-    const entry: Entry = {
-      ...EMPTY_ENTRY,
-      date: todayIso(),
-      ...input,
-      id: newId(),
-      createdAt: now,
-      updatedAt: now,
-    };
+    const entry = entryToCreate(input);
     await this.db.entries.put(toRow(entry));
     return entry;
   }
@@ -159,9 +109,7 @@ export class DexieStorageProvider implements StorageProvider {
   async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
     const existing = await this.getEntry(id);
     if (!existing) throw new Error(`No entry with id ${id}`);
-    // id, createdAt are not patchable: they are identity, not content.
-    const { id: _id, createdAt: _createdAt, ...safe } = patch;
-    const updated: Entry = { ...existing, ...safe, updatedAt: new Date().toISOString() };
+    const updated = applyPatch(existing, patch);
     await this.db.entries.put(toRow(updated));
     return updated;
   }
@@ -171,17 +119,9 @@ export class DexieStorageProvider implements StorageProvider {
   }
 
   async findEntriesForAnchor(anchor: AnchorLookup): Promise<Entry[]> {
-    const key =
-      anchor.kind === 'topic'
-        ? `topic:${anchor.topicId}`
-        : anchor.kind === 'book'
-          ? `book:${anchor.book}`
-          : anchor.kind === 'outline'
-            ? `outline:${anchor.outlineEntryId}`
-            : `ref:${anchor.book}:${anchor.chapterStart}:${anchor.verseStart}:${anchor.chapterEnd}:${anchor.verseEnd}`;
-
+    const key = anchorLookupKey(anchor);
     const rows = (await this.db.entries.where('anchorKeys').equals(key).toArray()) as EntryRow[];
-    return rows.sort((a, b) => b.date.localeCompare(a.date)).map(fromRow);
+    return rows.map(fromRow).sort(byDateDescending);
   }
 
   async putEntries(entries: Entry[]): Promise<void> {
@@ -207,41 +147,18 @@ export class DexieStorageProvider implements StorageProvider {
   }
 
   async listTags(): Promise<string[]> {
-    return this.distinct((entry) => entry.tags);
+    return distinctValues(await this.allEntries(), TAGS);
   }
 
   async listSpeakers(): Promise<string[]> {
-    return this.distinct((entry) => (entry.speaker ? [entry.speaker] : []));
+    return distinctValues(await this.allEntries(), SPEAKERS);
   }
 
   async listPlaces(): Promise<string[]> {
-    return this.distinct((entry) => (entry.place ? [entry.place] : []));
+    return distinctValues(await this.allEntries(), PLACES);
   }
 
-  private async distinct(pick: (entry: Entry) => string[]): Promise<string[]> {
-    const rows = await this.db.entries.toArray();
-    const values = new Set<string>();
-    for (const row of rows) for (const value of pick(row)) if (value.trim()) values.add(value);
-    return [...values].sort((a, b) => a.localeCompare(b));
+  private async allEntries(): Promise<Entry[]> {
+    return (await this.db.entries.toArray()).map(fromRow);
   }
-}
-
-/** Does a stored row satisfy a query? */
-function matches(row: EntryRow, query: EntryQuery): boolean {
-  if (query.text) {
-    const needle = query.text.trim().toLowerCase();
-    const haystack = row.searchText ?? searchableText(row);
-    if (needle && !haystack.includes(needle)) return false;
-  }
-  if (query.from && row.date < query.from) return false;
-  if (query.to && row.date > query.to) return false;
-  if (query.forDescendantsOnly && !row.forDescendants) return false;
-  if (query.kinds?.length && !query.kinds.includes(row.kind as EntryKind)) return false;
-  if (query.tags?.length && !query.tags.some((tag) => row.tags.includes(tag))) return false;
-
-  const keys = row.anchorKeys ?? anchorKeys(row);
-  if (query.books?.length && !query.books.some((book) => keys.includes(`book:${book}`))) return false;
-  if (query.topics?.length && !query.topics.some((topic) => keys.includes(`topic:${topic}`))) return false;
-
-  return true;
 }

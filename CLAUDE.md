@@ -550,6 +550,50 @@ the record while every screen reported success.
 An app that will not start is a bug report. An app that quietly writes to the
 wrong place is a lost inheritance. Do not add the fallback.
 
+### Native journal persistence is SQLite, and only SQLite.
+
+Web is Dexie/IndexedDB. Native is SQLite, through
+`@capacitor-community/sqlite`. There is no third option and no fallback between
+them: `requiredStorageKind()` answers by edition, and `selectStorageProvider`
+returns that kind or throws.
+
+A native build whose SQLite will not **open** fails closed too, not just one
+that cannot obtain a provider. On the web a blocked IndexedDB leaves a useful
+app and gets a banner; on native the store is the product, and carrying on would
+mean an app that looks ready, accepts an entry, and loses it.
+
+**An acknowledged write has already committed.** Nothing may be queued in
+JavaScript memory to be flushed by `pause`, `appStateChange`, `pagehide` or
+`beforeunload` — the last two were measured and never fire at all on either
+platform. If a caller was told a save succeeded, the transaction is on disk.
+
+**Migrations are explicit, ordered and monotonic.** The schema version is
+written inside the same transaction as the step that earns it, so a failed
+migration leaves the old version authoritative rather than claiming an upgrade
+that did not happen. A database numbered beyond what this build understands is
+refused, never opened. Do not add a schema without adding its step.
+
+**The SQLite file is not the user's backup.** It is this application's working
+copy. The canonical archive is what the user owns and what the inheritance
+promise is about; keep the two ideas apart in code and in wording.
+
+### One description of persistence, shared by both providers.
+
+`src/storage/semantics.ts` holds the defaulting, the derived anchor keys, the
+query predicate, the ordering and the tie-break. Dexie and SQLite differ only in
+how rows reach a disk. A provider is not allowed its own opinion about what an
+answer means — two correct-looking implementations that disagreed about a
+tie-break would put two sermons from one Sunday in a different order on a phone
+than on a laptop, and no shared test would catch it unless someone had thought
+to write that exact case.
+
+The contract lives in `src/storage/contract.ts` as framework-neutral cases for
+the same reason: Vitest runs it against Dexie, and the on-device harness runs
+the identical array against real SQLite inside the app. Node's SQLite is a
+useful check on the SQL and is **not** evidence about the native provider — the
+plugin, the sandbox and the file location are exactly the parts that break, and
+two of the three bugs found in Phase 2 were visible only on a device.
+
 ### Journal data never lives in convenience storage.
 
 `localStorage` holds the theme choice and the first-visit flag. Both are

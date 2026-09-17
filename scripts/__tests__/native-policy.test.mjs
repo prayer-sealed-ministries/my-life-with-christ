@@ -329,6 +329,34 @@ describe('native storage fails closed', () => {
   });
 });
 
+/**
+ * Files outside `src/platform/` that may touch a platform binding.
+ *
+ * Enumerated rather than pattern-matched, and asserted to be exactly this list:
+ * a new file that reaches for Capacitor has to be added here deliberately,
+ * where someone will ask why. Both entries are platform *implementations*, not
+ * product code — they no more branch on the platform in a view than
+ * `db.ts` does by importing Dexie.
+ */
+const PLATFORM_BINDINGS = [
+  // The native storage provider. It imports the SQLite bridge for the same
+  // reason db.ts imports Dexie: it is the implementation of a port.
+  join('src', 'storage', 'sqlite.ts'),
+  // The on-device contract harness, whose whole job is to refuse to run unless
+  // it really is on a native platform talking to the real plugin.
+  join('src', 'storage', 'native-conformance.ts'),
+];
+
+/**
+ * A reference to the Capacitor bridge, static or dynamic.
+ *
+ * Both spellings count. `sqlite.ts` reaches the plugin through
+ * `await import('@capacitor-community/sqlite')` precisely so the web bundle
+ * never loads it, and a scan that only looked for `from '@capacitor'` would
+ * have reported it clean while it was importing the bridge on every line.
+ */
+const USES_CAPACITOR = /(?:from\s+'@capacitor|import\('@capacitor)/;
+
 describe('no view learns which platform it is on', () => {
   const sourceFiles = (function walk(at) {
     return readdirSync(join(root, at)).flatMap((name) => {
@@ -345,21 +373,35 @@ describe('no view learns which platform it is on', () => {
     expect(sourceFiles.length, 'found no source files to scan').toBeGreaterThan(40);
 
     const offenders = sourceFiles.filter(
-      (path) => !path.startsWith(join('src', 'platform')) && /from '@capacitor\//.test(read(path)),
+      (path) =>
+        !path.startsWith(join('src', 'platform')) &&
+        !PLATFORM_BINDINGS.includes(path) &&
+        USES_CAPACITOR.test(read(path)),
     );
-    expect(offenders, 'Capacitor imported outside src/platform').toEqual([]);
+    expect(offenders, 'Capacitor imported outside the platform layer').toEqual([]);
+
+    // The allowlist is exact, so it cannot quietly grow.
+    const bindings = sourceFiles.filter(
+      (path) => PLATFORM_BINDINGS.includes(path) && USES_CAPACITOR.test(read(path)),
+    );
+    expect(bindings.sort(), 'the platform-binding allowlist no longer matches reality').toEqual(
+      [...PLATFORM_BINDINGS].sort(),
+    );
 
     // A floor on the scan itself: the platform layer really does import it, so
     // a broken regex would show up here rather than as a clean sweep.
     const inside = sourceFiles.filter(
-      (path) => path.startsWith(join('src', 'platform')) && /from '@capacitor\//.test(read(path)),
+      (path) => path.startsWith(join('src', 'platform')) && USES_CAPACITOR.test(read(path)),
     );
     expect(inside.length, 'the scan matched no Capacitor imports at all').toBeGreaterThanOrEqual(2);
   });
 
   it('does not sniff the platform in views', () => {
     const views = sourceFiles.filter(
-      (path) => !path.startsWith(join('src', 'platform')) && !path.includes('.test.'),
+      (path) =>
+        !path.startsWith(join('src', 'platform')) &&
+        !PLATFORM_BINDINGS.includes(path) &&
+        !path.includes('.test.'),
     );
     expect(views.length).toBeGreaterThan(20);
 
@@ -399,9 +441,14 @@ describe('no view learns which platform it is on', () => {
     // `runtime.ts` answers "where am I". Exactly one place outside the platform
     // layer has a legitimate reason to ask: the storage wiring, which must pick
     // a kind. Anything else importing it is the beginning of scattered checks.
+    // Tests are excluded: mocking the module is how the fail-closed behaviour is
+    // proven, and counting a mock as a consumer would punish the test for
+    // existing.
     const consumers = sourceFiles.filter(
       (path) =>
-        !path.startsWith(join('src', 'platform')) && /platform\/runtime'/.test(read(path)),
+        !path.startsWith(join('src', 'platform')) &&
+        !path.includes('.test.') &&
+        /platform\/runtime'/.test(read(path)),
     );
     expect(consumers).toEqual([join('src', 'app', 'storage.tsx')]);
   });
@@ -450,4 +497,162 @@ describe('no signing material or machine-specific state is committable', () => {
     expect(pbxproj).not.toMatch(/DEVELOPMENT_TEAM\s*=\s*[A-Z0-9]{10}/);
     expect(pbxproj).not.toMatch(/PROVISIONING_PROFILE_SPECIFIER\s*=\s*"?\w/);
   });
+});
+
+describe('native journal persistence is SQLite, and only SQLite', () => {
+  const sqlite = read('src/storage/sqlite.ts');
+  const platformStorage = read('src/platform/storage.ts');
+
+  it('registers SQLite for the native edition', () => {
+    expect(sqlite.length).toBeGreaterThan(2000);
+    expect(platformStorage).toMatch(/sqlite:\s*\(\)\s*=>\s*new SqliteStorageProvider\(\)/);
+    // And the mapping still comes from the edition, not from availability.
+    expect(read('src/platform/runtime.ts')).toMatch(/isNative\(\)\s*\?\s*'sqlite'\s*:\s*'indexeddb'/);
+  });
+
+  it('keeps Dexie out of the SQLite provider entirely', () => {
+    // Not a style point: if the native provider imported the Dexie module, the
+    // fallback would be one line away from anyone debugging a failure at 2am.
+    // Import statements, not prose: sqlite.ts explains itself by referring to
+    // Dexie, and a check that banned the word would force the comments out.
+    expect(sqlite).not.toMatch(/^import .*from '\.\/db'/m);
+    expect(sqlite).not.toMatch(/^import .*\bdexie\b/mi);
+    expect(sqlite).not.toMatch(/\bnew DexieStorageProvider\b/);
+    expect(sqlite).not.toMatch(/\bindexedDB\./);
+  });
+
+  it('shares one description of persistence semantics rather than two', () => {
+    // Both providers must derive ordering, defaulting and the query predicate
+    // from the same module. Two correct-looking implementations that disagree
+    // about a tie-break would put two sermons from one Sunday in a different
+    // order on a phone than on a laptop.
+    const semantics = read('src/storage/semantics.ts');
+    // The shared module must depend on neither engine — again by import, since
+    // it names both in its explanation of why it exists.
+    expect(semantics).not.toMatch(/^import .*(dexie|@capacitor)/mi);
+
+    for (const [file, text] of [
+      ['db.ts', read('src/storage/db.ts')],
+      ['sqlite.ts', sqlite],
+    ]) {
+      expect(text, `${file} does not use the shared semantics`).toMatch(/from '\.\/semantics'/);
+      for (const shared of ['chronologically', 'matches', 'entryToCreate', 'applyPatch']) {
+        expect(text, `${file} does not share ${shared}`).toContain(shared);
+      }
+    }
+
+    // One contract, run by both runners.
+    expect(read('src/storage/conformance.ts')).toContain('CONTRACT_CASES');
+    expect(read('src/storage/native-conformance.ts')).toContain('CONTRACT_CASES');
+  });
+
+  it('imports the native bridge lazily, so the web runtime never loads it', () => {
+    // A static import would put the plugin in the web bundle for no one's
+    // benefit. The factory constructs the provider eagerly; only `open()`
+    // reaches for the bridge, and the web edition never opens it.
+    expect(sqlite).toMatch(/await import\('@capacitor-community\/sqlite'\)/);
+    expect(sqlite).not.toMatch(/^import .*@capacitor-community\/sqlite/m);
+  });
+
+  it('opens the database without encryption, and claims nothing more', () => {
+    // Turning on SQLCipher would mean owning a key, which means Keychain and
+    // Keystore, which is a product decision Phase 2 did not make. The app must
+    // not describe the journal as encrypted while it is not.
+    expect(sqlite).toMatch(/mode: 'no-encryption'/);
+    expect(sqlite).toMatch(/encrypted: false/);
+  });
+
+  it('has a schema version and an ordered migration ledger', () => {
+    expect(sqlite).toMatch(/SCHEMA_VERSION = \d+/);
+    expect(sqlite).toMatch(/const MIGRATIONS: Migration\[\]/);
+    // The version is recorded inside the same transaction as the step, which is
+    // what stops a failed migration from claiming it succeeded.
+    const stepAt = sqlite.indexOf('for (const statement of migration.statements)');
+    const versionAt = sqlite.indexOf('INSERT INTO schema_meta');
+    const commitAt = sqlite.indexOf('commitTransaction');
+    expect(stepAt).toBeGreaterThan(-1);
+    expect(versionAt).toBeGreaterThan(stepAt);
+    expect(commitAt).toBeGreaterThan(-1);
+    expect(sqlite).toMatch(/SchemaTooNewError/);
+  });
+
+  it('commits writes rather than queuing them for a lifecycle callback', () => {
+    // The product cannot depend on being told it is about to die. Phase 1
+    // measured that `pagehide` and `beforeunload` never fire on either
+    // platform, so anything held in memory until "app closing" would be lost.
+    expect(sqlite).toMatch(/inTransaction/);
+    for (const lifecycle of ['appStateChange', 'pagehide', 'beforeunload', 'visibilitychange']) {
+      expect(sqlite, `sqlite.ts reacts to ${lifecycle}`).not.toContain(lifecycle);
+    }
+  });
+});
+
+describe('the native test harness cannot reach a store build or a real journal', () => {
+  const harness = read('src/storage/native-conformance.ts');
+
+  it('is only imported behind a build-time flag', () => {
+    const main = read('src/main.tsx');
+    expect(main).toMatch(/import\.meta\.env\.VITE_NATIVE_CONFORMANCE/);
+    expect(main).toMatch(/import\('\.\/storage\/native-conformance'\)/);
+    // Behind a condition, so a production build eliminates it rather than
+    // shipping a chunk that can open databases.
+    expect(main).toMatch(/if \(import\.meta\.env\.VITE_NATIVE_CONFORMANCE\)/);
+  });
+
+  it('refuses to touch anything but its own throwaway stores', () => {
+    expect(harness).toMatch(/const TEST_PREFIX = 'contract-test-'/);
+    expect(harness).toMatch(/storeId === DATABASE_NAME/);
+    expect(harness).toMatch(/throw new Error\(/);
+    // It must also clean up after itself.
+    expect(harness).toMatch(/deleteStore\(\)/);
+  });
+
+  it('has floors that a hollow run would trip', () => {
+    // A harness that ran zero cases, ran on the web, or quietly ran Dexie must
+    // report failure rather than a clean pass.
+    expect(harness).toMatch(/expectedCases/);
+    expect(harness).toMatch(/ranCases !== CONTRACT_CASE_COUNT/);
+    expect(harness).toMatch(/result\.engine !== 'sqlite'/);
+    expect(harness).toMatch(/not running on a native platform/);
+    expect(harness).toMatch(/reopenProved/);
+  });
+
+  it('identifies the engine by a property the minifier cannot mangle', () => {
+    // It used to read `constructor.name`, which a production build reports as
+    // something like "er" — a floor that could not identify anything, and so
+    // could never have caught a Dexie substitution.
+    expect(read('src/storage/sqlite.ts')).toMatch(/readonly engine = 'sqlite'/);
+    expect(read('src/storage/db.ts')).toMatch(/readonly engine = 'indexeddb'/);
+    expect(harness).not.toMatch(/providerClass !== 'SqliteStorageProvider'/);
+  });
+
+  it('is absent from the packaged native assets', () => {
+    // The real check: the bytes that ship. A flag that was supposed to exclude
+    // it, but did not, would look identical in the source.
+    for (const [platform, relative] of Object.entries(COPIED_ASSETS)) {
+      const copied = join(root, relative);
+      if (!existsSync(copied)) {
+        expect.fail(`${relative} does not exist; run: npm run native:assets && npm run native:sync`);
+      }
+
+      const offenders = [];
+      let filesRead = 0;
+      const walk = (at) => {
+        for (const name of readdirSync(at)) {
+          const path = join(at, name);
+          if (statSync(path).isDirectory()) {
+            walk(path);
+          } else if (/\.(js|html|css)$/.test(name)) {
+            filesRead += 1;
+            if (readFileSync(path, 'utf8').includes('NATIVE_CONTRACT_RESULT')) offenders.push(name);
+          }
+        }
+      };
+      walk(copied);
+
+      // A floor, because "found nothing" is also what reading nothing looks like.
+      expect(filesRead, `${platform}: read no code files at all`).toBeGreaterThan(5);
+      expect(offenders, `${platform}: the test harness is in the packaged assets`).toEqual([]);
+    }
+  }, TEST_TIMEOUT_MS);
 });

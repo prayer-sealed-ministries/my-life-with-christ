@@ -25,6 +25,19 @@ if (!root) throw new Error('No #root element');
 // that Android exists. Failure to bind must not stop the app from starting.
 void bindAndroidBack(browserHistoryHost()).catch(() => undefined);
 
+// The native persistence contract, run inside the real application.
+//
+// Gated on a build-time flag rather than a runtime check: Vite substitutes
+// `import.meta.env.VITE_NATIVE_CONFORMANCE` literally, so in a production build
+// this is `if (undefined)` and the chunk is never emitted. A policy test asserts
+// the harness is absent from the packaged native assets, because a test harness
+// that could open a database has no business in a store build.
+if (import.meta.env.VITE_NATIVE_CONFORMANCE) {
+  void import('./storage/native-conformance')
+    .then((harness) => harness.runNativeContract())
+    .catch((error: unknown) => console.log('NATIVE_CONTRACT_RESULT_ERROR', String(error)));
+}
+
 createRoot(root).render(
   <StrictMode>
     {/* The platform sits outermost: storage selection and every file operation

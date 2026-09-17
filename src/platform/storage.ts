@@ -30,6 +30,7 @@
  */
 
 import { DexieStorageProvider } from '../storage/db';
+import { SqliteStorageProvider } from '../storage/sqlite';
 import type { StorageProvider } from '../storage/StorageProvider';
 
 /**
@@ -75,8 +76,14 @@ export type ProviderFactories = Partial<Record<StorageKind, () => StorageProvide
 
 const defaultFactories: ProviderFactories = {
   indexeddb: () => new DexieStorageProvider(),
-  // sqlite is registered by the native edition in Phase 2. Absent here on
-  // purpose: the web build must not be able to construct one by accident.
+  // Registered in Phase 2. Constructing one is cheap and does nothing: the
+  // Capacitor plugin is imported lazily inside `open()`, so the native bridge
+  // never enters the web bundle even though the factory is declared here.
+  //
+  // The web edition still asks for `indexeddb` and gets Dexie. Registering
+  // SQLite does NOT make it reachable from the web — `requiredStorageKind()`
+  // decides, and it answers by edition, not by what happens to be available.
+  sqlite: () => new SqliteStorageProvider(),
 };
 
 /**

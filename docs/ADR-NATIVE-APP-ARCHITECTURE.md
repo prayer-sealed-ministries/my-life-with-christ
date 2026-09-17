@@ -930,6 +930,209 @@ phase.
 
 ---
 
+## Phase 2 — native SQLite persistence, as measured
+
+### The bridge, and why this one
+
+**`@capacitor-community/sqlite` 8.1.1** (MIT, published 2026-08-06), peer
+`@capacitor/core >=8.0.0` against our 8.5.2.
+
+Chosen after ruling the alternatives out on evidence rather than popularity:
+
+| Candidate | Why not |
+| --- | --- |
+| `capacitor-sqlite` | last published 2022, Capacitor 2 era |
+| `capacitor-data-storage-sqlite` | key/value only, peer `@capacitor/core ^5` |
+| `cordova-sqlite-storage` | maintained, but needs the Cordova compatibility layer and a callback API |
+| `@capawesome-team/capacitor-sqlite` | not public (404 on npm); a paid licence |
+| `@microbit/capacitor-sqlite-vanilla` | 0.1.0, and its own README says it "has had no real world use outside of one app" and points at capacitor-community instead |
+
+It brings a transitive dependency on `jeep-sqlite` (browser wasm SQLite), which
+we do not want and do not use. Measured rather than assumed: **no wasm, no
+sql.js and no jeep-sqlite code reaches `dist/`.** The plugin's web
+implementation is a 9.5 KB lazy chunk referenced only from Capacitor's plugin
+loader, never from the entry bundle, and it looks for a `<jeep-sqlite>` DOM
+element we never add. It is emitted but never executed on the web.
+
+Encryption is available in this plugin and is **off**: `mode: 'no-encryption'`.
+Turning it on means owning a key, which means Keychain and Keystore, which is a
+product decision Phase 2 did not make. The journal is protected by the OS
+sandbox and device encryption, and the app must not claim more.
+
+### Schema v1
+
+`data` holds the canonical `Entry` JSON and is the authority on read; the
+columns beside it are derived on write, for ordering, identity and so a human
+with a SQLite browser can read the file. The entry is stored as JSON because the
+domain object is the export format — it carries optional fields, nested anchors,
+and `_unmigrated`, which is *fields written by a future version that this build
+must preserve without knowing their names*. A column-per-field schema cannot
+round-trip a field it has no column for.
+
+```sql
+schema_meta(id, version)
+entries(id PK, kind, title, date, created_at, updated_at, data)
+  entries_order(date, created_at), entries_updated_at(updated_at)
+entry_anchor_keys(entry_id -> entries.id ON DELETE CASCADE, anchor_key)
+  entry_anchor_keys_key(anchor_key)
+settings(key PK, data)
+```
+
+`entry_anchor_keys` is the SQL form of Dexie's multi-entry index, and is what
+`findEntriesForAnchor` joins against rather than scanning.
+
+**PRAGMA:** only `foreign_keys = ON`, per connection, because SQLite enforces
+foreign keys only when asked and without it a deleted entry would leave its
+anchor rows behind to match future lookups. `journal_mode` and `synchronous` are
+left at the plugin's defaults: this is a single-user journal writing a few
+hundred bytes a few times an hour, and changing durability knobs without a
+measured reason is cargo cult. No claim is made about power loss beyond what
+SQLite and the OS provide.
+
+### Migrations exist before users do
+
+An explicit ordered ledger, with the version recorded **inside the same
+transaction as the step**. A failed step rolls back and the database still
+reports the version it genuinely has. A database numbered beyond what the build
+understands is refused with `SchemaTooNewError` rather than opened.
+
+The machinery is proven on a synthetic two-step ledger, because "a fresh install
+reaches v1" is the one case that says nothing about upgrading: v1 -> v2 applies
+in order and keeps v1 data; a broken v2 leaves v1 authoritative with its
+half-applied column rolled back; a v1-only build refuses a v2 file.
+
+### Durability does not depend on lifecycle callbacks
+
+Every acknowledged write has committed by the time its promise resolves. Nothing
+is queued for `pause`, `appStateChange`, `pagehide` or `beforeunload` — Phase 1
+measured that the last two never fire at all on either platform, so anything
+held in memory until "app closing" would simply be lost.
+
+### Conformance: one contract, three runners
+
+The contract moved out of Vitest into `src/storage/contract.ts` as 47 plain
+cases, because it has to run where Vitest cannot. `conformance.ts` is now a thin
+adapter. There is one description of what persistence means, not two.
+
+| Runner | Engine | Result |
+| --- | --- | --- |
+| Vitest | Dexie / IndexedDB | **47/47** |
+| Vitest, `node:sqlite` | real SQLite, *not a native proof* | **47/47** + schema, migration and rollback cases |
+| **iOS 26.5 simulator (iPhone 17)** | `@capacitor-community/sqlite`, SQLite **3.53.4** | **47/47**, 0 floors tripped |
+| **Android 15 emulator (API 35)** | `@capacitor-community/sqlite`, SQLite **3.53.3** | **47/47**, 0 floors tripped |
+
+The native harness refuses to report a pass unless it is on a native platform,
+the plugin is available, the provider answers `engine === 'sqlite'`, the schema
+is at the expected version, the engine identifies its own SQLite version, a
+closed-and-reopened database returns its data, and the number of cases it ran
+equals the number that exist.
+
+**Two bugs were found only by running on devices**, and neither Node nor the
+other platform could have caught them:
+
+1. **Capacitor's plugin object is a Proxy that answers every property access
+   with a callable, `then` included.** Returning it from an `async` function
+   makes the runtime treat it as a thenable and call `.then()`, which the bridge
+   rejects: `"CapacitorSQLite.then()" is not implemented on android`. The loader
+   now hands back a plain delegating object.
+2. **iOS prepends a column-descriptor row to every query result** —
+   `[{ios_columns:['data']}, {data:'…'}]` where Android returns only the data
+   rows. Taken at face value, every iOS read would have had a phantom row at the
+   front: `getEntry` would `JSON.parse(undefined)` and a list would carry a junk
+   entry. `select()` now filters the descriptor. iOS also rejects a query with
+   no `values` array, which Android tolerates.
+
+A third instrument flaw was found the same way: the harness identified the
+provider by `constructor.name`, which a production build mangles to `"er"` — a
+floor that could not identify anything, and so could never have caught a Dexie
+substitution. Both providers now carry an `engine` property, which the minifier
+leaves alone.
+
+### Database identity and location
+
+Logical name **`journey`** — boring, brand-independent, no version number, for
+the same reason as every other machine identifier in this project. The plugin
+appends its own suffix, so the file is **`journeySQLite.db`**, observed at:
+
+| Platform | Observed path |
+| --- | --- |
+| Android | `/data/user/0/com.myjourneywithchrist.lifewithchrist/databases/journeySQLite.db` |
+| iOS | `<app data container>/Documents/journeySQLite.db` |
+
+iOS lands in `Documents`, not `Library/Application Support` as this ADR
+originally anticipated — that is the plugin's default and it is recorded here as
+observed rather than as intended. `Documents` is included in device backup and
+is not purged like `Caches`, so the durability property holds; whether to move
+it (and thereby whether it appears in the Files app) is a Phase 3 question.
+
+**Uninstall deletes it.** Device backup may include it if the person has iCloud
+Backup or Android Auto Backup enabled — that is *device* backup, not our sync;
+there is no server and no account. None of this makes SQLite the user's backup:
+the canonical archive is, and it is still the thing they own.
+
+### Evidence from the product, not from the tests
+
+A journal entry was written through the **real UI** on both platforms — notes,
+reflection, a Scripture anchor chosen from the BSB section list, and on Android
+also prayer, speaker and tags — then the process was killed and the app
+relaunched.
+
+| | iOS | Android |
+| --- | --- | --- |
+| Process death induced by | `xcrun simctl terminate` (pid 86153 gone) | `adb shell am force-stop` (pid 8316 -> 8828) |
+| Entry after relaunch | present, fields intact | present, fields intact |
+| Independent file check | `sqlite3` on a copy: `integrity_check ok`, `schema_meta.version = 1`, notes/reflection/anchors match what was typed | same, plus prayer, speaker, tags, and the three derived anchor rows `book:john`, `outline:john-4-1-26`, `ref:john:4:1:4:26` |
+
+### IndexedDB was not used — checked after real journal use
+
+Not "the code selected sqlite", and not an overbroad "the directory must not
+exist":
+
+- **Android:** no `IndexedDB` directory at all in the app sandbox, and the only
+  file matching *journey* anywhere under it is `databases/journeySQLite.db`.
+- **iOS:** an `IndexedDB` directory does exist under WebKit's `WebsiteData` — and
+  it is **empty, 0 entries**: scaffolding the engine creates, with no database
+  inside. WebKit `LocalStorage` holds exactly one key, `journey:welcomed = 1`,
+  the first-visit flag CLAUDE.md permits, and zero rows containing journal text.
+
+### Offline
+
+Measured on Android with the radios actually off (`airplane_mode_on = 1`,
+`ping` reports *Network is unreachable*): cold launch, all 66 books, a topic with
+its passages, full KJV text for Genesis 2:1-3 under its BSB heading, search
+finding the journal entry, and **a new entry created, saved, force-stopped and
+re-read** — all with no network.
+
+**iOS offline was not tested**, and is not claimed. The simulator shares the
+Mac's network stack and the only way to disable it would be to turn off the
+machine's networking, which was not an acceptable thing to do to someone else's
+computer unattended. What is known for iOS is narrower: every asset is served
+from the bundle, and no network call exists in the product. A real iOS offline
+test belongs with the Phase 4 offline work.
+
+### Wording that is now wrong on native
+
+Found while driving the real UI, recorded rather than fixed here because
+CLAUDE.md already calls it a Phase 4 decision rather than a find-and-replace:
+
+- the first-visit notice says *"Your notes live in this browser"* and *"Clearing
+  your browser data will destroy them permanently"*
+- the export reminder says *"Browser storage is not a backup — clearing your
+  browser data would erase all of it"*
+- the footer repeats the same line
+
+On native there is no browser, the store is SQLite, and the equivalent risk is
+uninstalling the app. Three strings, one decision.
+
+### Also observed, for Phase 5
+
+On iOS a `<select>` renders as a modal picker that swallows Tab and Escape, and
+it sits early in the tab order — reaching the page content by keyboard past the
+theme selector was not possible. That is a real keyboard-navigation defect on
+the native shell and belongs in the Phase 5 accessibility work.
+
+---
+
 ## Documentation defect found during inspection
 
 Not corrected here, because this task is architecture-only. Reported for a
