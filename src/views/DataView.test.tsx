@@ -145,6 +145,10 @@ describe('DataView', () => {
   it('exports everything in one press and reports the filename and entry count', async () => {
     const click = stubDownload();
     await db.putEntries([GRACE, QUIET]);
+    // A reader who chose a weekly reminder keeps it through an export. The
+    // export writes the date and clears the dismissal; it has no business
+    // resetting how often they asked to be told.
+    await db.updateSettings({ backupReminderDays: 7 });
 
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
@@ -157,7 +161,9 @@ describe('DataView', () => {
     expect(click).toHaveBeenCalled();
 
     // The export is recorded, so the reminder resets and the line above updates.
-    expect((await db.getSettings()).lastExportAt).toBeTruthy();
+    const afterExport = await db.getSettings();
+    expect(afterExport.lastExportAt).toBeTruthy();
+    expect(afterExport.backupReminderDays, 'the export overwrote the chosen interval').toBe(7);
     expect(screen.getByText('Last exported today.')).toBeInTheDocument();
   }, 30_000);
 

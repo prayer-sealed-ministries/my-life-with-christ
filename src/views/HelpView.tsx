@@ -146,6 +146,14 @@ export default function HelpView() {
         <p className="measure text-sm leading-relaxed text-ink-soft">
           Keep an exported copy somewhere other than this device.
         </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          If a month goes by without an export, your journal page says so. You can change how long
+          it waits in{' '}
+          <Link to={{ name: 'settings' }} className="underline focus-visible:outline-2">
+            Settings
+          </Link>
+          . The reminder does not make a copy of anything — exporting is what does that.
+        </p>
       </section>
 
       <section aria-labelledby="restoring" className="space-y-2">

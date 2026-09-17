@@ -111,6 +111,9 @@ export async function resolveViews(page: Page): Promise<ViewTarget[]> {
     { key: 'entry-edit', hash: '#/entry/seed-01' },
     { key: 'entry-new', hash: '#/entry/new' },
     { key: 'data', hash: '#/data' },
+    // Settings carries a preference that changes when the reminder speaks, so
+    // it belongs in the sweep rather than relying on its own spec alone.
+    { key: 'settings', hash: '#/settings' },
     { key: 'import', hash: '#/import' },
     { key: 'legacy', hash: '#/legacy' },
   ];

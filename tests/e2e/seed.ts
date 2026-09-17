@@ -13,7 +13,7 @@
  */
 
 import type { Page } from '@playwright/test';
-import type { Entry } from '../../src/types';
+import type { Entry, Settings } from '../../src/types';
 
 const iso = (date: string) => `${date}T12:00:00.000Z`;
 
@@ -272,6 +272,43 @@ export async function seedEntries(page: Page, entries: Entry[] = SEED_ENTRIES): 
       };
     });
   }, rows);
+
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+}
+
+/**
+ * Write app settings into the database the app has already opened.
+ *
+ * Same rule as `seedEntries`: after load, so Dexie owns the schema. The row key
+ * matches `SETTINGS_KEY` in src/storage/db.ts — it is duplicated rather than
+ * imported because this runs inside the page, where the app's modules are not
+ * reachable.
+ *
+ * This exists so a test can say "your last export was twenty days ago" without
+ * waiting twenty days.
+ */
+export async function seedSettings(page: Page, settings: Settings): Promise<void> {
+  await page.evaluate(async (payload) => {
+    await new Promise<void>((resolve, reject) => {
+      const open = indexedDB.open('journey');
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction('settings', 'readwrite');
+        const store = tx.objectStore('settings');
+        const existing = store.get('singleton');
+        existing.onsuccess = () => {
+          store.put({ ...(existing.result ?? {}), key: 'singleton', ...payload });
+        };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, settings);
 
   await page.reload();
   await page.waitForLoadState('networkidle');

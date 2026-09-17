@@ -347,8 +347,17 @@ export interface ImportPreview {
 
 /** App-level state that is not an entry. */
 export interface Settings {
-  /** Drives the 30-day "you have not exported" reminder. */
+  /** Drives the "you have not exported" reminder. */
   lastExportAt?: string;
   reminderDismissedAt?: string;
+  /**
+   * How long an export stays "recent", in days — the reader's choice.
+   *
+   * Absent, or anything not on the offered list, means the default. It lives
+   * here rather than in localStorage because it drives the export reminder,
+   * and a setting that drives the reminder is not disposable: silently losing
+   * it would lengthen or shorten the interval a person deliberately chose.
+   */
+  backupReminderDays?: number;
   theme?: 'light' | 'dark' | 'system';
 }
