@@ -19,6 +19,8 @@ import {
 } from 'react';
 
 import { selectStorageProvider } from '../platform/storage';
+import { requiredStorageKind } from '../platform/runtime';
+import { StorageUnavailable } from './StorageUnavailable';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Settings } from '../types';
 
@@ -51,16 +53,39 @@ export function StorageContextProvider({
   // silent fallback would put months of someone's journal in a store they were
   // never told about, that we cannot hand them, and that the next successful
   // launch would stop reading. See src/platform/storage.ts.
-  const storage = useMemo(
-    () => provider ?? selectStorageProvider().provider,
-    [provider],
-  );
+  //
+  // `requiredStorageKind()` answers `sqlite` on native and `indexeddb` on web.
+  // In Phase 1 no SQLite provider is registered, so a native build throws here
+  // and the shell shows the blocked state below — which is the intended
+  // outcome, not a defect to work around.
+  //
+  // `requiredStorageKind()` answers `sqlite` on native and `indexeddb` on web.
+  // In Phase 1 no SQLite provider is registered, so a native build cannot obtain
+  // one and this resolves to a failure rather than to a provider. That is the
+  // intended outcome, not a defect: a native shell showing a working journal
+  // backed by webview IndexedDB would be demonstrating something we are
+  // deliberately not building.
+  //
+  // Computed as a value rather than through setState-in-render: the outcome is
+  // a pure function of the edition, and storing it in state would mean one
+  // render where the app believed it had storage that it did not.
+  const selection = useMemo((): { provider: StorageProvider } | { failure: Error } => {
+    if (provider) return { provider };
+    try {
+      return { provider: selectStorageProvider(requiredStorageKind()).provider };
+    } catch (cause) {
+      return { failure: cause instanceof Error ? cause : new Error(String(cause)) };
+    }
+  }, [provider]);
+
+  const storage = 'provider' in selection ? selection.provider : null;
   const [revision, setRevision] = useState(0);
   const [settings, setSettings] = useState<Settings>({});
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!storage) return;
     let cancelled = false;
     storage
       .open()
@@ -90,15 +115,21 @@ export function StorageContextProvider({
 
   const updateSettings = useCallback(
     async (patch: Partial<Settings>) => {
+      if (!storage) return;
       setSettings(await storage.updateSettings(patch));
     },
     [storage],
   );
 
   const value = useMemo(
-    () => ({ storage, revision, touch, settings, updateSettings, ready, error }),
+    () => ({ storage: storage as StorageProvider, revision, touch, settings, updateSettings, ready, error }),
     [storage, revision, touch, settings, updateSettings, ready, error],
   );
+
+  // No provider means no journal, so the journal UI never mounts. Every view
+  // below can therefore keep assuming `storage` is real, which is why this is
+  // an early return rather than a nullable value threaded through the app.
+  if ('failure' in selection) return <StorageUnavailable reason={selection.failure} />;
 
   return <StorageContext.Provider value={value}>{children}</StorageContext.Provider>;
 }

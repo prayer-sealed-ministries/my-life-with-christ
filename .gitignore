@@ -18,3 +18,26 @@ src/**/__*.test.tsx
 /blob-report/
 /screenshots/
 tests/tmp/
+
+# Native signing material. Nothing here is ever committed, on any branch.
+# Keystores and provisioning profiles are credentials: a leaked upload key
+# cannot be rotated for an existing Play listing without Google's help.
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.cer
+*.certSigningRequest
+keystore.properties
+key.properties
+android/key.properties
+google-services.json
+GoogleService-Info.plist
+
+# Native build output and machine-specific state.
+ios/App/build/
+ios/DerivedData/
+**/xcuserdata/
+android/.gradle/
+android/local.properties

@@ -561,12 +561,30 @@ reminder, and anything that would be missed if it disappeared go through
 `StorageProvider`. The test is not "is this convenient" but "if this were gone
 tomorrow, has the reader lost something they wrote?"
 
-### Platform capabilities stay behind their ports.
+### Platform identity is confined to `src/platform/`.
 
-A view asks for a capability; it never asks what platform it is on. There is no
-`isIOS`, no `isAndroid`, no `isNative`, and `src/platform/ports.ts` deliberately
-offers nothing to branch on. The moment a view branches, journal behaviour has
-begun to fork three ways, which is the entire thing this boundary prevents.
+Application views and domain code must not branch on `isNative`, `isIOS`,
+`isAndroid`, `Capacitor.getPlatform()`, or equivalent platform checks. Platform
+differences belong behind capability ports or in narrowly scoped platform
+bootstrap/integration code.
+
+The platform layer itself may inspect runtime identity only where the platform
+genuinely changes the required capability — currently storage selection and
+Android Back integration.
+
+Prefer capability injection over platform branching. Do not export a generic
+`isNative()` helper for convenient use throughout the application.
+
+`src/platform/ports.ts` offers nothing to branch on: a view asks for a
+capability and receives one; it never asks where it is. The moment a view
+branches, journal behaviour has begun to fork three ways, which is the entire
+thing this boundary prevents.
+
+`scripts/__tests__/native-policy.test.mjs` holds the line: Capacitor may only be
+imported inside `src/platform/`, no file outside it may sniff the user agent or
+call `getPlatform()`, and `runtime.ts` has exactly one consumer outside the
+platform layer — the storage wiring. Verified by adding each violation in turn,
+which fails it.
 
 `src/platform/platform.test.tsx` asserts the wiring from the product surface —
 pressing the real button in the real view must reach the port. Verified by making

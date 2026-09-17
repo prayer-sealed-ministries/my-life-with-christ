@@ -6,6 +6,7 @@ import { DATA_PROFILE } from './app/data';
 import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
 import { ThemeProvider } from './app/theme';
+import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
 import { PlatformProvider } from './platform/provider';
 import './index.css';
 
@@ -18,6 +19,11 @@ document.documentElement.dataset.dataProfile = DATA_PROFILE;
 
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root element');
+
+// Android's system back, bound once at startup inside the platform layer.
+// A no-op everywhere else, so the web build is unaffected and no view learns
+// that Android exists. Failure to bind must not stop the app from starting.
+void bindAndroidBack(browserHistoryHost()).catch(() => undefined);
 
 createRoot(root).render(
   <StrictMode>

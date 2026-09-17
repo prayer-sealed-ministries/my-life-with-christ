@@ -165,7 +165,7 @@ Assessed against the code, not against intentions.
 | Light and dark themes | **Done** | including system preference |
 | Offline support | **Not built** | no service worker or installable manifest yet; the app makes no network calls once loaded, which is not the same thing |
 | Sharing | **Not built** | interface only |
-| Native iOS and Android apps | **Not started** | see product direction |
+| Native iOS and Android apps | **In progress** | both shells build and launch from bundled assets; they cannot open a journal yet — native storage is Phase 2, and the app refuses rather than falling back to webview storage |
 | OCR for scanned PDFs | **Not built** | scanned files are refused with a clear message rather than silently producing empty notes |
 
 ---
@@ -276,6 +276,39 @@ npm run ingest           # purchased PDFs  -> src/data/outlines.json
 npm run ingest:sections  # BSB USFM        -> src/data/sections.json
 npm run compare:coverage # the two schemes side by side
 ```
+
+### The native shells
+
+iOS and Android wrap this same application. They run entirely from bundled
+local assets — there is no `server.url`, and the shells do not point at a
+website.
+
+```bash
+npm run native:assets    # build with DATA_PROFILE=public, then verify it
+npm run native:sync      # refuse unless verified, copy, then verify again
+npm run native:ios       # sync, then open Xcode
+npm run native:android   # sync, then open Android Studio
+```
+
+**Never run `npx cap sync` or `npx cap copy` directly.** The Capacitor CLI
+copies whatever is sitting in `dist/`, and `dist/` holds whichever profile was
+built last — the default being `full`, the purchased outlines. `native:sync`
+exists to refuse that: it will not copy without a marker proving the bytes on
+disk are the bytes a `public` build verified, and it re-runs the data gate on
+the copied assets afterwards. A store build is not revocable the way a Pages
+deploy is.
+
+**Tested JDK: 21.** The Android project was built with Android Studio's bundled
+JBR (OpenJDK 21.0.10), which is the recommended environment for this repository
+today. One other combination was tried and failed: Homebrew OpenJDK 26.0.2 with
+this project's Gradle 8.14.3, which stops at `Unsupported class file major
+version 70`. That is a single observed pairing, not a general statement about
+JDK 26 — a newer Gradle may well accept it; we have not tested that.
+
+A native build currently stops at a screen saying it cannot open a journal.
+That is correct: native editions require SQLite, which arrives in Phase 2, and
+the app refuses rather than quietly writing the journal into webview storage it
+would later stop reading. See `docs/ADR-NATIVE-APP-ARCHITECTURE.md`.
 
 `CLAUDE.md` holds the operating contract: what is generated, what is
 hand-edited, and the rules that are not open to renegotiation.

@@ -15,10 +15,15 @@
  * this boundary. The same split applies to printing, to choosing a file, and to
  * warning about unsaved work.
  *
- * What is deliberately NOT here: platform identity. There is no `isIOS`, no
- * `isAndroid`, no `isNative`. A view asks for a capability and receives one;
- * it never asks where it is. Adding a platform flag here would re-open exactly
- * the branching this boundary exists to prevent.
+ * What is deliberately NOT here: platform identity. This file offers nothing to
+ * branch on. A view asks for a capability and receives one; it never asks where
+ * it is. Adding a platform flag here would re-open exactly the branching this
+ * boundary exists to prevent.
+ *
+ * Platform identity does exist, confined to `src/platform/` — storage selection
+ * must know whether to require Dexie or SQLite, and the Android back binding
+ * must know it is on Android. It is kept out of reach of everything else, and
+ * no generic `isNative()` is exported for convenience.
  */
 
 /**

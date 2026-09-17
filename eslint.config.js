@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'src/data/kjv', 'coverage'] },
+  { ignores: ['dist', 'node_modules', 'src/data/kjv', 'coverage', 'android', 'ios'] },
 
   // Application code.
   {
@@ -35,8 +35,16 @@ export default tseslint.config(
 
   // Build and ingest scripts: Node, plain ESM.
   {
-    files: ['scripts/**/*.mjs', '*.config.{js,ts}'],
+    files: ['scripts/**/*.mjs', '*.config.js'],
     extends: [js.configs.recommended],
+    languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: globals.node },
+  },
+
+  // TypeScript config files at the root — vite.config.ts, capacitor.config.ts.
+  // They need the TypeScript parser; the JS one stops at the first annotation.
+  {
+    files: ['*.config.ts'],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: globals.node },
   },
 

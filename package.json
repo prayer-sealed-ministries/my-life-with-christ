@@ -25,9 +25,17 @@
     "build:public": "DATA_PROFILE=public npm run build",
     "test:profiles": "node scripts/profile-coverage.mjs",
     "verify:deployed": "node scripts/verify-deployed.mjs",
-    "test:e2e:sweep": "scripts/e2e-sweep.sh"
+    "test:e2e:sweep": "scripts/e2e-sweep.sh",
+    "native:assets": "node scripts/native-assets.mjs",
+    "native:sync": "node scripts/native-sync.mjs",
+    "native:ios": "npm run native:sync && npx cap open ios",
+    "native:android": "npm run native:sync && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "dexie": "^4.4.6",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.3.0",
@@ -35,6 +43,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@capacitor/cli": "^8.5.2",
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",

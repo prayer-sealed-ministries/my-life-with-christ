@@ -643,7 +643,9 @@ Every item is a known webview-on-mobile risk, not a hypothetical:
 
 ## Open questions
 
-- Which iOS minimum version? Depends on Spike 1.
+- Which iOS minimum version? Still open. Spike 1 passed on iOS 26.5 and
+  Android 15 (Phase 1), which rules nothing out but confirms nothing about
+  the floor. Needs an old runtime and an old device before it is answered.
 - Should the SQLite file be copied into the archive as a `data/journey.sqlite`
   alongside `data/journey.json`? It would make the working copy portable too.
   Deferred: it changes a fixed archive layout and needs its own decision.
@@ -670,6 +672,34 @@ Each is small, has a pass/fail criterion, and **is not performed in this task.**
   the minimum OS accordingly.
 - **Fail:** bundle a small inflate implementation behind the existing
   `DecompressionStream`-missing branch, or raise the minimum OS.
+
+> **Measured in Phase 1 (2026-09-16) — partial pass.**
+>
+> Run as a real round trip inside the shipped shells, not a `typeof` check: a
+> 2,752-byte buffer compressed and re-inflated, and the output compared to the
+> input. A presence check would have proved nothing about correctness, and it is
+> the inflate path that fails hard.
+>
+> | Where | Engine | gzip | deflate | deflate-raw |
+> | --- | --- | --- | --- | --- |
+> | iOS 26.5 simulator, WKWebView | AppleWebKit 605.1.15 | ok, 2752 → 86 | ok, → 74 | ok, → 68 |
+> | Android 15 emulator, System WebView 153 | Chromium 153.0.8010.27 | ok, 2752 → 88 | ok, → 76 | ok, → 70 |
+>
+> Both `CompressionStream` and `DecompressionStream` were present and correct on
+> both platforms, for all three formats.
+>
+> **This does not yet answer the minimum-OS question, and must not be read as
+> if it did.** Two modern OS versions passing says nothing about the oldest one
+> we intend to support. Only the iOS 26.5 runtime is installed on the build
+> machine, so no older iOS was measured; the figure usually quoted for WebKit is
+> Safari 16.4 (2023-03), i.e. iOS 16.4, but that is a vendor support table and
+> not something this project has observed. Android is the easier case because
+> the System WebView updates through Play independently of the OS, so the
+> Chromium floor is reached on far older Android versions — again, not measured.
+>
+> **Still to do before the minimum OS is set:** run this same probe on an iOS
+> 16.x simulator runtime (a multi-GB download) and on one old physical device.
+> Until then `zip.ts` stays unchanged and the minimum OS stays undecided.
 
 ### Spike 2 — Dexie survival across a Capacitor app upgrade
 
@@ -792,6 +822,111 @@ to observed network behaviour, reviewer notes explaining that no account exists.
 > **Stop gate:** the verifier passes against assets extracted from the `.ipa`
 > and `.aab`; the privacy declaration says "no data collected" and a proxy
 > confirms it.
+
+---
+
+## Phase 1 — what was actually measured
+
+Phase 1 built the two shells and ran them. Recorded here because the next phase
+will otherwise re-derive it, and because two of these findings contradict what a
+reasonable person would assume.
+
+### Both shells run the product from bundled assets
+
+Compiled **and launched**, which are different claims and are kept apart on
+purpose:
+
+| | iOS | Android |
+| --- | --- | --- |
+| Compiled | `xcodebuild` (SPM, no CocoaPods workspace) | `./gradlew assembleDebug` |
+| Launched | iPhone 17 simulator, iOS 26.5 | emulator, Android 15 (API 35) |
+| Asset origin | bundled `App.app/public` | `https://localhost/assets/...`, served from the APK by `WebViewAssetLoader` |
+| Data gate over the shipped artefact | PASS (`public`, 100 files) | PASS (`public`, 100 files) |
+
+The gate was run over the bytes *inside* the built `.app` and the built `.apk`,
+not over `dist/` and not over the source tree — the same reasoning as
+`verify:deployed` for the web build. A source tree that verifies clean and an
+artefact that ships something else is precisely the failure this repository
+keeps rediscovering.
+
+Build environment, stated as observed rather than generalised:
+
+| JDK | Gradle | Result |
+| --- | --- | --- |
+| Android Studio JBR, OpenJDK **21.0.10** | 8.14.3 | `BUILD SUCCESSFUL` |
+| Homebrew OpenJDK **26.0.2** | 8.14.3 | fails: `Unsupported class file major version 70` |
+
+JDK 21 is therefore the tested and recommended environment for this repository
+today. The 26.0.2 result is one pairing against one Gradle version — it is not
+evidence that JDK 26 is unsupported in general, nor that Capacitor cannot run on
+it. A newer Gradle may accept it; that was not tested.
+
+### The storage rule held under the only conditions that could break it
+
+Both shells reached `StorageUnavailable` and stopped. `isNativePlatform()`
+returned true, `requiredStorageKind()` asked for `sqlite`, no factory was
+registered, and `selectStorageProvider` threw rather than substituting the
+webview's IndexedDB, which was sitting right there and would have made the app
+look finished.
+
+That screen is the Phase 1 deliverable. It is not a defect to be worked around
+in Phase 2 by relaxing the selection; it is the evidence that the selection
+cannot be relaxed by accident.
+
+### The Android back binding was observed end to end
+
+Not inferred from a working exit — an unbound back button exits too, so the
+visible result is identical either way. The log shows the whole chain:
+
+```
+Capacitor/AppPlugin: Notifying listeners for event backButton
+Capacitor/Plugin:    To native: pluginId: App, methodName: exitApp
+```
+
+`exitApp` was called *from JavaScript*, which only happens if `decideBack`
+returned `exit`. At the root with `history.length === 1` that is the correct
+decision, and the app returned to the launcher.
+
+**Not tested, and honestly not testable in Phase 1:** the nested-page and
+unsaved-work branches. With storage unavailable the router never mounts, so
+there is no second screen to go back from. `decideBack` is exercised as a pure
+predicate in unit tests, and the binding is now known to be attached and to
+reach it — but Spike 4's full traversal has to wait for Phase 2.
+
+### Lifecycle event ordering differs between the platforms — and is reversed
+
+Measured by logging every event with a timestamp and then backgrounding and
+foregrounding each app:
+
+| | Android 15 | iOS 26.5 |
+| --- | --- | --- |
+| Backgrounding | `pause` → `appStateChange{isActive:false}` → `visibilitychange:hidden` | `appStateChange{isActive:false}` → `pause` → `visibilitychange:hidden` |
+| Foregrounding | `appStateChange{isActive:true}` → `resume` → `visibilitychange:visible` | `visibilitychange:visible` → `resume` → `appStateChange{isActive:true}` |
+
+The orderings are near mirror images. Any Phase 2 "flush unsaved work when we
+lose the foreground" that picks one of these three signals and assumes the
+others follow it will behave differently on each platform, and the difference
+will show up as lost text on exactly one of them.
+
+**`pagehide` and `beforeunload` never fired at all** — not on backgrounding, and
+not when the back button exited the app. A web habit that does not transfer: the
+webview is not unloaded, it is suspended. Save-on-termination cannot be built on
+unload events here.
+
+*(Observation only. No save-on-background behaviour was designed or added in
+Phase 1; this is the input to that decision, not the decision.)*
+
+### The permission surface is empty, and stayed empty
+
+Android declares only `android.permission.INTERNET`. iOS has no entitlements
+file and no privacy usage keys. No plugin beyond `@capacitor/app` was installed.
+
+`INTERNET` is worth a note: the assets load from `https://localhost` through
+`WebViewAssetLoader`, so it is not obviously required, and removing it would be
+a strong OS-level proof of the no-network claim. **This was not tested** — it is
+a change with a real chance of breaking the loader in a way that is confusing
+later, and it belongs in its own small experiment rather than bundled into this
+phase.
 
 ---
 
