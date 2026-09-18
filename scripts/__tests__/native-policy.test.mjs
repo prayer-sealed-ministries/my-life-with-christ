@@ -90,7 +90,7 @@ function runVerifier(copied) {
 }
 
 const APP_ID = 'com.myjourneywithchrist.lifewithchrist';
-const APP_NAME = 'Life With Christ';
+const APP_NAME = 'My Life With Christ';
 
 const capacitorConfig = read('capacitor.config.ts');
 

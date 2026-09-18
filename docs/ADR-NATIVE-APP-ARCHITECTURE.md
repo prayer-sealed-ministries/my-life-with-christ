@@ -6,13 +6,13 @@ edition runs through them. No native code, no native dependencies, no `ios/` or
 
 **Date:** 2026-09-16
 **Supersedes:** nothing
-**Applies to:** Life With Christ (web, iOS, Android)
+**Applies to:** My Life With Christ (web, iOS, Android)
 
 ---
 
 ## Context
 
-Life With Christ is a React + TypeScript + Vite application that runs as a
+My Life With Christ is a React + TypeScript + Vite application that runs as a
 static site with no backend. It is shipped publicly from GitHub Pages under the
 `public` data profile. The intent is now to ship it as a paid iOS and Android
 application without maintaining three implementations of the same product.

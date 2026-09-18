@@ -36,7 +36,7 @@ const THEMES = ['light', 'dark'] as const;
 
 /** Every view, in the order a person would meet them. */
 const VIEWS = [
-  { key: '01-home', hash: '#/', heading: 'Life With Christ' },
+  { key: '01-home', hash: '#/', heading: 'My Life With Christ' },
   { key: '02-browse', hash: '#/browse', heading: 'The Bible' },
   { key: '03-book', hash: '#/book/matthew', heading: 'Matthew' },
   // Replaced at runtime with a passage that exists in the build under test.

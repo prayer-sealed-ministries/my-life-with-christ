@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 /**
  * The brand, held in place by something other than memory.
  *
- * The application is **Life With Christ**; the journal it produces is **My
+ * The application is **My Life With Christ**; the journal it produces is **My
  * Journey With Christ**, written to `book/my-journey-with-christ.html`. Those
  * names replaced an earlier pair, and the earlier pair was spread across the
  * export generator, the archive's own README, the index links, the printable
@@ -99,7 +99,9 @@ describe('the current brand is actually in place', () => {
     ['src/export/archive.ts', "path: 'book/my-journey-with-christ.html'", 'the archive book path'],
     ['src/export/readme.ts', 'MY JOURNEY WITH CHRIST', "the archive README banner"],
     ['src/views/LegacyView.tsx', 'My Journey With Christ', 'the printable view in the app'],
-    ['index.html', '<title>Life With Christ</title>', 'the application title'],
+    ['index.html', '<title>My Life With Christ</title>', 'the application title'],
+    ['src/app/Shell.tsx', "const APP_NAME = 'My Life With Christ'", 'the name shown in the header'],
+    ['src/app/Shell.tsx', "const TAGLINE = 'Your walk with God, remembered.'", 'the tagline shown in the header'],
   ];
 
   for (const [path, needle, what] of mustContain) {

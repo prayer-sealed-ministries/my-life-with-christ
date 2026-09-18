@@ -64,7 +64,7 @@ test.describe('the menu on a phone', () => {
 
       await expect(panel(page), `the menu stayed open after choosing ${label}`).toBeHidden();
       await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
-      await expect(page).toHaveTitle(`${heading} — Life With Christ`);
+      await expect(page).toHaveTitle(`${heading} — My Life With Christ`);
     }
   });
 
@@ -100,7 +100,7 @@ test.describe('the menu on a phone', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'About' })).toBeVisible();
 
     await page.goBack();
-    await expect(page.getByRole('heading', { level: 1, name: 'Life With Christ' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'My Life With Christ' })).toBeVisible();
   });
 
   test('returns focus to the button it came from', async ({ page }) => {

@@ -24,7 +24,7 @@ export function StorageUnavailable({ reason }: { reason: Error }) {
     <div className="min-h-dvh bg-app px-5 py-16 text-ink">
       <main className="measure mx-auto">
         <h1 className="font-serif text-2xl font-semibold tracking-tight">
-          Life With Christ cannot open your journal on this device
+          My Life With Christ cannot open your journal on this device
         </h1>
 
         <p className="mt-4 leading-relaxed text-ink-soft">

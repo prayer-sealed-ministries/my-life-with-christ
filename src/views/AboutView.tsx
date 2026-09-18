@@ -25,7 +25,7 @@ export default function AboutView() {
 
       <section aria-labelledby="what-it-is" className="space-y-3">
         <h2 id="what-it-is" className="font-serif text-lg font-semibold">
-          What Life With Christ is
+          What My Life With Christ is
         </h2>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           A private, Scripture-centred journal for recording sermons, Scripture notes, prayers and
@@ -73,7 +73,7 @@ export default function AboutView() {
 
       <section aria-labelledby="where" className="space-y-2 border-t border-line pt-6">
         <h2 id="where" className="font-serif text-lg font-semibold">
-          Life With Christ
+          My Life With Christ
         </h2>
         {/* Text, not a link: the app must not depend on a website, must not
             fetch anything, and cannot vouch for an address while offline. */}

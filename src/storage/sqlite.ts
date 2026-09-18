@@ -77,7 +77,7 @@ const SETTINGS_KEY = 'singleton';
 export class SchemaTooNewError extends Error {
   constructor(found: number, understood: number) {
     super(
-      `This journal was written by a newer version of Life With Christ ` +
+      `This journal was written by a newer version of My Life With Christ ` +
         `(database version ${found}; this app understands ${understood}). ` +
         `Nothing has been changed. Update the app to open it.`,
     );

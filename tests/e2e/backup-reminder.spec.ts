@@ -66,7 +66,7 @@ test('remembers the chosen interval across navigation and a restart', async ({ p
 
   // Away, and back.
   await page.goto('/#/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Life With Christ' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'My Life With Christ' })).toBeVisible();
   await openSettings(page);
   await expect(interval(page, 7), 'the choice was lost on navigating away').toBeChecked();
 

@@ -38,7 +38,7 @@ const AboutView = lazy(() => import('./views/AboutView'));
 function titleFor(route: ReturnType<typeof useRouter>['route']): string {
   switch (route.name) {
     case 'home':
-      return 'Life With Christ';
+      return 'My Life With Christ';
     case 'browse':
       return 'The Bible';
     case 'book':

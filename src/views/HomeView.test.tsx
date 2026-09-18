@@ -58,8 +58,11 @@ describe('HomeView', () => {
 
     renderHome(provider);
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Life With Christ');
-    expect(screen.getByText('Your walk with God, remembered.')).toBeInTheDocument();
+    // The name and the tagline moved into the header, so this view no longer
+    // carries them — repeating them here was most of a phone's first screen.
+    // They are held by `Shell.header.test.tsx` and by the e2e suite, which see
+    // the real header; this view is responsible for what it still says.
+    expect(screen.queryByText('Your walk with God, remembered.')).toBeNull();
     expect(screen.getByText(/stays on this device/i)).toBeInTheDocument();
     expect(screen.getByText(/no account/i)).toBeInTheDocument();
   });
@@ -126,9 +129,16 @@ describe('HomeView', () => {
 
     await screen.findByRole('heading', { level: 2, name: 'Recently written' });
 
-    const levels = screen.getAllByRole('heading').map((heading) => Number(heading.tagName.slice(1)));
+    // The h1 is present and first, but visually hidden: the name is shown once
+    // in the header, and a page still needs a heading a screen reader can
+    // navigate to.
+    const headings = screen.getAllByRole('heading');
+    const levels = headings.map((heading) => Number(heading.tagName.slice(1)));
     expect(levels.filter((level) => level === 1)).toHaveLength(1);
-    expect(levels[0]).toBe(1);
+    expect(levels[0], 'the view does not start at its h1').toBe(1);
+    expect(headings[0].className, 'the h1 is visible again, repeating the header').toContain(
+      'sr-only',
+    );
     for (let i = 1; i < levels.length; i += 1) {
       expect(levels[i] - levels[i - 1]).toBeLessThanOrEqual(1);
     }

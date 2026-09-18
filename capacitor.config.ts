@@ -24,7 +24,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.myjourneywithchrist.lifewithchrist',
-  appName: 'Life With Christ',
+  appName: 'My Life With Christ',
 
   /**
    * The built web assets. `npm run native:assets` is the only supported way to

@@ -664,7 +664,7 @@ not a find-and-replace.
 
 ## Names that are deliberately not the brand
 
-The product is **Life With Christ**; the book it exports is **My Journey With
+The product is **My Life With Christ**; the book it exports is **My Journey With
 Christ**, at `book/my-journey-with-christ.html`. Those are user-facing names and
 they are expected to move again — a product can be renamed twice more before it
 ships.

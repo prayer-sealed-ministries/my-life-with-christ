@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Life With Christ</string>
-    <string name="title_activity_main">Life With Christ</string>
+    <string name="app_name">My Life With Christ</string>
+    <string name="title_activity_main">My Life With Christ</string>
     <string name="package_name">com.myjourneywithchrist.lifewithchrist</string>
     <string name="custom_url_scheme">com.myjourneywithchrist.lifewithchrist</string>
 </resources>

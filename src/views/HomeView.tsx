@@ -159,12 +159,16 @@ export default function HomeView() {
         begin" starts a new section. Equal gaps everywhere would have said all
         three were equally related.
       */}
-      <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">
-        Life With Christ
-      </h1>
-      {/* The tagline sits with the name, not as a second paragraph: it finishes
-          the title rather than starting a new thought. */}
-      <p className="mt-1 text-lg text-ink-soft">Your walk with God, remembered.</p>
+      {/*
+        The page's heading, read but not seen.
+
+        The name and the tagline are shown once, in the header, which is what
+        took a repeated title off the top of this screen. A page still needs a
+        heading though: screen-reader users navigate by them, and the
+        accessibility gate requires exactly one h1 per view, inside <main>.
+        Hiding it visually keeps the space and keeps the structure.
+      */}
+      <h1 className="sr-only">My Life With Christ</h1>
 
       <Introduction />
 

@@ -1,15 +1,15 @@
-# Life With Christ
+# My Life With Christ
 
 **Your walk with God, remembered.**
 
 Keep Scripture notes, sermons, prayers and personal reflections together in one
-private journal. Over the years, Life With Christ becomes **My Journey With
+private journal. Over the years, My Life With Christ becomes **My Journey With
 Christ** — a readable record of your faith that you can preserve, print and pass
 on.
 
 | | |
 | --- | --- |
-| Application | **Life With Christ** |
+| Application | **My Life With Christ** |
 | The journal it produces | **My Journey With Christ** |
 | Planned product home | **myjourneywithchrist.com** |
 
