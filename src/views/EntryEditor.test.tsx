@@ -104,8 +104,12 @@ describe('EntryEditor — fast capture', () => {
     fireEvent.change(await notesBox(), { target: { value: 'Something worth keeping.' } });
     fireEvent.click(save());
 
-    const live = await screen.findByText('Entry saved.');
-    expect(live).toHaveAttribute('aria-live', 'polite');
+    // The same words are now also shown on screen beside the Save button, so
+    // this names the announcement specifically rather than matching whichever
+    // node came first.
+    const nodes = await screen.findAllByText('Entry saved.');
+    const live = nodes.find((node) => node.getAttribute('aria-live') === 'polite');
+    expect(live, 'the save was not announced to a screen reader').toBeTruthy();
   });
 
   it('keeps what was taught and what it meant to me in separate fields', async () => {
@@ -807,7 +811,10 @@ describe('EntryEditor — editing', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].reflection).toBe('Changed my mind.');
     expect(entries[0].notes).toBe('Original notes.');
-    expect(await screen.findByText('Changes saved.')).toBeInTheDocument();
+    // Two nodes carry these words now — the announcement and the visible
+    // confirmation beside the button. Both are wanted; the assertion is that
+    // the edit was confirmed at all.
+    expect((await screen.findAllByText('Changes saved.')).length).toBeGreaterThan(0);
   });
 
   it('shows a plain page when the entry is gone', async () => {

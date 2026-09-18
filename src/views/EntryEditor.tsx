@@ -288,6 +288,22 @@ export default function EntryEditor({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  /**
+   * The visible "it saved" confirmation.
+   *
+   * Separate from `message`, which is announced to screen readers and covers
+   * incidental things like a link being added. This one is only ever set by a
+   * successful save, because it is the only one a person needs to SEE.
+   *
+   * Why it exists: saving used to confirm itself into an `sr-only` live region
+   * alone. Sighted readers saw the button flicker and nothing else, and because
+   * saving does not change what is on screen, the honest conclusion was that it
+   * had not worked. On a real iPhone that produced three saves of one entry in
+   * four minutes, and a reader who believed their journal was not being kept.
+   * For a product whose whole promise is that what you write is still there in
+   * forty years, that is the most expensive silence available.
+   */
+  const [savedNotice, setSavedNotice] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   /**
@@ -431,7 +447,12 @@ export default function EntryEditor({
           body: document.body,
         })
       ) {
-        textarea.focus();
+        // `preventScroll` matters: focusing scrolls the target into view, and
+        // the notes box sits below the heading, the kind and the title. Without
+        // it a new entry opened already scrolled past its own top, so the first
+        // thing a reader saw was the middle of a form. Fast capture means the
+        // cursor is waiting in the notes box — not that the page has moved.
+        textarea.focus({ preventScroll: true });
       }
     });
   }, [entryId, loaded]);
@@ -449,6 +470,7 @@ export default function EntryEditor({
     if (!dirty) return;
     return unsavedWork.protect(() => true);
   }, [dirty, unsavedWork]);
+
 
   // Send focus to the confirm button so a keyboard user is standing on the
   // decision rather than hunting for where the page changed.
@@ -585,7 +607,9 @@ export default function EntryEditor({
       // the edit view that follows, which is why `saving` is cleared explicitly
       // rather than left to a remount that never comes.
       setSaving(false);
-      setMessage(targetId ? 'Changes saved.' : 'Entry saved.');
+      const confirmation = targetId ? 'Changes saved.' : 'Entry saved.';
+      setMessage(confirmation);
+      setSavedNotice(confirmation);
       // The live region has to sit in the DOM for a beat before this view
       // unmounts, or the announcement is never picked up.
       nextFrame(() => navigate({ name: 'entry', id: saved.id }));
@@ -1210,6 +1234,21 @@ export default function EntryEditor({
           >
             {entryId ? 'Back to my journey' : 'Cancel'}
           </Link>
+
+          {/* Beside the Save button, where the person is already looking, and
+              carrying its own text rather than colour alone. It is not a live
+              region: `message` above already announces the same words, and
+              duplicating them here would say it twice. */}
+          {/* Derived, not synchronized: the confirmation is shown only while
+              there is nothing unsaved. The moment the reader types again
+              `dirty` is true and "Entry saved." would be a lie, so it goes —
+              without an effect having to chase the change. */}
+          {savedNotice && !dirty && !saving ? (
+            <p className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+              <span aria-hidden="true">✓</span>
+              {savedNotice}
+            </p>
+          ) : null}
         </div>
       </form>
 
