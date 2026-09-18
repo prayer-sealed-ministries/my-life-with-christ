@@ -41,6 +41,11 @@ export interface ExportEverythingOptions
 /**
  * The two-tap path: read the journal, build the archive, save it, and record the
  * export so the reminder resets.
+ *
+ * The archive is returned whether or not it was saved — the bytes were built
+ * either way, and the caller decides what to say about it. What is NOT returned
+ * is permission to claim a backup: only a save the file system actually
+ * accepted updates `lastExportAt`.
  */
 export async function exportEverything(options: ExportEverythingOptions): Promise<BuiltArchive> {
   const { storage, filter, files, ...rest } = options;
@@ -49,11 +54,19 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
   const entries = filter ? allEntries.filter((entry) => matchesFilter(entry, filter)) : allEntries;
 
   const archive = await buildArchive({ ...rest, entries, allEntries, filter });
-  await files.save(outgoingArchive(archive));
+  const { saved } = await files.save(outgoingArchive(archive));
 
+  // Two conditions, and both are about honesty rather than tidiness.
+  //
   // A partial export is not a backup of the journal, so it must not silence the
   // reminder that the whole journal is unbacked.
-  if (!filter) {
+  //
+  // A save the person backed out of is not an export at all. This used to be
+  // unconditional, because the saver returned `void` and every dismissal of the
+  // dialog looked alike: cancelling recorded a successful export, reset the
+  // reminder, and left the journal page saying "Last exported today" over a
+  // device that still held the only copy.
+  if (!filter && saved) {
     await storage.updateSettings({
       lastExportAt: new Date().toISOString(),
       reminderDismissedAt: undefined,

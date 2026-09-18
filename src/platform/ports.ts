@@ -27,18 +27,40 @@
  */
 
 /**
+ * What became of a save.
+ *
+ * Deliberately not a path. The caller must not learn WHERE the file went — on
+ * the web there is no answer and on native it is the user's business — but it
+ * absolutely must learn WHETHER it went, because "you have a backup" is a claim
+ * this product is not allowed to make loosely.
+ */
+export interface SaveResult {
+  /**
+   * True only when the file reached the user's file system.
+   *
+   * False is an ordinary outcome, not an error: someone who backs out of the
+   * save dialog has changed their mind, not hit a failure.
+   */
+  saved: boolean;
+}
+
+/**
  * Hand bytes to the user's file system.
  *
- * On the web this is a download. On iOS it will be a write to a temporary path
- * followed by the share sheet, and on Android the Storage Access Framework —
- * both of which end with the file outside our sandbox, which is the point.
+ * On the web this is a download. On iOS it is a write to a temporary path
+ * followed by the document picker, and on Android the Storage Access Framework
+ * — both of which end with the file outside our sandbox, which is the point.
  *
- * Deliberately returns void rather than a path: the caller must not learn where
- * the file went, because on the web there is no answer and on native the answer
- * is the user's business.
+ * This used to return `void`, and that was a real defect rather than a
+ * simplification. Both native plugins already reported `{ saved: true/false }`
+ * and the adapter discarded it, so backing out of the export dialog was
+ * recorded as a successful export: the reminder reset and the journal page said
+ * "Last exported today" when nothing had left the device. For a product whose
+ * whole promise is that the export is the thing you own, that is the one
+ * direction an error must never point.
  */
 export interface FileSaver {
-  save(file: OutgoingFile): Promise<void>;
+  save(file: OutgoingFile): Promise<SaveResult>;
 }
 
 export interface OutgoingFile {

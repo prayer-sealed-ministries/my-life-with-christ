@@ -52,6 +52,7 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
     files: {
       save: async (file) => {
         saved.push(file);
+        return { saved: true };
       },
     },
     picker: { pick: async () => null },

@@ -21,6 +21,7 @@ import type {
   Platform,
   Printer,
   UnsavedWorkGuard,
+  SaveResult,
 } from './ports';
 import { JourneyDocuments, fromBase64, toBase64 } from './native-documents';
 
@@ -37,12 +38,21 @@ import { JourneyDocuments, fromBase64, toBase64 } from './native-documents';
  * nothing has failed; a person who changes their mind has not hit an error.
  */
 export const nativeFileSaver: FileSaver = {
-  async save(file: OutgoingFile): Promise<void> {
-    await JourneyDocuments.saveDocument({
+  async save(file: OutgoingFile): Promise<SaveResult> {
+    // The plugin's answer is the whole point of this call. Swift resolves
+    // `saved: true` only from `didPickDocumentsAt` in export mode, and Java
+    // only on RESULT_OK; both say `saved: false` when the person backs out.
+    // Discarding that — which this adapter used to do — turns a cancellation
+    // into a recorded backup.
+    const result = await JourneyDocuments.saveDocument({
       name: file.suggestedName,
       mimeType: file.mimeType,
       base64: toBase64(file.bytes),
     });
+    // `result?.` and `=== true`, both deliberate: only an explicit yes counts.
+    // A plugin that returns nothing, or something unexpected, must not be able
+    // to claim a backup by omission.
+    return { saved: result?.saved === true };
   },
 };
 

@@ -19,6 +19,7 @@ import type {
   PickedFile,
   Platform,
   Printer,
+  SaveResult,
   UnsavedWorkGuard,
 } from './ports';
 
@@ -31,7 +32,7 @@ import type {
  * guessed.
  */
 export const webFileSaver: FileSaver = {
-  async save(file: OutgoingFile): Promise<void> {
+  async save(file: OutgoingFile): Promise<SaveResult> {
     const blob = new Blob([file.bytes as BlobPart], { type: file.mimeType });
     const url = URL.createObjectURL(blob);
 
@@ -45,6 +46,14 @@ export const webFileSaver: FileSaver = {
 
     // Give the download a moment to start before releasing the blob.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+    // `saved: true` here means the download was STARTED, not that a file now
+    // exists on disk. A browser gives no completion signal and no cancellation
+    // signal for an anchor download — if the person dismisses the save panel,
+    // nothing tells this page. That limit is real and is not worked around:
+    // inventing a completion API would be a worse lie than the one this whole
+    // change exists to remove. Native, which does know, reports the truth.
+    return { saved: true };
   },
 };
 
