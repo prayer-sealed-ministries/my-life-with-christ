@@ -73,11 +73,15 @@ describe('HomeView', () => {
 
     renderHome(provider);
 
+    // Four actions, each to a route that already exists. Prayer and Reflection
+    // are deliberately absent: the editor supports those kinds but `newEntry`
+    // carries no kind parameter, so such a card could not honestly go anywhere
+    // different from this one.
     const expected: Array<[RegExp, string]> = [
-      [/New sermon note/, '#/entry/new'],
-      [/^Bible/, '#/browse'],
+      [/Sermon note/, '#/entry/new'],
+      [/Read Scripture/, '#/browse'],
       [/^Topics/, '#/topics'],
-      [/My journey/, '#/timeline'],
+      [/^Search/, '#/search'],
     ];
 
     for (const [name, target] of expected) {
@@ -107,17 +111,24 @@ describe('HomeView', () => {
       '#/entry/b',
       '#/entry/a',
     ]);
-    expect(screen.getByRole('link', { name: /Newest/ })).toHaveTextContent('Pastor Whitfield');
+    // The card carries the kind and the date; the speaker moved off Home when
+    // recents became cards rather than rows of metadata.
+    expect(screen.getByRole('link', { name: /Newest/ })).toHaveTextContent('Sermon');
   });
 
-  it('shows no recent section when the journal is empty', async () => {
+  it('welcomes an empty journal rather than showing a blank space', async () => {
     const provider = freshProvider();
     await provider.open();
 
     renderHome(provider);
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
-    expect(screen.queryByRole('heading', { name: 'Recently written' })).not.toBeInTheDocument();
+    // The heading stays — a section that vanishes leaves a hole where the page
+    // was about to say something useful.
+    expect(screen.getByRole('heading', { level: 2, name: 'Recently written' })).toBeInTheDocument();
+    expect(screen.getByText('Your journey begins here.')).toBeInTheDocument();
+    // Nothing to see yet, so nothing offering to show it.
+    expect(screen.queryByRole('link', { name: /See the whole journey/ })).toBeNull();
   });
 
   it('keeps exactly one h1 and never skips a heading level', async () => {

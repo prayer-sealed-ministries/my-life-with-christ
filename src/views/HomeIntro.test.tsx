@@ -61,7 +61,7 @@ describe('a first visit', () => {
     // Whatever else folds away, the page still says what it is — but the name
     // and tagline are the header's now, so what this view must prove is that
     // the disclosure takes nothing with it that it does not own.
-    expect(screen.getByRole('heading', { level: 2, name: 'Where to begin' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Continue your journey' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /what is this/i })).toBeTruthy();
   });
 });

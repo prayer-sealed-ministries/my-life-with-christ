@@ -16,11 +16,11 @@ import { dismissWelcome, forceTheme } from './seed';
 
 /** The breakpoints the design has to hold at, named so a failure reads. */
 const WIDTHS = [
-  { name: 'large desktop', width: 1600, columns: 2 },
-  { name: 'laptop', width: 1280, columns: 2 },
-  { name: 'tablet', width: 834, columns: 2 },
+  { name: 'large desktop', width: 1600, columns: 4 },
+  { name: 'laptop', width: 1280, columns: 4 },
+  { name: 'tablet', width: 834, columns: 4 },
   { name: 'small tablet', width: 640, columns: 2 },
-  { name: 'mobile', width: 390, columns: 1 },
+  { name: 'mobile', width: 390, columns: 2 },
   { name: 'narrow', width: 320, columns: 1 },
 ] as const;
 
@@ -37,12 +37,15 @@ interface Box {
 async function cardBoxes(page: Page): Promise<Box[]> {
   return page
     .locator('main ul li a')
-    .filter({ hasText: /New sermon note|Bible|Topics|My journey/ })
+    .filter({ hasText: /Sermon note|Read Scripture|Topics|Search/ })
     .evaluateAll((els) =>
       els.slice(0, 4).map((el) => {
         const r = el.getBoundingClientRect();
         const cs = getComputedStyle(el);
-        const title = el.querySelector('span');
+        // The title, not the icon: the first span in a card is the icon's
+        // container now, and measuring that would compare two 20px squares and
+        // call the typography consistent.
+        const title = el.querySelector('span > span');
         const ts = title ? getComputedStyle(title) : cs;
         return {
           w: Math.round(r.width),
@@ -86,10 +89,10 @@ test('the four Journey cards are one component family at every width', async ({ 
 
     expect(distinct((b) => b.x), `${name}: expected ${columns} column(s)`).toBe(columns);
 
-    // Equal heights are a two-column claim only. Stacked in one column every
+    // Equal heights are a multi-column claim only. Stacked in one column every
     // card is its own grid row, and padding a one-line card out to match a
     // two-line one would waste the scarcest space on the smallest screen.
-    if (columns === 2) {
+    if (columns > 1) {
       expect(distinct((b) => b.h), `${name}: card heights differ inside the grid`).toBe(1);
     }
 
@@ -157,7 +160,7 @@ test('the featured card belongs to the family it leads', async ({ page }) => {
 
   const [featured, ...rest] = await page
     .locator('main ul li a')
-    .filter({ hasText: /New sermon note|Bible|Topics|My journey/ })
+    .filter({ hasText: /Sermon note|Read Scripture|Topics|Search/ })
     .evaluateAll((els) =>
       els.slice(0, 4).map((el) => {
         const cs = getComputedStyle(el);

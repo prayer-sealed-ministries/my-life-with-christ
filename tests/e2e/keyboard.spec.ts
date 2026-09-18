@@ -153,7 +153,7 @@ test('write and save an entry using only the keyboard', async ({ page }) => {
   await page.goto('#/');
   await page.waitForLoadState('networkidle');
 
-  // Tab until the "New sermon note" action is reached. Bounded, so a focus trap
+  // Tab until the "Sermon note" action is reached. Bounded, so a focus trap
   // fails the test rather than hanging it.
   let reached = false;
   const seen: string[] = [];
@@ -168,9 +168,9 @@ test('write and save an entry using only the keyboard', async ({ page }) => {
         `no visible focus indicator on ${state.tag} "${state.label}" (outline: ${state.outline})`,
       ).toBe(true);
     }
-    if (/new sermon note/i.test(state.label)) reached = true;
+    if (/sermon note/i.test(state.label)) reached = true;
   }
-  expect(reached, `never reached "New sermon note" by tabbing. Stops: ${seen.join(' → ')}`).toBe(true);
+  expect(reached, `never reached "Sermon note" by tabbing. Stops: ${seen.join(' → ')}`).toBe(true);
 
   await page.keyboard.press('Enter');
   await page.waitForURL(/#\/entry\/new/);

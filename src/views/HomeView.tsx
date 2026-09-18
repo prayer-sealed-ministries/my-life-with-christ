@@ -8,12 +8,13 @@
  * product makes, so it is stated at the entrance rather than buried in settings.
  */
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactElement } from 'react';
 
 import { Link, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { readIntro, rememberIntro } from './home-intro';
 import { cardClasses } from '../components/styles';
+import { BookIcon, PenIcon, SearchIcon, TopicsIcon, VolumeIcon } from '../components/icons';
 import { Spinner } from '../components/ui';
 import type { Entry, EntryKind } from '../types';
 
@@ -117,30 +118,56 @@ function formatDay(iso: string): string {
   }).format(date);
 }
 
-const DESTINATIONS: Array<{ route: Route; label: string; description: string; primary?: boolean }> =
-  [
-    {
-      route: { name: 'newEntry' },
-      label: 'New sermon note',
-      description: 'Start writing now — the details can wait until afterwards.',
-      primary: true,
-    },
-    {
-      route: { name: 'browse' },
-      label: 'Bible',
-      description: 'Read any passage, and write against it.',
-    },
-    {
-      route: { name: 'topics' },
-      label: 'Topics',
-      description: 'Fear, forgiveness, grief — scripture gathered by what you are facing.',
-    },
-    {
-      route: { name: 'timeline' },
-      label: 'My journey',
-      description: 'Everything you have written, oldest first.',
-    },
-  ];
+/**
+ * The four things a person actually opens this app to do.
+ *
+ * Every one is a route that already exists. There is deliberately no "Prayer"
+ * or "Reflection" card: the editor supports those kinds, but `newEntry` carries
+ * no kind parameter, so such a card would either lie about where it goes or
+ * require inventing a route inside a visual redesign. Noted rather than faked.
+ */
+const ACTIONS: Array<{
+  route: Route;
+  label: string;
+  description: string;
+  Icon: (props: { className?: string }) => ReactElement;
+  primary?: boolean;
+}> = [
+  {
+    route: { name: 'newEntry' },
+    label: 'Sermon note',
+    description: 'Start writing now',
+    Icon: PenIcon,
+    primary: true,
+  },
+  { route: { name: 'browse' }, label: 'Read Scripture', description: 'Open the Bible', Icon: BookIcon },
+  { route: { name: 'topics' }, label: 'Topics', description: 'What you are facing', Icon: TopicsIcon },
+  { route: { name: 'search', query: '' }, label: 'Search', description: 'Find anything you wrote', Icon: SearchIcon },
+];
+
+/**
+ * Today, in the reader's own locale, computed on the device.
+ *
+ * No network, no "day 14 of a streak", no count of anything. It is a quiet
+ * orientation line — the sort of thing a paper journal has printed at the top
+ * of the page — and nothing about it keeps score.
+ */
+function today(now = new Date()): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(now);
+}
+
+/** A short, safe line from an entry: its own first line, never the whole note. */
+function previewOf(entry: Entry): string {
+  const source = (entry.notes || entry.reflection || '').trim();
+  if (!source) return '';
+  const firstLine = source.split('\n').find((line) => line.trim().length > 0) ?? '';
+  const clean = firstLine.replace(/^[#>*\-\s]+/, '').trim();
+  return clean.length > 96 ? `${clean.slice(0, 95)}\u2026` : clean;
+}
 
 export default function HomeView() {
   const { data: entries, loading } = useStorageQuery<Entry[]>(
@@ -154,97 +181,173 @@ export default function HomeView() {
   return (
     <div>
       {/*
-        Vertical rhythm, deliberately uneven: the title and its opening line
-        belong together, the privacy note is a separate thought, and "Where to
-        begin" starts a new section. Equal gaps everywhere would have said all
-        three were equally related.
-      */}
-      {/*
         The page's heading, read but not seen.
 
-        The name and the tagline are shown once, in the header, which is what
-        took a repeated title off the top of this screen. A page still needs a
-        heading though: screen-reader users navigate by them, and the
+        The name and the tagline are shown once, in the header. A page still
+        needs a heading though: screen-reader users navigate by them, and the
         accessibility gate requires exactly one h1 per view, inside <main>.
         Hiding it visually keeps the space and keeps the structure.
       */}
       <h1 className="sr-only">My Life With Christ</h1>
 
-      <Introduction />
+      {/*
+        The opening: a date and an invitation, three lines tall.
 
-      <section className="mt-10">
-        <h2 className="font-serif text-xl font-semibold tracking-tight">Where to begin</h2>
-        {/*
-          `auto-rows-fr` is what makes this one component family rather than four
-          boxes that happen to sit near each other: every row gets an equal
-          track, so a description one line longer than its neighbour's no longer
-          makes its card structurally taller. The card itself is h-full, so it
-          fills whatever the track gives it.
-        */}
-        <ul className="mt-4 grid gap-4 sm:auto-rows-fr sm:grid-cols-2">
-          {DESTINATIONS.map((destination) => (
-            <li key={destination.label} className="flex">
-              <Link
-                to={destination.route}
-                // Featured is a tint and a border, not a different component.
-                // Inverting this card to a solid fill made it a stark white
-                // rectangle in dark mode — plainly not one of the four.
-                className={`flex h-full w-full flex-col p-5 ${cardClasses({
-                  featured: destination.primary,
-                  interactive: true,
-                })}`}
+        Not a hero. The old page spent its first screen repeating the app's name
+        and explaining itself; what a person wants at the top of a journal is
+        today's date and somewhere to write.
+      */}
+      <header>
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-muted">{today()}</p>
+        <h2 className="mt-1 font-serif text-2xl font-semibold tracking-tight text-ink">
+          Continue your journey
+        </h2>
+      </header>
+
+      {/*
+        Two columns where there is room, one where there is not.
+
+        The breakpoint is in `rem`, not pixels, and that is the whole trick: a
+        reader who enlarges their browser text moves it with them. At the default
+        size 22.5rem is 360px, so an ordinary phone gets two columns; at doubled
+        text it is 720px, so the same phone gets one — which is what you want,
+        because two columns of 32px text on a 390px screen is three words on four
+        lines. `auto-rows-fr` keeps a card whose description wraps from leaving
+        its neighbour short.
+
+        Four across once there is room: at two columns a 768px page gave each
+        card 530px with the words in the top-left corner, which read as four
+        empty rectangles rather than four things to do.
+
+        `min-w-0` on each item is not decoration: a grid item defaults to
+        min-width:auto and refuses to shrink below its own content, so at 320px
+        with doubled text the cards rendered 338px wide in a 280px column and
+        took the whole page sideways with them.
+      */}
+      <ul className="mt-5 grid auto-rows-fr gap-3 min-[22.5rem]:grid-cols-2 min-[48rem]:grid-cols-4">
+        {ACTIONS.map(({ route, label, description, Icon, primary }) => (
+          <li key={label} className="flex min-w-0">
+            <Link
+              to={route}
+              className={`flex h-full w-full items-center gap-3.5 p-4 ${cardClasses({
+                featured: primary,
+                interactive: true,
+              })} active:brightness-95 min-[22.5rem]:flex-col min-[22.5rem]:items-start min-[22.5rem]:gap-3 min-[22.5rem]:p-5`}
+            >
+              <span
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-control ${
+                  primary ? 'bg-accent text-accent-ink' : 'bg-raised text-ink-soft'
+                }`}
               >
-                <span className="font-serif text-base font-semibold text-ink">
-                  {destination.label}
-                </span>
-                <span className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-                  {destination.description}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+                <Icon className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block font-serif text-base font-semibold text-ink">{label}</span>
+                <span className="mt-0.5 block text-sm text-ink-soft">{description}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
 
       {loading ? <Spinner label="Loading your journal" /> : null}
 
-      {!loading && recent.length > 0 ? (
-        <section className="mt-10">
-          <h2 className="font-serif text-xl font-semibold tracking-tight">Recently written</h2>
-          {/*
-            A list, not four more cards. These are rows of text the reader scans;
-            boxing each one would have said they were the same kind of thing as
-            the navigation above, and doubled the number of borders on the page.
-          */}
-          <ul className="mt-2 divide-y divide-line border-y border-line">
-            {recent.map((entry) => (
-              <li key={entry.id}>
-                <Link
-                  to={{ name: 'entry', id: entry.id }}
-                  className="block px-1 py-3.5 transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
-                >
-                  <span className="block font-medium text-ink">
-                    {entry.title || 'Untitled entry'}
-                  </span>
-                  <span className="mt-1 block text-sm text-ink-muted">
-                    {[KIND_LABELS[entry.kind], formatDay(entry.date), entry.speaker]
-                      .filter((part): part is string => Boolean(part))
-                      .join(' · ')}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-sm">
-            <Link
-              to={{ name: 'timeline' }}
-              className="rounded-control underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              See the whole journey
-            </Link>
-          </p>
+      {!loading ? (
+        <section className="mt-10" aria-labelledby="recent-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 id="recent-heading" className="font-serif text-xl font-semibold tracking-tight">
+              Recently written
+            </h2>
+            {recent.length > 0 ? (
+              <Link
+                to={{ name: 'timeline' }}
+                className="rounded-control text-sm text-ink-soft underline decoration-line-strong underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                See the whole journey
+              </Link>
+            ) : null}
+          </div>
+
+          {recent.length === 0 ? (
+            /* An empty journal is the beginning of one, and should read that
+               way. No illustration, no encouragement to "get started" — just
+               what this page is for. */
+            <div className={`mt-4 p-5 ${cardClasses()}`}>
+              <p className="font-serif text-base font-semibold text-ink">
+                Your journey begins here.
+              </p>
+              <p className="measure mt-1.5 text-sm leading-relaxed text-ink-soft">
+                Write a sermon note, a prayer or a reflection, and it will be waiting here
+                afterwards.
+              </p>
+            </div>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {recent.map((entry) => {
+                const preview = previewOf(entry);
+                return (
+                  <li key={entry.id} className="flex">
+                    <Link
+                      to={{ name: 'entry', id: entry.id }}
+                      className={`w-full p-4 ${cardClasses({ interactive: true })} active:brightness-95`}
+                    >
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+                        <span className="rounded-full bg-raised px-2 py-0.5 font-medium text-ink-soft">
+                          {KIND_LABELS[entry.kind]}
+                        </span>
+                        <span>{formatDay(entry.date)}</span>
+                        {entry.scriptureRefs?.[0] ? <span>· {entry.scriptureRefs[0]}</span> : null}
+                      </span>
+                      <span className="mt-1.5 block font-serif text-base font-semibold text-ink">
+                        {entry.title || 'Untitled entry'}
+                      </span>
+                      {preview ? (
+                        <span className="measure mt-1 block text-sm leading-relaxed text-ink-soft">
+                          {preview}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ) : null}
+
+      {/*
+        The book the journal becomes, offered quietly.
+
+        It is the point of the whole product and still not the thing to do on a
+        Tuesday, so it sits below the writing and reading, once, without a
+        picture of a family on it.
+      */}
+      <section className="mt-10" aria-labelledby="book-heading">
+        <Link
+          to={{ name: 'legacy' }}
+          className={`flex items-start gap-3.5 p-5 ${cardClasses({ interactive: true })} active:brightness-95`}
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-raised text-ink-soft">
+            <VolumeIcon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span
+              id="book-heading"
+              className="block font-serif text-base font-semibold text-ink"
+            >
+              My Journey With Christ
+            </span>
+            <span className="measure mt-1 block text-sm leading-relaxed text-ink-soft">
+              See the story your journal is becoming — one long page, ready to print.
+            </span>
+          </span>
+        </Link>
+      </section>
+
+      {/* Secondary now, and below the things a person came to do. */}
+      <div className="mt-10 border-t border-line pt-6">
+        <Introduction />
+      </div>
     </div>
   );
 }
