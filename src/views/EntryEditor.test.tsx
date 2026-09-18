@@ -99,17 +99,17 @@ describe('EntryEditor — fast capture', () => {
     await waitFor(() => expect(window.location.hash).toBe(`#/entry/${entry.id}`));
   });
 
-  it('announces the save', async () => {
-    setup(<EntryEditor />);
+  it('writes the entry when Save is pressed', async () => {
+    const { storage } = setup(<EntryEditor />);
     fireEvent.change(await notesBox(), { target: { value: 'Something worth keeping.' } });
     fireEvent.click(save());
 
-    // The same words are now also shown on screen beside the Save button, so
-    // this names the announcement specifically rather than matching whichever
-    // node came first.
-    const nodes = await screen.findAllByText('Entry saved.');
-    const live = nodes.find((node) => node.getAttribute('aria-live') === 'polite');
-    expect(live, 'the save was not announced to a screen reader').toBeTruthy();
+    // The confirmation itself now lives above the routed view, in the shell's
+    // notice region, because saving a NEW entry remounts this component and
+    // took any local message with it. What this test still owns is that the
+    // save happened at all; `src/app/save-feedback.wiring.test.tsx` owns the
+    // confirmation, through the real routing that broke it.
+    await waitFor(async () => expect(await storage.listEntries()).toHaveLength(1));
   });
 
   it('keeps what was taught and what it meant to me in separate fields', async () => {
@@ -811,10 +811,9 @@ describe('EntryEditor — editing', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].reflection).toBe('Changed my mind.');
     expect(entries[0].notes).toBe('Original notes.');
-    // Two nodes carry these words now — the announcement and the visible
-    // confirmation beside the button. Both are wanted; the assertion is that
-    // the edit was confirmed at all.
-    expect((await screen.findAllByText('Changes saved.')).length).toBeGreaterThan(0);
+    // Confirmation is the shell's job now — see the note in "writes the entry
+    // when Save is pressed" above. This test already proves what it owns: the
+    // edit reached storage, on the same entry.
   });
 
   it('shows a plain page when the entry is gone', async () => {

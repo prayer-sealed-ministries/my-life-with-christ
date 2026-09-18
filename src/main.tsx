@@ -5,6 +5,7 @@ import App from './App';
 import { DATA_PROFILE } from './app/data';
 import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
+import { NoticeProvider } from './app/notice';
 import { ThemeProvider } from './app/theme';
 import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
@@ -52,7 +53,11 @@ createRoot(root).render(
       <ThemeProvider>
         <StorageContextProvider>
           <RouterProvider>
-            <App />
+            {/* Above the routed view on purpose: a save confirmation has to
+                outlive the navigation the save triggers. */}
+            <NoticeProvider>
+              <App />
+            </NoticeProvider>
           </RouterProvider>
         </StorageContextProvider>
       </ThemeProvider>

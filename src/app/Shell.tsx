@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { FirstVisitNotice } from '../components/FirstVisitNotice';
 import { AppMenu } from './AppMenu';
+import { useNotice } from './notice-context';
 import { Link, useRouter, type Route } from './router';
 
 /**
@@ -59,6 +60,7 @@ const isCurrent = (route: Route, nav: Route): boolean => {
 
 export function Shell({ children, title }: { children: ReactNode; title: string }) {
   const { route } = useRouter();
+  const { notice } = useNotice();
   const headingRef = useRef<HTMLDivElement>(null);
   const [announcement, setAnnouncement] = useState('');
   const firstRender = useRef(true);
@@ -209,6 +211,36 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
+
+      {/*
+        Above the routed view so it survives the navigation a save causes, and
+        pinned to the viewport so it can actually be seen.
+
+        Both halves were learned on a phone. Rendered in the document flow it
+        worked for a new entry — that navigates and lands at the top — and was
+        invisible for an edit, because the Save button is at the bottom of a
+        long form and the message appeared somewhere above the fold. A
+        confirmation nobody can see is the defect this whole change is about.
+
+        Fixed, not a modal: it takes no focus, blocks nothing, and leaves on its
+        own. Polite rather than assertive, because it must not interrupt
+        somebody mid-sentence.
+      */}
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-4"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+      >
+        {notice ? (
+          <p
+            key={notice.key}
+            className="inline-flex items-center gap-1.5 rounded-control border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink shadow-lg"
+          >
+            <span aria-hidden="true">✓</span>
+            {notice.text}
+          </p>
+        ) : null}
+      </div>
 
       <main id="main" className="mx-auto max-w-3xl px-5 py-8 sm:py-10">
         {/* Focus lands here after navigation, ahead of the page heading. */}

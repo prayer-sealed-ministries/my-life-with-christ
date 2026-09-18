@@ -29,6 +29,7 @@ import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
+import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
@@ -287,23 +288,8 @@ export default function EntryEditor({
   const [missingId, setMissingId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { showNotice } = useNotice();
   const [message, setMessage] = useState('');
-  /**
-   * The visible "it saved" confirmation.
-   *
-   * Separate from `message`, which is announced to screen readers and covers
-   * incidental things like a link being added. This one is only ever set by a
-   * successful save, because it is the only one a person needs to SEE.
-   *
-   * Why it exists: saving used to confirm itself into an `sr-only` live region
-   * alone. Sighted readers saw the button flicker and nothing else, and because
-   * saving does not change what is on screen, the honest conclusion was that it
-   * had not worked. On a real iPhone that produced three saves of one entry in
-   * four minutes, and a reader who believed their journal was not being kept.
-   * For a product whose whole promise is that what you write is still there in
-   * forty years, that is the most expensive silence available.
-   */
-  const [savedNotice, setSavedNotice] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   /**
@@ -607,9 +593,11 @@ export default function EntryEditor({
       // the edit view that follows, which is why `saving` is cleared explicitly
       // rather than left to a remount that never comes.
       setSaving(false);
-      const confirmation = targetId ? 'Changes saved.' : 'Entry saved.';
-      setMessage(confirmation);
-      setSavedNotice(confirmation);
+      // Published above the routed view rather than held here. Saving a new
+      // entry navigates to `#/entry/<id>`, which changes this component's key
+      // and remounts it — any confirmation kept in local state is destroyed in
+      // the same tick it is set. `notice.tsx` explains the rest.
+      showNotice('Saved');
       // The live region has to sit in the DOM for a beat before this view
       // unmounts, or the announcement is never picked up.
       nextFrame(() => navigate({ name: 'entry', id: saved.id }));
@@ -629,6 +617,10 @@ export default function EntryEditor({
       await storage.deleteEntry(entryId);
       setBaseline(form ? JSON.stringify(form) : baseline);
       touch();
+      // Same reason as the save above: this navigates, so anything said from
+      // here would be gone before it could be read. Deleting something and
+      // being told nothing at all is its own small cruelty.
+      showNotice('Entry deleted');
       navigate({ name: 'timeline' });
     } catch (cause) {
       setConfirmingDelete(false);
@@ -1235,20 +1227,6 @@ export default function EntryEditor({
             {entryId ? 'Back to my journey' : 'Cancel'}
           </Link>
 
-          {/* Beside the Save button, where the person is already looking, and
-              carrying its own text rather than colour alone. It is not a live
-              region: `message` above already announces the same words, and
-              duplicating them here would say it twice. */}
-          {/* Derived, not synchronized: the confirmation is shown only while
-              there is nothing unsaved. The moment the reader types again
-              `dirty` is true and "Entry saved." would be a lie, so it goes —
-              without an effect having to chase the change. */}
-          {savedNotice && !dirty && !saving ? (
-            <p className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
-              <span aria-hidden="true">✓</span>
-              {savedNotice}
-            </p>
-          ) : null}
         </div>
       </form>
 
