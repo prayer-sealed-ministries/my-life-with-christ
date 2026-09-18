@@ -30,6 +30,19 @@ export function outgoingArchive(archive: BuiltArchive): OutgoingFile {
   };
 }
 
+/**
+ * What an export attempt produced.
+ *
+ * The archive and the saving of it are different facts, and the caller needs
+ * both: the bytes were built either way, but only `saved` licenses telling a
+ * person their journal has left the device.
+ */
+export interface ExportOutcome {
+  archive: BuiltArchive;
+  /** True only when the file reached the user's file system. */
+  saved: boolean;
+}
+
 export interface ExportEverythingOptions
   extends Omit<BuildArchiveOptions, 'entries' | 'allEntries' | 'filter'> {
   storage: StorageProvider;
@@ -43,11 +56,11 @@ export interface ExportEverythingOptions
  * export so the reminder resets.
  *
  * The archive is returned whether or not it was saved — the bytes were built
- * either way, and the caller decides what to say about it. What is NOT returned
- * is permission to claim a backup: only a save the file system actually
- * accepted updates `lastExportAt`.
+ * either way — but it is returned ALONGSIDE whether the save happened, so no
+ * caller can announce a file that was never written. Only a save the file
+ * system actually accepted updates `lastExportAt`.
  */
-export async function exportEverything(options: ExportEverythingOptions): Promise<BuiltArchive> {
+export async function exportEverything(options: ExportEverythingOptions): Promise<ExportOutcome> {
   const { storage, filter, files, ...rest } = options;
 
   const allEntries = await storage.listEntriesChronological();
@@ -73,5 +86,5 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
     });
   }
 
-  return archive;
+  return { archive, saved };
 }

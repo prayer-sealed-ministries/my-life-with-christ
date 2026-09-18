@@ -96,6 +96,22 @@ describe('after a save the reader backed out of', () => {
     ).toBeNull();
     expect(screen.getByText(/Never exported/i)).toBeInTheDocument();
     expect((await db.getSettings()).lastExportAt).toBeUndefined();
+
+    // The one this test missed the first time, and a real phone did not: the
+    // result line announced a filename for a file that was never written —
+    // "Saved journey-export-2026-09-18.zip — 2 entries. Keep it somewhere that
+    // is not this device." Asserting only on the status line left it standing.
+    expect(
+      screen.queryByText(/^Saved journey-export/),
+      'a cancelled save announced a saved file',
+    ).toBeNull();
+    // Two nodes carry it: the visible line and the live region. Both are
+    // wanted; what matters is that it is said and not dressed as a success.
+    const nothing = screen.getAllByText(/Nothing was saved/i);
+    expect(nothing.length).toBeGreaterThan(0);
+    const visible = nothing.find((n) => !n.className.includes('sr-only'))!;
+    expect(visible.className, 'the cancellation was styled as a success').not.toMatch(/green/);
+    expect(visible.textContent, 'the cancellation carried a success tick').not.toContain('✓');
   }, 30_000);
 
   it('leaves the warning that this device is not a backup exactly where it was', async () => {
@@ -120,5 +136,9 @@ describe('after a save the file system accepted', () => {
     expect(await screen.findByText('Last exported today.', undefined, { timeout: 15_000 }))
       .toBeInTheDocument();
     expect((await db.getSettings()).lastExportAt).toBeTruthy();
+
+    // And a real save still names the file, which is the half that must not
+    // have been broken by silencing the other.
+    expect(screen.getAllByText(/Saved journey-export.*entries\./).length).toBeGreaterThan(0);
   }, 30_000);
 });

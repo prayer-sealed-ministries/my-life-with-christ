@@ -153,6 +153,16 @@ export default function DataView() {
   // --- export ------------------------------------------------------------
   const [busy, setBusy] = useState<'none' | 'full' | 'partial'>('none');
   const [exportMessage, setExportMessage] = useState('');
+  /**
+   * Said when an export ended without a file.
+   *
+   * Kept apart from `exportMessage` because that one is rendered as a success —
+   * green, with a tick — and a cancellation is not a success. The words alone
+   * were not enough: "Nothing was saved" inside a green ✓ box reads as a
+   * cheerful confirmation at a glance, which is the same lie in a different
+   * font.
+   */
+  const [exportNothing, setExportNothing] = useState('');
   const [exportError, setExportError] = useState('');
   const fullExportButton = useRef<HTMLButtonElement>(null);
   const partialExportButton = useRef<HTMLButtonElement>(null);
@@ -176,9 +186,10 @@ export default function DataView() {
   const runExport = async (filter?: ExportFilter) => {
     setBusy(filter ? 'partial' : 'full');
     setExportMessage('');
+    setExportNothing('');
     setExportError('');
     try {
-      const archive = await exportEverything({
+      const { archive, saved } = await exportEverything({
         storage,
         outlineBooks,
         topics,
@@ -193,10 +204,19 @@ export default function DataView() {
       // below updates without this view keeping a second copy of the truth.
       if (!filter) await updateSettings({});
 
+      // Only a save that happened may be announced. Backing out of the file
+      // picker used to land here too, so the app said "Saved <filename> — 2
+      // entries. Keep it somewhere that is not this device." over a file that
+      // was never written.
+      setExportNothing(
+        saved ? '' : 'Nothing was saved. Your journal is unchanged — you can export again whenever you like.',
+      );
       setExportMessage(
-        filter
-          ? `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}, with ${plural(archive.excludedCount, 'entry', 'entries')} left out. This is not a backup of the whole journal.`
-          : `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}. Keep it somewhere that is not this device.`,
+        !saved
+          ? ''
+          : filter
+            ? `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}, with ${plural(archive.excludedCount, 'entry', 'entries')} left out. This is not a backup of the whole journal.`
+            : `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}. Keep it somewhere that is not this device.`,
       );
     } catch (cause) {
       setExportError(
@@ -405,13 +425,19 @@ export default function DataView() {
           </p>
         ) : null}
 
+        {exportNothing ? (
+          <p className="rounded-control border border-line bg-raised p-3 text-sm text-ink-soft">
+            {exportNothing}
+          </p>
+        ) : null}
+
         {exportError ? (
           <p className="rounded-control border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
             {exportError}
           </p>
         ) : null}
 
-        <LiveRegion message={exportError || exportMessage} />
+        <LiveRegion message={exportError || exportMessage || exportNothing} />
 
         <details className="rounded-card border border-line bg-surface">
           {/*

@@ -134,8 +134,9 @@ describe('backing out of the save dialog', () => {
     const storage = await journalWith();
     const { files, handed } = saverThat(false);
 
-    const archive = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+    const { archive, saved } = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
 
+    expect(saved, 'a cancelled save was reported as saved').toBe(false);
     expect(archive.entryCount).toBe(2);
     expect(handed, 'the saver was never offered the archive').toHaveLength(1);
     expect(handed[0].suggestedName).toMatch(/^journey-export-\d{4}-\d{2}-\d{2}\.zip$/);
