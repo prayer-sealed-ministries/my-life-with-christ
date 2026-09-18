@@ -1,6 +1,6 @@
 # My Life With Christ
 
-**Your walk with God, remembered.**
+**Your walk, remembered.**
 
 Keep Scripture notes, sermons, prayers and personal reflections together in one
 private journal. Over the years, My Life With Christ becomes **My Journey With

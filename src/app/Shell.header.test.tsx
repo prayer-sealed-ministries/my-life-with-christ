@@ -20,7 +20,7 @@ import { RouterProvider } from './router';
 import { Shell } from './Shell';
 
 const APP_NAME = 'My Life With Christ';
-const TAGLINE = 'Your walk with God, remembered.';
+const TAGLINE = 'Your walk, remembered.';
 
 function renderAt(hash: string, title: string, body = <h1>A page</h1>) {
   window.location.hash = hash;

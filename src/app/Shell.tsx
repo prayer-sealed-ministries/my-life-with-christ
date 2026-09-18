@@ -24,7 +24,7 @@ import { Link, useRouter, type Route } from './router';
  * the home view goes straight to what a reader came for.
  */
 const APP_NAME = 'My Life With Christ';
-const TAGLINE = 'Your walk with God, remembered.';
+const TAGLINE = 'Your walk, remembered.';
 
 const NAV: Array<{ route: Route; label: string }> = [
   { route: { name: 'browse' }, label: 'Bible' },

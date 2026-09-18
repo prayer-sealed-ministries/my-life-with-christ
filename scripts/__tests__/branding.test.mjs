@@ -101,7 +101,7 @@ describe('the current brand is actually in place', () => {
     ['src/views/LegacyView.tsx', 'My Journey With Christ', 'the printable view in the app'],
     ['index.html', '<title>My Life With Christ</title>', 'the application title'],
     ['src/app/Shell.tsx', "const APP_NAME = 'My Life With Christ'", 'the name shown in the header'],
-    ['src/app/Shell.tsx', "const TAGLINE = 'Your walk with God, remembered.'", 'the tagline shown in the header'],
+    ['src/app/Shell.tsx', "const TAGLINE = 'Your walk, remembered.'", 'the tagline shown in the header'],
   ];
 
   for (const [path, needle, what] of mustContain) {

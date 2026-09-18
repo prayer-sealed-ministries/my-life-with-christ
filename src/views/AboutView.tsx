@@ -20,7 +20,7 @@ export default function AboutView() {
     <div className="space-y-10">
       <header>
         <h1 className="font-serif text-2xl font-semibold tracking-tight">About</h1>
-        <p className="mt-1 text-base text-ink-soft">Your walk with God, remembered.</p>
+        <p className="mt-1 text-base text-ink-soft">Your walk, remembered.</p>
       </header>
 
       <section aria-labelledby="what-it-is" className="space-y-3">
