@@ -65,6 +65,19 @@ data/coverage-report.md
 data/coverage-comparison.md
 scripts/probe-baseline.json
 
+# The ingest and parsers that read the licensed source documents, and their
+# fixtures. Removed from the tree; named here so a stray copy cannot return by
+# way of a wide `git add`.
+scripts/ingest-outlines.mjs
+scripts/compare-coverage.mjs
+scripts/build-coverage-report.mjs
+scripts/lib/parse-outlines.mjs
+scripts/lib/extract-pdf.mjs
+scripts/lib/title-wording.mjs
+scripts/lib/probes.mjs
+scripts/lib/__tests__/parse-outlines.test.mjs
+scripts/lib/__tests__/title-wording.test.mjs
+
 # Anywhere a person might reasonably stage private inputs.
 private/
 data/private/
