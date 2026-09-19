@@ -32,7 +32,7 @@ import {
  *
  * Overlapping entries are kept whole rather than truncated — the reader should
  * see the passage each entry actually names. Overlaps therefore do not create
- * holes, and are not silently resolved here; `data/coverage-report.md` lists
+ * holes, and are not silently resolved here; the sections ingest report lists
  * them for deliberate decision.
  */
 export function buildSegments(

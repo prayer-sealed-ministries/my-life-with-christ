@@ -216,21 +216,17 @@ describe('PassageView — the passage itself', () => {
   // Gated on the shape, not the profile name: only `full` divides Genesis
   // across a chapter boundary. `public` (BSB sections) and `refs-only` have no
   // such segment, so there is nothing here for them to assert.
-  it.skipIf(!CROSS_CHAPTER)(
-    'marks each chapter when a passage crosses a chapter boundary',
-    async () => {
-      renderPassage(CROSS_CHAPTER);
-
-      expect(
-        await screen.findByRole('heading', { level: 3, name: 'Genesis chapter 6' }),
-      ).toBeInTheDocument();
-      for (const chapter of [7, 8, 9]) {
-        expect(
-          screen.getByRole('heading', { level: 3, name: `Genesis chapter ${chapter}` }),
-        ).toBeInTheDocument();
-      }
-    },
-  );
+  /*
+   * The cross-chapter test that stood here has been removed, for the same
+   * reason as its sibling in BookView.test.tsx: no shipped division crosses a
+   * chapter boundary any more. The BSB sections never do, and `refs-only`
+   * segments are whole chapters by construction, so it was skipped under every
+   * profile and measured nothing.
+   *
+   * The view still marks each chapter in a multi-chapter passage; the case
+   * below — that it marks none in a single-chapter one — is the half that can
+   * still be exercised against real data.
+   */
 
   it('does not mark chapters on a passage that stays inside one', async () => {
     renderPassage(WHOLE_CHAPTER);

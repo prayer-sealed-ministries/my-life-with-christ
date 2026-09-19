@@ -5,7 +5,6 @@ import BookView from './BookView';
 import {
   findSegment,
   hasOutlines,
-  hasOutlineTitles,
   segmentTitle,
   segmentsForBook,
   segmentNote,
@@ -71,7 +70,6 @@ function renderBook(bookId: string, provider = newProvider()) {
 }
 
 const GENESIS_SEGMENTS = segmentsForBook('genesis');
-const JOHN_SEGMENTS = segmentsForBook('john');
 
 describe('BookView', () => {
   it('names the book and links every segment to its passage', async () => {
@@ -210,34 +208,21 @@ describe('BookView', () => {
     expect(screen.getByText(/Open any chapter to read it and add your own note/)).toBeInTheDocument();
   });
 
-  // `series` and `classicStory` are metadata on the purchased outline entries.
-  // The BSB sections shipped under `public` carry neither, so there is nothing
-  // to mark — found rather than named so the test asserts about the profile in
-  // front of it.
-  const CLASSIC_STORY = JOHN_SEGMENTS.find(
-    (segment) => segment.kind === 'outline' && segment.entry.classicStory,
-  );
 
-  it.skipIf(!CLASSIC_STORY)(
-    'marks series and classic stories with tags, where the profile has them',
-    async () => {
-      const segment = CLASSIC_STORY!;
-      renderBook('john');
-      await screen.findByRole('heading', { level: 1, name: 'John' });
-
-      const link = screen.getByRole('link', {
-        name: new RegExp(`^${escapeForRegExp(segmentTitle(segment))}\\b`),
-      });
-
-      expect(link).toHaveAttribute('href', `#/passage/john/${segment.id}`);
-      expect(link).toHaveTextContent('Classic story');
-      // Chips run together when spoken unless each carries its own separator.
-      expect(link.textContent).toContain(', Classic story');
-      const series = segment.kind === 'outline' ? segment.entry.series : null;
-      if (hasOutlineTitles && series) expect(link).toHaveTextContent(`Series: ${series}`);
-      else expect(link).not.toHaveTextContent('Series:');
-    },
-  );
+  /*
+   * The series / classic-story test that stood here has been removed.
+   *
+   * It needed a division carrying `series` or `classicStory`. The only scheme
+   * that ever set those fields was a licensed third-party one that is no
+   * longer in this repository; the BSB sections set neither on any of their
+   * 3,016 entries, and `refs-only` has no divisions at all. So it was skipped
+   * under every profile, which `npm run test:profiles` reports as a test that
+   * measures nothing — and it is right.
+   *
+   * The fields stay on the type and the view still renders the chips, because
+   * an archive or a future scheme may carry them. What is gone is a test that
+   * could only ever have been green by not running.
+   */
 
   it('counts the journal entries on each passage from a single read', async () => {
     const provider = newProvider();
