@@ -63,7 +63,16 @@ try {
         total += 1;
         everySeen.add(assertion.fullName);
         if (assertion.status === 'passed') passed.add(assertion.fullName);
-        if (assertion.status === 'failed') failures.push(`${profile}: ${assertion.fullName}`);
+        if (assertion.status === 'failed') {
+          // The message, not just the name. An intermittent reported as a bare
+          // test name costs a whole session guessing which assertion went: this
+          // script's own output was the only record of a DataView failure that
+          // recurred for weeks, and it never said what the assertion saw.
+          failures.push({
+            label: `${profile}: ${assertion.fullName}`,
+            detail: (assertion.failureMessages ?? []).join('\n').trim(),
+          });
+        }
       }
     }
 
@@ -85,7 +94,18 @@ try {
 
 if (failures.length > 0) {
   console.error(`\n${failures.length} failing test(s):`);
-  for (const name of failures) console.error(`  ${name}`);
+  for (const { label, detail } of failures) {
+    console.error(`  ${label}`);
+    // Indented so a CI log stays readable, and capped so one enormous DOM dump
+    // cannot bury the other failures underneath it.
+    if (detail) {
+      const lines = detail.split('\n').slice(0, 20);
+      for (const line of lines) console.error(`      ${line}`);
+      if (detail.split('\n').length > lines.length) console.error('      …');
+    } else {
+      console.error('      (the reporter carried no failure message)');
+    }
+  }
   process.exit(1);
 }
 
