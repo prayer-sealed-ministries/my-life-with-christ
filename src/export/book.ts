@@ -14,6 +14,7 @@
  * words rather than assuming.
  */
 
+import { describeProvenance } from '../lib/provided-notes';
 import type { Entry, EntryAnchor, EntryLink, EntryKind, ScriptureRef } from '../types';
 import type { PassageVerse } from '../lib/bible';
 import { buildIndex, formatSpan, referenceSpan } from '../lib/verse-index';
@@ -565,6 +566,25 @@ function renderEntry(ctx: ExportContext, entry: Entry, id: string, alsoAt?: stri
     );
   }
 
+  // Somebody else's material, before the writer's own and never under their
+  // heading. The book is the artefact a grandchild reads to hear one voice; a
+  // church's outline printed under "Notes" would put words into that voice
+  // permanently, and there would be no way left to tell.
+  const provided = entry.sourceMaterial;
+  if (provided?.body.trim()) {
+    const facts = [describeProvenance(provided)];
+    if (provided.speaker) facts.push(`Speaker: ${provided.speaker}`);
+    if (provided.date) facts.push(longDate(provided.date).trim());
+    if (provided.scripture?.length) facts.push(provided.scripture.join(', '));
+    facts.push(`Imported from ${provided.filename}`);
+
+    parts.push('<h4 class="provided-heading">Provided notes</h4>');
+    parts.push(
+      `<p class="provided-source">${escapeHtml(facts.filter(Boolean).join(' · '))}. Not the writer&rsquo;s own words.</p>`,
+    );
+    parts.push(`<div class="provided">${renderMarkdown(provided.body)}</div>`);
+  }
+
   if (entry.notes.trim()) {
     parts.push('<h4>Notes</h4>');
     parts.push(`<div class="notes">${renderMarkdown(entry.notes)}</div>`);
@@ -896,6 +916,24 @@ section, .contents, .colophon { margin-bottom: 3.5rem; }
 .subjects, .mentioned, .tags, .source-file, .cross-ref {
   font-size: 0.875rem;
   color: var(--ink-soft);
+}
+
+/* Provided material: set apart by a dashed rule and a stated source, never by
+   colour alone. The book is printed as often as it is read on a screen, and a
+   tint that vanishes on paper would take the distinction with it — so the
+   attribution line above it carries the meaning in words and the border only
+   reinforces what is already said. */
+.provided {
+  border-left: 3px dashed var(--rule);
+  padding-left: 1.1rem;
+  color: var(--ink-soft);
+  margin-bottom: 1rem;
+}
+.provided-heading { margin-top: 1.75rem; }
+.provided-source {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0.15rem 0 0.6rem;
 }
 
 /* The reflection is the part that is the writer's own. It gets a rule down the

@@ -88,6 +88,37 @@ export default function HelpView() {
         </p>
       </section>
 
+      <section aria-labelledby="sermon-notes-import" className="space-y-2">
+        <h2 id="sermon-notes-import" className="font-serif text-lg font-semibold">
+          Importing sermon notes
+        </h2>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          If your church hands out notes, you can bring the file straight into an entry:{' '}
+          <strong>Import church notes</strong>, on a new entry. A <strong>.txt</strong>,{' '}
+          <strong>.md</strong>, <strong>.json</strong> sermon-notes file, or a{' '}
+          <strong>.pdf</strong> that contains real text. You see what was read before anything is
+          added, and nothing is saved until you save the entry.
+        </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          What comes in is kept as <strong>Provided notes</strong> — its own section, under the
+          name of whoever gave it to you. It never goes into your Notes. Your Notes, Reflection
+          and Prayer start blank after an import, exactly as they would on any new entry, because
+          those three are yours and a handout is not.
+        </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          Two things this does not do yet. A <strong>scanned</strong> PDF — a photograph of a page,
+          with no text inside it — cannot be read, and the app will say so rather than import an
+          empty sermon; there is no text recognition in this version. And the{' '}
+          <strong>original file is not kept</strong>: the app stores the text it read, the file's
+          name and a checksum of it, so your export and your book carry the words — but the PDF
+          itself stays your own file, wherever you keep it.
+        </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          All of it happens on this device. Nothing is uploaded and nothing is sent anywhere to be
+          converted.
+        </p>
+      </section>
+
       <section aria-labelledby="prayer" className="space-y-2">
         <h2 id="prayer" className="font-serif text-lg font-semibold">
           Prayer

@@ -30,6 +30,7 @@ import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
 import { CollapseIcon, ExpandIcon } from '../components/icons';
+import { Markdown } from '../components/Markdown';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { CONTROL_COMPACT, FOCUS } from '../components/styles';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
@@ -44,9 +45,12 @@ import {
   type PassageMatch,
 } from '../lib/passage-search';
 import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
+import { formatDay } from '../lib/dates';
+import { describeProvenance } from '../lib/provided-notes';
+import { SermonNotesImport } from './SermonNotesImport';
 import { segmentRef } from '../lib/passages';
 import { todayIso } from '../storage/db';
-import type { Entry, EntryAnchor, EntryKind, EntryLink } from '../types';
+import type { Entry, EntryAnchor, EntryKind, EntryLink, SourceMaterial } from '../types';
 
 /** The dropdown, built from the canonical list so it cannot fall behind it. */
 const KINDS: Array<{ value: EntryKind; label: string }> = ENTRY_KINDS.map((value) => ({
@@ -77,6 +81,23 @@ interface FormState {
   links: LinkRow[];
   anchors: EntryAnchor[];
   forDescendants: boolean;
+  /**
+   * Free-text references on the entry.
+   *
+   * Not edited in this form — anchors are how a reader attaches a passage
+   * here. It is carried so that a value already on the entry survives a save
+   * unchanged, and so an imported handout's stated references can land on the
+   * entry rather than being visible only inside the provided material.
+   */
+  scriptureRefs: string[];
+  /**
+   * Sermon notes somebody else provided, or nothing.
+   *
+   * Part of the form so that an import proposes and a save commits — the
+   * journal is not touched in between. Never edited here: the reader writes
+   * around it, and the only thing they can do to it is remove it.
+   */
+  sourceMaterial: SourceMaterial | null;
 }
 
 /**
@@ -101,6 +122,8 @@ const blankForm = (kind: EntryKind = 'sermon'): FormState => ({
   links: [],
   anchors: [],
   forDescendants: false,
+  scriptureRefs: [],
+  sourceMaterial: null,
 });
 
 const formFromEntry = (entry: Entry): FormState => ({
@@ -122,6 +145,8 @@ const formFromEntry = (entry: Entry): FormState => ({
   })),
   anchors: entry.anchors,
   forDescendants: entry.forDescendants,
+  scriptureRefs: entry.scriptureRefs,
+  sourceMaterial: entry.sourceMaterial ?? null,
 });
 
 /**
@@ -173,7 +198,12 @@ const hasContent = (form: FormState): boolean =>
       form.speaker.trim() ||
       form.sermonSeries.trim() ||
       parseTags(form.tagsText).length ||
-      form.links.some(linkHasContent),
+      form.links.some(linkHasContent) ||
+      // Provided notes count. Importing a handout and saving it to come back
+      // to on the way home is a real thing to do, and refusing to save until
+      // the reader has typed something of their own would be this app
+      // deciding when they are allowed to start.
+      form.sourceMaterial !== null,
   );
 
 function parseTags(text: string): string[] {
@@ -313,6 +343,9 @@ export default function EntryEditor({
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  /** Is the church-notes import panel open? Nothing is written while it is. */
+  const [importingNotes, setImportingNotes] = useState(false);
+  const [confirmingRemoveProvided, setConfirmingRemoveProvided] = useState(false);
   /**
    * The id this form created, once it has saved at least once.
    *
@@ -330,6 +363,7 @@ export default function EntryEditor({
   const sectionPickerId = useId();
   const reasonId = useId();
   const focusKindId = useId();
+  const providedId = useId();
 
   const notesBoxRef = useRef<HTMLDivElement>(null);
   /** The control that turns focus mode on; where focus goes when it turns off. */
@@ -387,6 +421,8 @@ export default function EntryEditor({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMissingId(null);
     setConfirmingDelete(false);
+    setImportingNotes(false);
+    setConfirmingRemoveProvided(false);
     setSaving(false);
     setSaveError('');
     setCreatedId(null);
@@ -661,6 +697,10 @@ export default function EntryEditor({
       links,
       anchors: form.anchors,
       forDescendants: form.forDescendants,
+      scriptureRefs: form.scriptureRefs,
+      // Somebody else's words, written down as somebody else's. `notes` above
+      // carries the reader's and is untouched by any of this.
+      sourceMaterial: form.sourceMaterial ?? undefined,
     };
 
     try {
@@ -910,6 +950,103 @@ export default function EntryEditor({
             onChange={(event) => update('title', event.target.value)}
           />
         </FieldRow>
+
+        {/*
+          Somebody else's words, before the reader's and never among them.
+
+          The heading says "Provided notes", the line under it says who
+          provided them, and the text is rendered rather than put in a box the
+          reader can type into. That last part is the point: the moment a
+          church's outline is editable in the same way as Notes, it stops being
+          a quotation and starts being indistinguishable from the journal. The
+          only thing that can be done to it is to take it away.
+        */}
+        {form.sourceMaterial ? (
+          <section aria-labelledby={providedId} className="rounded-card border border-line-strong bg-raised p-4">
+            <h2 id={providedId} className={SECTION_HEADING}>
+              Provided notes
+            </h2>
+            <p className="mt-1 break-words text-sm text-ink-soft">
+              {describeProvenance(form.sourceMaterial)}
+              {form.sourceMaterial.speaker ? ` · ${form.sourceMaterial.speaker}` : ''}
+              {form.sourceMaterial.date ? ` · ${formatDay(form.sourceMaterial.date)}` : ''}
+              {` · Imported from ${form.sourceMaterial.filename}`}
+            </p>
+            <p className="mt-0.5 text-xs text-ink-muted">Not your own writing.</p>
+
+            <div className="measure mt-3 text-sm leading-relaxed text-ink">
+              <Markdown source={form.sourceMaterial.body} />
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              {confirmingRemoveProvided ? (
+                <>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      update('sourceMaterial', null);
+                      setConfirmingRemoveProvided(false);
+                      setMessage('Provided notes removed. Your own writing is untouched.');
+                    }}
+                  >
+                    Yes, remove them
+                  </Button>
+                  <Button onClick={() => setConfirmingRemoveProvided(false)}>Keep them</Button>
+                </>
+              ) : (
+                <Button onClick={() => setConfirmingRemoveProvided(true)}>
+                  Remove provided notes
+                </Button>
+              )}
+              {!importingNotes ? (
+                <Button onClick={() => setImportingNotes(true)}>Import different notes</Button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {/* The way in. Restrained on purpose: most entries are typed from
+            nothing, and a large permanent control for a file most people will
+            never have would be the loudest thing on a blank form. */}
+        {importingNotes ? (
+          <SermonNotesImport
+            replacing={form.sourceMaterial !== null}
+            onCancel={() => setImportingNotes(false)}
+            onUse={(proposal) => {
+              setImportingNotes(false);
+              setForm((current) => {
+                if (!current) return current;
+                const next: FormState = { ...current, sourceMaterial: proposal.material };
+                // Metadata may seed the entry's own fields, and only where the
+                // reader has not already put something there. Prose never
+                // does: `notes`, `reflection` and `prayer` are not touched by
+                // an import at all, on any path through this function.
+                const { title, date, speaker, scripture } = proposal.suggested;
+                if (title && !current.title.trim()) next.title = title;
+                if (date) next.date = date;
+                if (speaker && !current.speaker.trim()) next.speaker = speaker;
+                if (scripture?.length && current.scriptureRefs.length === 0) {
+                  next.scriptureRefs = scripture;
+                }
+                return next;
+              });
+              setMessage(
+                'Provided notes added. Your notes, reflection and prayer are still yours to write.',
+              );
+            }}
+          />
+        ) : !form.sourceMaterial ? (
+          <div>
+            <Button onClick={() => setImportingNotes(true)}>Import church notes</Button>
+            <p className="measure mt-1 text-xs text-ink-muted">
+              A file your church handed out. It is kept separately from your own writing.
+            </p>
+          </div>
+        ) : null}
+
+        {form.sourceMaterial ? (
+          <h2 className={SECTION_HEADING}>Your own writing</h2>
+        ) : null}
 
         {/* Rule 4: what was taught and what it meant to me stay separate fields.
             The separation is carried by the labels and their helper text, which

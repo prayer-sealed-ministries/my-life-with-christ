@@ -12,6 +12,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { pdf } from '../../src/import/fixtures';
+
 const encoder = new TextEncoder();
 
 export const TXT = [
@@ -125,34 +127,6 @@ export function docx(): Buffer {
       '<?xml version="1.0"?><Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://tracker.invalid/pixel.png" TargetMode="External"/></Relationships>',
     ],
   ]);
-}
-
-function pdf(pages: string[][]): string {
-  const objects: string[] = [];
-  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
-  objects.push(
-    `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`,
-  );
-  pages.forEach((lines, i) => {
-    objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${4 + i * 2} 0 R /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> >>`,
-    );
-    const stream = lines.join('\n');
-    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-  });
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-
-  let out = '%PDF-1.4\n';
-  const offsets: number[] = [];
-  objects.forEach((object, i) => {
-    offsets.push(out.length);
-    out += `${i + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const startxref = out.length;
-  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  out += offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
-  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`;
-  return out;
 }
 
 /** Two pages of genuinely selectable text. */

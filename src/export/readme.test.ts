@@ -574,6 +574,32 @@ const FULL_ENTRY: Entry = {
   tags: ['grace'],
   forDescendants: true,
   visibility: 'shared',
+  // Where an entry came from, when it was imported rather than typed. This was
+  // missing from the fixture AND from the schema, which is how a schema with
+  // additionalProperties:false came to reject archives containing imported
+  // entries. The mirror test below is what would have caught it, had the
+  // fixture been complete — so completeness here is the check, not decoration.
+  source: {
+    importedAt: '2026-09-13T18:00:00.000Z',
+    filename: 'old-notebook.docx',
+    format: 'docx',
+    itemIndex: 3,
+    page: 2,
+    parserVersion: 1,
+  },
+  // Somebody else's words, kept beside the entry and never inside it.
+  sourceMaterial: {
+    format: 'sermon-notes-json',
+    filename: 'sermon-notes.json',
+    importedAt: '2026-09-13T18:00:00.000Z',
+    sha256: 'a'.repeat(64),
+    church: 'City Gate Church',
+    speaker: 'Pastor John Smith',
+    date: '2026-09-13',
+    scripture: ['Matthew 6:19-34'],
+    body: '# Setting Godly Priorities\n\n1. Treasure',
+    parserVersion: 1,
+  },
   createdAt: '2026-09-13T18:00:00.000Z',
   updatedAt: '2026-09-13T18:00:00.000Z',
   // Written by a version this build does not know. It rides along in every
@@ -603,7 +629,17 @@ describe('renderSchema', () => {
     const properties = Object.keys(entry.properties as Node).sort();
     expect(properties).toEqual(Object.keys(FULL_ENTRY).sort());
 
-    const optional = ['place', 'speaker', 'sermonSeries', 'prayer', '_unmigrated'];
+    // `source` and `sourceMaterial` are absent on everything written in the
+    // app, which is almost every entry there will ever be.
+    const optional = [
+      'place',
+      'speaker',
+      'sermonSeries',
+      'prayer',
+      'source',
+      'sourceMaterial',
+      '_unmigrated',
+    ];
     expect([...(entry.required as string[])].sort()).toEqual(
       properties.filter((key) => !optional.includes(key)),
     );
@@ -723,6 +759,8 @@ const HEADER = [
   'updated_at',
   'notes_chars',
   'reflection_chars',
+  'provided_chars',
+  'provided_source',
   'note_file',
 ];
 

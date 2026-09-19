@@ -21,6 +21,7 @@
  * sitting in `ctx.passages`. Nothing in this file can fail an export.
  */
 
+import { describeProvenance } from '../lib/provided-notes';
 import type { Entry, EntryAnchor, EntryLink, ScriptureRef } from '../types';
 import type { PassageVerse } from '../lib/bible';
 import { formatRef } from '../lib/passages';
@@ -596,6 +597,34 @@ function tagsLine(entry: Entry): string | null {
   return tags.length ? `Tags: ${tags.join(', ')}` : null;
 }
 
+/**
+ * Sermon notes somebody else provided, under a heading that says so.
+ *
+ * The heading is "Provided notes" and never "Notes", and the attribution line
+ * sits directly under it. A stranger opening this file in 2060 must be able to
+ * tell in one line which paragraphs the journal's owner wrote — that is the
+ * whole reason the field exists, and a Markdown file with no styling has only
+ * its words to do it with.
+ */
+function providedSection(entry: Entry): string | null {
+  const material = entry.sourceMaterial;
+  if (!material?.body.trim()) return null;
+
+  const facts = [describeProvenance(material)];
+  if (material.speaker) facts.push(`Speaker: ${oneLine(material.speaker)}`);
+  if (material.date) facts.push(formatEventDate(material.date));
+  if (material.scripture?.length) facts.push(material.scripture.map(oneLine).join(', '));
+  facts.push(`Imported from ${oneLine(material.filename)}`);
+
+  return [
+    '## Provided notes',
+    '',
+    `*${facts.filter(Boolean).join(' · ')}. This section is not the writer's own words.*`,
+    '',
+    material.body.trim(),
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 
 /**
@@ -612,6 +641,11 @@ export function renderNote(entry: Entry, ctx: ExportContext): string {
   const blocks = [
     frontMatter(entry, ctx),
     headerBlock(entry, ctx),
+    // Before the writer's own words, and unmistakably labelled as not theirs.
+    // First because it is what they were handed and wrote in response to, and
+    // because a reader who meets it after "## Notes" has already been told,
+    // wrongly, whose words they are reading.
+    providedSection(entry),
     section('Notes', entry.notes),
     // Never merged with Notes. What was taught and what it meant to me are
     // different things, and the separation is the point of the journal.

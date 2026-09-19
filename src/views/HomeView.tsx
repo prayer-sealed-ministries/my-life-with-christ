@@ -188,7 +188,16 @@ function today(now = new Date()): string {
   }).format(now);
 }
 
-/** A short, safe line from an entry: its own first line, never the whole note. */
+/**
+ * A short, safe line from an entry: its own first line, never the whole note.
+ *
+ * `notes` and `reflection` only. An entry can carry sermon notes a church
+ * provided, and those are emphatically NOT what "Recently written" means — a
+ * reader who imported a handout on Sunday and has not written anything yet
+ * must not open this page to find a line of somebody else's outline sitting
+ * under a heading claiming they wrote it. With nothing of their own here, the
+ * card falls back to its title, kind and date, and says plainly what it has.
+ */
 function previewOf(entry: Entry): string {
   const source = (entry.notes || entry.reflection || '').trim();
   if (!source) return '';
@@ -352,6 +361,10 @@ export default function HomeView() {
                       {preview ? (
                         <span className="measure mt-1 block text-sm leading-relaxed text-ink-soft">
                           {preview}
+                        </span>
+                      ) : entry.sourceMaterial ? (
+                        <span className="mt-1 block text-sm text-ink-muted">
+                          Imported sermon notes · nothing written yet
                         </span>
                       ) : null}
                     </Link>

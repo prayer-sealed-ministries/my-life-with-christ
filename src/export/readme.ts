@@ -13,6 +13,7 @@
  * costs nothing to carry and is worth everything if the reader has no context.
  */
 
+import { describeProvenance } from '../lib/provided-notes';
 import type { Entry, EntryAnchor, EntryKind } from '../types';
 import type { ExportContext } from './context';
 import { KIND_LABELS, csvCell } from './context';
@@ -867,6 +868,27 @@ export function renderSchema(): string {
               'When the entry was last changed. ISO 8601. When two copies of a ' +
               'journal are merged, the later updatedAt wins.',
           },
+          // An entry produced by importing one of the writer's own documents
+          // records which file it came out of.
+          //
+          // Missing here until now, while additionalProperties stayed false —
+          // so this schema rejected any archive containing an imported entry,
+          // which is to say it rejected some of the very files it describes.
+          // Found while adding sourceMaterial below, which would have shipped
+          // the identical hole a second time.
+          source: {
+            $ref: '#/$defs/entrySource',
+            description:
+              'Where this entry came from, when it was not typed here. Absent ' +
+              'on everything written in the app.',
+          },
+          sourceMaterial: {
+            $ref: '#/$defs/sourceMaterial',
+            description:
+              'Notes somebody ELSE provided — a church handout brought in ' +
+              'alongside this entry. Never the writer\'s own words: those are ' +
+              'in notes, reflection and prayer. Absent on most entries.',
+          },
           // An entry really can carry this — it is how a journal written by a
           // newer version survives a trip through an older one. Leaving it out
           // while additionalProperties is false would make this schema reject
@@ -983,6 +1005,95 @@ export function renderSchema(): string {
           },
         ],
       },
+      entrySource: {
+        type: 'object',
+        description:
+          'Which file an entry was imported from, and by which parser. ' +
+          'Recorded so a note brought in from a document can still say where ' +
+          'it came from years later.',
+        properties: {
+          importedAt: { type: 'string', format: 'date-time', description: 'When the import ran.' },
+          filename: {
+            type: 'string',
+            description: 'The name of the chosen file, as the person saw it. Never a path.',
+          },
+          format: {
+            type: 'string',
+            enum: ['txt', 'markdown', 'docx', 'pdf'],
+            description: 'What kind of document the note was extracted from.',
+          },
+          itemIndex: {
+            type: 'integer',
+            description: 'Which note within that file, 1-based, so an order can be recovered.',
+          },
+          page: { type: 'integer', description: '1-based page, where the format had pages.' },
+          parserVersion: {
+            type: 'integer',
+            description: 'Which version of the extractor produced it.',
+          },
+        },
+        required: ['importedAt', 'filename', 'format', 'itemIndex', 'parserVersion'],
+        additionalProperties: false,
+      },
+
+      sourceMaterial: {
+        type: 'object',
+        description:
+          'Sermon notes a church provided, kept beside an entry and never ' +
+          'inside it. THIS IS NOT THE JOURNAL WRITER\'S WRITING. If you are ' +
+          'reading this file to understand what one person wrote, read notes, ' +
+          'reflection and prayer; this field holds material handed to them, ' +
+          'reproduced so the entry still makes sense without the handout. ' +
+          'The original file itself is not stored here — only its text and ' +
+          'where it came from.',
+        properties: {
+          format: {
+            type: 'string',
+            enum: ['txt', 'markdown', 'pdf', 'sermon-notes-json'],
+            description: 'What the text was read out of.',
+          },
+          filename: {
+            type: 'string',
+            description: 'The name of the provided file, as the person saw it. Never a path.',
+          },
+          importedAt: { type: 'string', format: 'date-time', description: 'When it was brought in.' },
+          sha256: {
+            type: 'string',
+            description:
+              'Digest of the file that was read, so the same handout can be ' +
+              'recognised again. Lowercase hex.',
+          },
+          church: {
+            type: 'string',
+            description:
+              'Who provided it. Only ever what a structured file stated ' +
+              'outright — never guessed from a filename or from prose.',
+          },
+          speaker: { type: 'string', description: 'Who preached it, where the file said so.' },
+          date: {
+            type: 'string',
+            description: 'The date of the sermon itself, where the file said so. YYYY-MM-DD.',
+          },
+          scripture: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'References the file stated, as written.',
+          },
+          body: {
+            type: 'string',
+            description:
+              'The provided text, in Markdown or plain text. Somebody else\'s ' +
+              'words, kept apart from the writer\'s on purpose.',
+          },
+          parserVersion: {
+            type: 'integer',
+            description: 'Which version of the extractor produced the body.',
+          },
+        },
+        required: ['format', 'filename', 'importedAt', 'body', 'parserVersion'],
+        additionalProperties: false,
+      },
+
       entryLink: {
         title: 'Entry link',
         description: 'A web address saved with an entry.',
@@ -1088,6 +1199,8 @@ const CSV_COLUMNS = [
   'updated_at',
   'notes_chars',
   'reflection_chars',
+  'provided_chars',
+  'provided_source',
   'note_file',
 ];
 
@@ -1153,6 +1266,13 @@ export function renderCsv(ctx: ExportContext): string {
         csvText(entry.updatedAt),
         csvText(countCharacters(entry.notes)),
         csvText(countCharacters(entry.reflection)),
+        // A count and a source, never the body. This column exists so a
+        // spreadsheet can tell at a glance which entries carry somebody else's
+        // material; dumping a church's outline into a CSV cell would make the
+        // table unreadable and would put that text one copy-paste away from
+        // looking like the writer's.
+        csvText(countCharacters(entry.sourceMaterial?.body ?? '')),
+        csvText(entry.sourceMaterial ? describeProvenance(entry.sourceMaterial) : ''),
         // Always the filename the archive actually wrote, never a re-derived
         // one, so a link from this table can never point at a missing file.
         csvText(ctx.noteFilenames.get(entry.id) ?? ''),

@@ -163,3 +163,39 @@ export async function makeDeflatedZip(
   }
   return out;
 }
+
+/**
+ * A minimal but real PDF, built from page content streams.
+ *
+ * Here rather than in the end-to-end fixtures because both suites need the
+ * same document: a unit test that parsed a different PDF from the one the
+ * browser sees would be testing a second, luckier file. Pass a page with no
+ * text operators to get what a scan looks like to a parser.
+ */
+export function pdf(pages: string[][]): string {
+  const objects: string[] = [];
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  objects.push(
+    `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`,
+  );
+  pages.forEach((lines, i) => {
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${4 + i * 2} 0 R /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> >>`,
+    );
+    const stream = lines.join('\n');
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const startxref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  out += offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`;
+  return out;
+}

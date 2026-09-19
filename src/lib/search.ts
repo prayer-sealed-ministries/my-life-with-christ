@@ -17,6 +17,7 @@
 
 import topicsFile from '../data/topics.json';
 import versificationData from '../data/kjv/versification.json';
+import { ownText, providedText } from './provided-notes';
 import type { Entry, OutlineBook, ScriptureRef, Topic } from '../types';
 import { BOOK_NAMES } from './canon';
 import { normalize, resolveBook, searchBooks } from './book-aliases';
@@ -54,6 +55,13 @@ export interface SearchResults {
   topics: TopicHit[];
   books: BookHit[];
   entries: Entry[];
+  /**
+   * Entry ids whose only match is in sermon notes somebody else provided.
+   *
+   * A set rather than a flag on the hit, so a caller that does not care about
+   * the distinction cannot accidentally drop it while mapping over `entries`.
+   */
+  providedOnly: Set<string>;
   outlines: OutlineHit[];
   /**
    * What was actually searched, and what could not be. Drives an empty state
@@ -177,6 +185,7 @@ export function search(query: string, sources: SearchSources): SearchResults {
     entries: [],
     outlines: [],
     searched: [],
+    providedOnly: new Set<string>(),
     total: 0,
   };
   if (trimmed.length < 2) return empty;
@@ -192,21 +201,26 @@ export function search(query: string, sources: SearchSources): SearchResults {
 
   const bookHits: BookHit[] = searchBooks(trimmed).map((id) => ({ id, name: BOOK_NAMES[id] }));
 
-  const entryHits = sources.entries.filter((entry) =>
-    [
-      entry.title,
-      entry.notes,
-      entry.reflection,
-      entry.prayer ?? '',
-      entry.speaker ?? '',
-      entry.place ?? '',
-      entry.sermonSeries ?? '',
-      entry.tags.join(' '),
-    ]
-      .join('\n')
-      .toLowerCase()
-      .includes(needle),
-  );
+  /*
+   * The journal, in two parts.
+   *
+   * Provided sermon notes are searchable — someone who remembers a phrase from
+   * a handout should be able to find the Sunday it belongs to. But a result is
+   * an answer to "where did I write that", and an entry surfaced only because
+   * a church's outline matched is not that answer. So the two texts are
+   * searched separately and the difference is carried out of here for the view
+   * to say out loud. The split itself lives in `provided-notes.ts`, shared
+   * with the storage-backed search the journal view actually runs.
+   */
+  const providedOnly = new Set<string>();
+  const entryHits = sources.entries.filter((entry) => {
+    if (ownText(entry).includes(needle)) return true;
+    if (providedText(entry).includes(needle)) {
+      providedOnly.add(entry.id);
+      return true;
+    }
+    return false;
+  });
 
   const outlineHits: OutlineHit[] = sources.hasOutlines
     ? sources.outlineBooks.flatMap((book) =>
@@ -229,6 +243,8 @@ export function search(query: string, sources: SearchSources): SearchResults {
     topics: topicHits,
     books: bookHits,
     entries: entryHits,
+    /** Ids whose only match is in material somebody else provided. */
+    providedOnly,
     outlines: outlineHits,
     // Named in the order the UI shows them, so the empty state reads top down.
     searched: [

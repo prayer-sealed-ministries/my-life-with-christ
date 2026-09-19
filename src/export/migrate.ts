@@ -15,6 +15,7 @@ import type {
   EntryLink,
   EntrySource,
   ScriptureRef,
+  SourceMaterial,
   Visibility,
 } from '../types';
 
@@ -25,10 +26,55 @@ export const CURRENT_VERSION = 1;
 const KNOWN_FIELDS = new Set([
   'id', 'kind', 'title', 'date', 'place', 'speaker', 'sermonSeries', 'anchors',
   'scriptureRefs', 'notes', 'reflection', 'prayer', 'links', 'tags',
-  'forDescendants', 'visibility', 'createdAt', 'updatedAt', 'source', '_unmigrated',
+  'forDescendants', 'visibility', 'createdAt', 'updatedAt', 'source', 'sourceMaterial',
+  '_unmigrated',
 ]);
 
 const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
+
+const MATERIAL_FORMATS = new Set(['txt', 'markdown', 'pdf', 'sermon-notes-json']);
+
+/**
+ * Read a block of provided material, or nothing.
+ *
+ * Validated field by field for the same reason as the provenance below, and
+ * with one field that matters more than the rest: `body` holds words somebody
+ * other than the journal's owner wrote. It must arrive as a string and land in
+ * `sourceMaterial`, never anywhere near `notes` — an archive is exactly where
+ * a careless spread would blur the two, years after anyone remembers why they
+ * were separate.
+ *
+ * `body` is required. A provided-material block with no material is not a
+ * partial record to salvage; it falls through to `_unmigrated` whole, so
+ * nothing is lost and nothing half-formed reaches the journal.
+ */
+function migrateSourceMaterial(raw: unknown): SourceMaterial | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+
+  const format = str(value.format);
+  if (!MATERIAL_FORMATS.has(format)) return undefined;
+  if (typeof value.filename !== 'string' || typeof value.importedAt !== 'string') return undefined;
+  if (typeof value.body !== 'string' || value.body.length === 0) return undefined;
+
+  const material: SourceMaterial = {
+    format: format as SourceMaterial['format'],
+    filename: value.filename,
+    importedAt: value.importedAt,
+    body: value.body,
+    parserVersion:
+      typeof value.parserVersion === 'number' && Number.isFinite(value.parserVersion)
+        ? value.parserVersion
+        : 0,
+  };
+  if (typeof value.sha256 === 'string') material.sha256 = value.sha256;
+  if (typeof value.church === 'string') material.church = value.church;
+  if (typeof value.speaker === 'string') material.speaker = value.speaker;
+  if (typeof value.date === 'string') material.date = value.date;
+  const scripture = strArray(value.scripture);
+  if (scripture.length > 0) material.scripture = scripture;
+  return material;
+}
 
 /**
  * Read an import-provenance block, or nothing.
@@ -246,6 +292,13 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
     // Present but unreadable: keep it rather than drop it, and say so.
     unmigrated.source = value.source;
     warnings.push(`Entry ${id}: import provenance was malformed and is preserved in _unmigrated.`);
+  }
+
+  const material = migrateSourceMaterial(value.sourceMaterial);
+  if (material) entry.sourceMaterial = material;
+  else if (value.sourceMaterial !== undefined) {
+    unmigrated.sourceMaterial = value.sourceMaterial;
+    warnings.push(`Entry ${id}: provided sermon notes were malformed and are preserved in _unmigrated.`);
   }
 
   if (Object.keys(unmigrated).length > 0) entry._unmigrated = unmigrated;

@@ -90,13 +90,26 @@ export function anchorLookupKey(anchor: AnchorLookup): string {
   }
 }
 
-/** The text that free-text search runs over. */
+/**
+ * The text that free-text search runs over.
+ *
+ * Provided sermon notes are included, deliberately. Someone who remembers a
+ * phrase from a handout should be able to find the Sunday it belongs to —
+ * that is what search is for, and excluding it would make a church's outline
+ * the one thing in the journal that cannot be found.
+ *
+ * What the index must NOT do is let that material pass for the writer's own,
+ * so the views that show a result say which part matched. This function only
+ * decides what is findable; `matchedIn` below decides what a result is called.
+ */
 export function searchableText(entry: Entry): string {
   return [
     entry.title,
     entry.notes,
     entry.reflection,
     entry.prayer ?? '',
+    entry.sourceMaterial?.body ?? '',
+    entry.sourceMaterial?.church ?? '',
     entry.speaker ?? '',
     entry.place ?? '',
     entry.sermonSeries ?? '',

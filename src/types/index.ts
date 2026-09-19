@@ -243,6 +243,57 @@ export interface EntrySource {
 }
 
 /**
+ * Material somebody else wrote, kept alongside an entry and never inside it.
+ *
+ * A church hands out sermon notes; the reader brings the file in and writes
+ * their own note around it. What must never happen is that the church's
+ * outline ends up in `notes`, because `notes` means *the reader's own words*
+ * and this journal is a record of one person's walk. So provided material gets
+ * its own field, its own heading everywhere it is shown, and its own
+ * provenance — and the reader's `notes`, `reflection` and `prayer` start
+ * empty after an import, exactly as they would on a blank entry.
+ *
+ * Not to be confused with `EntrySource` above. That records that an entry was
+ * *produced by* importing a file the reader had written themselves; this holds
+ * text somebody else wrote that sits beside an entry the reader is writing.
+ * One is about where an entry came from, the other about whose words are in it.
+ *
+ * `body` is Markdown or plain text, and it is never rendered as HTML: the
+ * journal's own Markdown renderer produces React elements, so a script tag in
+ * a church's file is characters on a page and nothing else.
+ *
+ * What is NOT here: the original file's bytes. There is no attachment
+ * mechanism in this schema or in the archive — every archive member is text —
+ * and inventing one is a larger decision than an import feature should make.
+ * The text and the provenance are preserved; the original PDF stays the
+ * reader's own file on their own disk.
+ */
+export interface SourceMaterial {
+  /** What the material was read out of. */
+  format: 'txt' | 'markdown' | 'pdf' | 'sermon-notes-json';
+  /** The name of the file it came from, as the user saw it. Never a path. */
+  filename: string;
+  /** ISO timestamp of the import. */
+  importedAt: string;
+  /** Digest of the bytes that were read, so the same handout can be recognised. */
+  sha256?: string;
+  /**
+   * Who provided it. Only ever what a structured file stated outright — never
+   * guessed from a filename, and never read out of unstructured prose.
+   */
+  church?: string;
+  speaker?: string;
+  /** ISO date of the sermon itself, where the file stated one. */
+  date?: string;
+  /** References the file stated, as written. Free text, like `scriptureRefs`. */
+  scripture?: string[];
+  /** The provided text. Markdown or plain. Somebody else's words. */
+  body: string;
+  /** Which parser produced `body`, so a later fix can find what an older one wrote. */
+  parserVersion: number;
+}
+
+/**
  * A journal entry.
  *
  * `notes` and `reflection` are deliberately separate fields: what was taught,
@@ -278,6 +329,13 @@ export interface Entry {
   forDescendants: boolean;
   /** Set only on an imported entry. Absent on anything written here. */
   source?: EntrySource;
+  /**
+   * Notes somebody else provided — a church handout, usually.
+   *
+   * Never merged into `notes`. See SourceMaterial for why that is the whole
+   * point of the field existing.
+   */
+  sourceMaterial?: SourceMaterial;
   /** Private is the default, always. */
   visibility: Visibility;
   createdAt: string;

@@ -19,6 +19,7 @@ import { useStorageQuery } from '../app/storage';
 import { EmptyState, Field, LiveRegion, Spinner } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { formatDay } from '../lib/dates';
+import { matchedOnlyInProvided } from '../lib/provided-notes';
 import { search } from '../lib/search';
 import type { Entry } from '../types';
 
@@ -126,7 +127,7 @@ function searchOutlines(needle: string): OutlineMatch[] {
   return matches;
 }
 
-function EntryResult({ entry }: { entry: Entry }) {
+function EntryResult({ entry, providedOnly }: { entry: Entry; providedOnly: boolean }) {
   // An unknown kind falls back to the raw value rather than vanishing from the
   // line, the same way the timeline treats it.
   const meta = [
@@ -145,6 +146,14 @@ function EntryResult({ entry }: { entry: Entry }) {
         <span className={`mt-1 block text-sm text-ink-soft ${WRAP}`}>
           {meta.join(' · ')}
         </span>
+        {/* Said in words, not in a colour. This entry came back because a
+            church's handout matched, not because the reader wrote it — and a
+            result list is exactly where those two could be confused. */}
+        {providedOnly ? (
+          <span className="mt-1 block text-sm text-ink-muted">
+            Matched in provided notes, not in your own writing.
+          </span>
+        ) : null}
       </Link>
     </li>
   );
@@ -433,7 +442,11 @@ export default function SearchView({ query }: { query: string }) {
           ) : (
             <ul className={RESULT_LIST}>
               {entries.map((entry) => (
-                <EntryResult key={entry.id} entry={entry} />
+                <EntryResult
+                  key={entry.id}
+                  entry={entry}
+                  providedOnly={matchedOnlyInProvided(entry, needle.toLowerCase())}
+                />
               ))}
             </ul>
           )}
