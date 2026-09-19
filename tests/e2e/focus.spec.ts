@@ -20,6 +20,43 @@ import { dismissWelcome, forceTheme } from './seed';
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+/** Every kind the editor offers, by value and by the word a reader sees. */
+const KINDS = [
+  { value: 'sermon', label: 'Sermon' },
+  { value: 'reading', label: 'Bible reading' },
+  { value: 'service', label: 'Service' },
+  { value: 'prayer', label: 'Prayer' },
+  { value: 'reflection', label: 'Reflection' },
+  { value: 'letter', label: 'Letter' },
+] as const;
+
+/**
+ * Is the kind control showing its whole value, or part of it?
+ *
+ * Measured against the browser's own idea of the width that option needs — a
+ * clone holding only the selected option, laid out at `max-content`, which
+ * includes the padding and the dropdown arrow Chromium draws inside the box.
+ * That is the number the element must have, so comparing against it is the
+ * question "is this clipped" asked directly rather than inferred from
+ * `scrollWidth`, which a <select> does not report usefully.
+ */
+const kindFit = (page: Page) =>
+  page.evaluate(() => {
+    const select = document.querySelector('form select') as HTMLSelectElement;
+    const text = select.options[select.selectedIndex].text;
+
+    const probe = select.cloneNode(false) as HTMLSelectElement;
+    const option = document.createElement('option');
+    option.text = text;
+    probe.appendChild(option);
+    probe.style.cssText = 'position:absolute;visibility:hidden;width:max-content;flex:none';
+    document.body.appendChild(probe);
+    const needed = Math.ceil(probe.getBoundingClientRect().width);
+    probe.remove();
+
+    return { text, needed, actual: Math.round(select.getBoundingClientRect().width) };
+  });
+
 /** The writing surface and the page around it, as the browser has laid it out. */
 const measure = (page: Page) =>
   page.evaluate(() => {
@@ -155,4 +192,134 @@ test.describe('axe-core in focus mode, WCAG 2.1 AA', () => {
       ).toBe('');
     });
   }
+});
+
+/**
+ * The kind control, at the sizes where it stopped being readable.
+ *
+ * The first version of the focus bar put all three controls on one line at
+ * every size. It never overflowed and it passed reflow, so both suites called
+ * it clean — and at 320px with the reader's text at 200% the kind control was
+ * 110px wide showing "Ser". Nothing was measuring whether the value could
+ * still be read, which is the only thing that control is for.
+ *
+ * So this measures exactly that, for every kind rather than the short one that
+ * happens to be the default.
+ */
+test.describe('the kind control shows what is selected', () => {
+  const SIZES = [
+    { name: '320px', width: 320, root: 16 },
+    { name: '320px at 200% text', width: 320, root: 32 },
+    { name: '390px', width: 390, root: 16 },
+    { name: '390px at 200% text', width: 390, root: 32 },
+  ] as const;
+
+  for (const size of SIZES) {
+    test(`in full, every kind — ${size.name}`, async ({ page }) => {
+      if (size.root !== 16) {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('Page.enable');
+        await cdp.send('Page.setFontSizes', { fontSizes: { standard: size.root, fixed: size.root } });
+      }
+      await openEditor(page, size.width);
+      if (size.root !== 16) {
+        await expect(page.locator('html')).toHaveCSS('font-size', `${size.root}px`);
+      }
+      await enterFocus(page);
+
+      const clipped: string[] = [];
+      let checked = 0;
+
+      for (const kind of KINDS) {
+        await page.locator('form select').first().selectOption(kind.value);
+        const fit = await kindFit(page);
+        checked += 1;
+
+        expect(fit.text, `the control is not showing ${kind.label}`).toBe(kind.label);
+        if (fit.actual < fit.needed) {
+          clipped.push(`${kind.label}: needs ${fit.needed}px, has ${fit.actual}px`);
+        }
+
+        // And the page still does not scroll sideways with that kind chosen —
+        // the longest labels are exactly where that would first go wrong.
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(overflow, `${kind.label} pushed the page sideways at ${size.width}px`).toBeLessThanOrEqual(1);
+      }
+
+      examinedAtLeast(checked, KINDS.length, `entry kinds measured at ${size.name}`);
+      expect(clipped.join('\n'), `the kind control is clipping its own value at ${size.name}`).toBe('');
+    });
+  }
+
+  test('keeps both actions reachable, and the bar out of the way', async ({ page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.enable');
+    await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 32 } });
+    await openEditor(page, 320, 760);
+    await enterFocus(page);
+
+    // Both actions on screen, both worth aiming at. 44px is the requirement and
+    // it is a floor in CSS pixels, so it does not move with the text size.
+    for (const name of ['Leave focus mode', 'Save']) {
+      const box = await page.getByRole('button', { name }).boundingBox();
+      expect(box, `${name} did not render`).not.toBeNull();
+      expect(box!.height, `${name} is too short to tap`).toBeGreaterThanOrEqual(44);
+      expect(box!.width, `${name} is too narrow to tap`).toBeGreaterThanOrEqual(44);
+      expect(box!.y, `${name} is off the top of the screen`).toBeGreaterThanOrEqual(0);
+      expect(box!.y + box!.height, `${name} is below the fold`).toBeLessThan(760);
+    }
+
+    // The bar is chrome. At the most extreme size it is allowed two lines and
+    // no more — the writing surface is what the mode exists to enlarge.
+    const bar = await page.locator('form > div').first().boundingBox();
+    expect(
+      bar!.height / 760,
+      `the focus bar is taking ${Math.round((bar!.height / 760) * 100)}% of the screen`,
+    ).toBeLessThan(0.35);
+  });
+
+  test('takes the keyboard out, kind, save — in that order', async ({ page }) => {
+    await openEditor(page, 320);
+    await enterFocus(page);
+    // Save is disabled on an empty form, and a disabled button is not in the
+    // tab order — so an empty editor would "prove" an order that excludes it.
+    await page.locator('textarea').first().fill('Something to save.');
+
+    await page.getByRole('button', { name: 'Leave focus mode' }).focus();
+    const seen: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      await page.keyboard.press('Tab');
+      seen.push(
+        await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement;
+          return el.tagName === 'SELECT' ? 'kind' : (el.textContent ?? '').trim();
+        }),
+      );
+    }
+    expect(seen, 'the focus bar does not tab in a sensible order').toEqual(['kind', 'Save']);
+  });
+
+  test('survives reader-imposed text spacing', async ({ page }) => {
+    await openEditor(page, 320);
+    await enterFocus(page);
+
+    // WCAG 1.4.12, applied to the one bar this lane changed.
+    await page.addStyleTag({
+      content:
+        '*{line-height:1.5!important;letter-spacing:0.12em!important;word-spacing:0.16em!important}p,li{margin-bottom:2em!important}',
+    });
+    await page.waitForTimeout(200);
+
+    await page.locator('form select').first().selectOption('reading');
+    const fit = await kindFit(page);
+    expect(fit.actual, 'the kind control clips with reader text spacing').toBeGreaterThanOrEqual(
+      fit.needed,
+    );
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, 'text spacing pushes the page sideways').toBeLessThanOrEqual(1);
+  });
 });

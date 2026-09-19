@@ -21,11 +21,22 @@ import { CONTROL, FOCUS, SURFACE } from './styles';
 
 export function Button({
   variant = 'secondary',
+  size = 'default',
   className = '',
   ref,
   ...rest
 }: {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  /**
+   * How much room the button takes sideways. A real choice rather than a class
+   * to override: `px-2` appended after this component's own `px-4` loses to the
+   * stylesheet order every time, silently, which is how the focus bar ended up
+   * 16px wider than it was written to be.
+   *
+   * `compact` changes horizontal padding only. `min-h-11` is untouched, so the
+   * touch target is the same height it is everywhere else.
+   */
+  size?: 'default' | 'compact';
   ref?: Ref<HTMLButtonElement>;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   // One height, one radius, one weight across all four. Only colour and border
@@ -42,7 +53,9 @@ export function Button({
     <button
       ref={ref}
       type="button"
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS} ${variants[variant]} ${className}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-control py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        size === 'compact' ? 'px-2' : 'px-4'
+      } ${FOCUS} ${variants[variant]} ${className}`}
       {...rest}
     />
   );

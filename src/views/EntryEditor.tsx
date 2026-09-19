@@ -31,7 +31,7 @@ import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
 import { CollapseIcon, ExpandIcon } from '../components/icons';
 import { MarkdownEditor } from '../components/MarkdownEditor';
-import { CONTROL, FOCUS } from '../components/styles';
+import { CONTROL_COMPACT, FOCUS } from '../components/styles';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
@@ -797,19 +797,43 @@ export default function EntryEditor({
             on the same element would beat it. */}
         {focused ? (
           <div className="safe-top sticky top-0 z-30 -mx-5 border-b border-line bg-app px-5">
-            {/* Wraps, and that is not decoration. At 320px with the reader's
-                text at 200% the three controls need 340px of a 240px line, and
-                a non-wrapping row pushed Save clean off the side of the screen
-                — a reader who had enlarged their text could not save. Save
-                takes its own line there, right-aligned by `ml-auto` wherever it
-                lands. */}
+            {/*
+              One line when one line fits, two when it does not.
+
+              THE BREAKPOINT IS MEASURED, NOT CHOSEN. Every part of this bar is
+              sized in rem — the icon, the paddings, the text — so what it needs
+              is a constant number of rem whatever the reader's text size is.
+              Measured in the browser: the way out is 2.6rem, the widest kind
+              ("Bible reading") needs 7.7rem to show in full, Save is 4.7rem
+              while it says "Saving…", two 0.5rem gaps and the page's 2.5rem of
+              side padding. That is 18.5rem, so the switch is at 19rem with the
+              half-rem of slack left over for font metrics that will not be
+              Chromium's on a phone.
+
+              Being in rem is the whole point. A reader at 200% text on a 320px
+              phone is at 10rem, which is below the threshold for the same
+              reason a 280px window is: the content genuinely does not fit. One
+              rule covers narrow screens and large text, because to this bar
+              they are the same problem.
+
+              Below it the kind takes a line of its own at full width, which is
+              the only arrangement where its value can still be read: at 320px
+              and 200% text, "Bible reading" needs 6.6rem of a 7.5rem line, and
+              there is no sharing that.
+
+              `order-last` rather than a grid: it moves the kind below the two
+              actions visually and leaves the DOM alone, so a keyboard still
+              goes out, kind, save — a sequence that reads the same as the
+              sentence it describes.
+            */}
             <div className="flex flex-wrap items-center gap-2 py-2">
               <Button
                 variant="ghost"
+                size="compact"
                 onClick={closeFocus}
                 aria-label="Leave focus mode"
                 title="Leave focus mode"
-                className="shrink-0 px-2"
+                className="shrink-0"
               >
                 <CollapseIcon />
               </Button>
@@ -823,13 +847,14 @@ export default function EntryEditor({
                 id={focusKindId}
                 value={form.kind}
                 onChange={(event) => update('kind', event.target.value as EntryKind)}
-                className={`${CONTROL} ${FOCUS} flex-1 text-sm`}
+                className={`${CONTROL_COMPACT} ${FOCUS} order-last basis-full min-[19rem]:order-none min-[19rem]:w-auto min-[19rem]:flex-1 min-[19rem]:basis-0`}
               >
                 {kindLabels}
               </select>
               <Button
                 type="submit"
                 variant="primary"
+                size="compact"
                 disabled={!canSave}
                 aria-describedby={canSave ? undefined : reasonId}
                 className="ml-auto shrink-0"

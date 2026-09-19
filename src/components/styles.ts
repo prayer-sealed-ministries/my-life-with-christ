@@ -29,9 +29,30 @@ export const SURFACE = 'rounded-card border border-line bg-surface';
 /** The same surface, when the whole card is a link or a button. */
 export const SURFACE_INTERACTIVE = `${SURFACE} transition-colors hover:bg-raised ${FOCUS}`;
 
-/** Every control that takes typing or a choice. One height, one radius. */
-export const CONTROL =
-  'block w-full min-w-0 max-w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink';
+/**
+ * Every control that takes typing or a choice. One height, one radius.
+ *
+ * Split into a base and its spacing so a tighter variant can be *chosen*
+ * rather than overridden. Appending `px-2` to a string that already says
+ * `px-3` does not win: both sit in the utilities layer and the cascade decides
+ * between them by their order in the generated stylesheet, not by their order
+ * in the class attribute. The focus bar was written that way and rendered at
+ * the full padding — the same trap the card helper below exists to avoid, and
+ * it cost the bar 16px of a 240px line at 200% text.
+ */
+const CONTROL_BASE =
+  'block w-full min-w-0 max-w-full min-h-11 rounded-control border border-line-strong bg-surface text-ink';
+
+export const CONTROL = `${CONTROL_BASE} px-3 py-2 text-base`;
+
+/**
+ * The same control, tightened for a bar rather than a form.
+ *
+ * Only the horizontal padding changes. The height — and with it the touch
+ * target — is the shared `min-h-11`, because a compact bar is a narrower place
+ * to put a control, not a smaller thing to hit.
+ */
+export const CONTROL_COMPACT = `${CONTROL_BASE} px-2 py-2 text-sm`;
 
 /**
  * The classes for one card, tone included — never a base plus an override.
