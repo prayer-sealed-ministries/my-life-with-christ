@@ -39,6 +39,12 @@ jobs:
 
       - run: npm ci
 
+      # The suite below includes checks that read the web assets copied into
+      # the native projects. Those are generated, not committed, so they have
+      # to be made before anything looks at them — the same step CI runs.
+      - name: Build and sync native assets
+        run: npm run native:assets && npm run native:sync
+
       # Tested under the profile this workflow deploys, not the default, so
       # the deploy is never gated on a suite that exercised a different build
       # from the one it is about to upload.
