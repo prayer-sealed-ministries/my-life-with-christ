@@ -35,6 +35,9 @@ if [ "${SKIP_DATA_GATE:-}" = "1" ]; then
   exit 0
 fi
 
+# Scans all reachable history, not just the commits being pushed. A range
+# would be faster and would stop checking the thing that actually went wrong
+# here: metadata already in the branch, written before anyone thought to look.
 echo "${BOLD}pre-push: checking no licensed or private data is tracked${RESET}"
 if ! node scripts/verify-no-private-data.mjs; then
   echo ""
