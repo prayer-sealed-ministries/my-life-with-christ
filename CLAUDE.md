@@ -375,8 +375,11 @@ guess carried forward.
   rate, the hypothesis, and the date — or fix it. A skipped test is a check that
   examines nothing, which is the failure this whole file is about.
 - **Bypass the pre-push hook.** An agent pushes with the owner's token and
-  inherits the owner's admin bypass; branch protection does not constrain it.
-  The hook is the only thing that does. `--no-verify` is not available to you.
+  inherits the owner's admin bypass, so the required status checks on `main` do
+  not stop it adding a commit. (Force-pushing and deleting the branch ARE
+  blocked, admins included — see the residual-risk note below for what was
+  measured.) For the one mistake that matters here, the hook is what stands in
+  the way. `--no-verify` is not available to you.
 
 ## Reporting
 
@@ -478,34 +481,68 @@ the deployed profile is pinned to the exact value it expects — `public` — th
 no build step omits it, that verification happens *before* the artefact upload,
 that `deploy` needs `build`, and that the deploy job builds nothing of its own.
 
-**3. Someone pushes past it.** `data-gate` is a standalone CI job, required by
-branch protection on `main`. It depends on no other job on purpose: chained
-behind lint or tests, an unrelated failure would leave the required check
-*pending* rather than failing, and a check that can sit pending is not a gate.
+**3. Someone pushes past it.** `data-gate` is a standalone CI job, and it is
+required by branch protection on `main`. It depends on no other job on purpose:
+chained behind lint or tests, an unrelated failure would leave the required
+check *pending* rather than failing, and a check that can sit pending is not a
+gate.
+
+Branch protection was configured on this repository on 2026-09-19. The exact
+required checks, as GitHub reports them:
+
+| Required status check | Workflow |
+| --- | --- |
+| `data-gate` | CI |
+| `typecheck, lint, test (all profiles)` | CI |
+| `e2e (public)` | CI |
+| `e2e (refs-only)` | CI |
+| `accessibility (public)` | CI |
+| `accessibility (refs-only)` | CI |
+
+Two checks are deliberately NOT required. `deploy` is permanently **skipped**
+while publication is deferred, and a skipped check never satisfies a
+requirement — requiring it would deadlock the branch. `build` belongs to
+`pages.yml`, the workflow that changes when the site is published, and the
+public-profile verification it performs is already required through `data-gate`,
+which builds and gates both profiles.
 
 > ### Residual risk — read this before you push
 >
-> Branch protection runs with **`enforce_admins: false`**. The repository owner
-> can push directly past the required check.
+> Branch protection runs with **`enforce_admins: false`**, so the repository
+> owner can push to `main` past the required status checks. Coding agents push
+> with the owner's token and inherit that bypass in full. If you are an agent
+> reading this: **the required checks are not what stops you**, and you should
+> not assume something upstream will catch a mistake.
 >
-> **This includes you.** Coding agents push with the owner's token, so an agent
-> inherits the owner's bypass in full. **Branch protection does not constrain
-> agents at all.** If you are an agent reading this: you are not being caught by
-> branch protection, and you should not assume something upstream will stop a
-> mistake.
+> Be precise about what the bypass does and does not cover. Verified on
+> 2026-09-19 by applying the identical protection to a scratch branch and
+> attempting both operations with the owner's own admin token:
 >
-> Two things do constrain you, and they are the ones to respect:
+> | Operation | Admin with `enforce_admins: false` |
+> | --- | --- |
+> | Push to `main` without passing checks | **allowed** — this is the bypass |
+> | Force-push to `main` | **rejected** — `GH006 … Cannot force-push to this branch` |
+> | Delete `main` | **rejected** — `GH006 … Cannot delete this branch` |
 >
-> 1. **`.githooks/pre-push`** — runs the workflow-policy tests and the bundle
->    gate locally, before a bad commit reaches history. It does not care who or
->    what is pushing. `git push --no-verify` skips it silently; git does not run
->    the hook at all in that case, so nothing can warn you. **Do not use
->    `--no-verify` on this repository.** `SKIP_DATA_GATE=1` also skips it, but
->    at least says so loudly.
+> So force-pushing and deleting the branch are blocked for everyone, admins
+> included; the bypass is narrower than "branch protection does not constrain
+> agents", which is what this file used to say. History cannot be rewritten or
+> thrown away through the remote. What an admin can still do is add a bad commit
+> on top.
+>
+> That is why these two still matter most:
+>
+> 1. **`.githooks/pre-push`** — runs the private-data guard, the workflow-policy
+>    tests and the bundle gate locally, before a bad commit reaches history. It
+>    does not care who or what is pushing. `git push --no-verify` skips it
+>    silently; git does not run the hook at all in that case, so nothing can
+>    warn you. **Do not use `--no-verify` on this repository.**
+>    `SKIP_DATA_GATE=1` also skips it, but at least says so loudly.
 > 2. **`.github/workflows/pages.yml`** — gates what the public can actually
->    see. Verification runs before the artefact upload and `deploy` needs
->    `build`, so a bad commit landing on `main` still cannot reach the public
->    site.
+>    see. Nothing in its build job is conditional, verification runs before the
+>    artefact upload, and `deploy` both needs `build` and runs only on a manual
+>    `workflow_dispatch`, so a bad commit landing on `main` cannot reach a
+>    published site — least of all while publication is deferred entirely.
 >
 > That division is deliberate. Branch protection guards `main`'s *history*;
 > `pages.yml` guards the *published artefact*. For the licensing risk, the
