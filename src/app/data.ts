@@ -2,11 +2,14 @@
  * The app's view of the static data.
  *
  * Divisions arrive through the `virtual:journey-data` module, which the build
- * generates according to DATA_PROFILE. Three schemes can arrive there — the
- * purchased outlines, the public-domain BSB sections, or nothing at all — and
- * the app deliberately does not care which: a titled span of verses renders the
- * same either way. `divisionSource` is available for the places that must say
- * so out loud, such as attribution.
+ * generates according to DATA_PROFILE. Two schemes can arrive there — the
+ * public-domain BSB section headings, or nothing at all — and the app
+ * deliberately does not care which: a titled span of verses renders the same
+ * either way. `divisionSource` is available for the places that must say so out
+ * loud, such as attribution.
+ *
+ * Divisions are not verse text. Whatever arrives here, the words a reader reads
+ * are the KJV, loaded separately from `src/data/kjv/`.
  *
  * Everything downstream reads `hasOutlineTitles` rather than assuming.
  */

@@ -233,8 +233,13 @@ This is recorded so that a UK-facing deployment is a deliberate decision rather
 than a later discovery. It does not affect personal or private use.
 
 BSB section headings were dedicated to the public domain on **30 April 2023**.
-Attribution is not required for either text and is given anyway, on the site and
-in every export.
+The BSB supplies **only the headings and the spans they divide the text into**,
+never the verse text itself.
+
+*Attribution* is not required by either source and is given anyway, on the site
+and in every export. Attribution and permission are separate questions: the UK
+position above is about reproduction, and crediting the text does not answer
+it.
 
 Full provenance: `src/data/kjv/SOURCE.md`, `src/data/sections/SOURCE.md`,
 `DATA-LICENSE.md`.

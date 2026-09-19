@@ -23,7 +23,7 @@ declare module 'virtual:journey-data' {
    *   'sections' — BSB section headings, public domain (profile `public`)
    *   'none'     — no divisions; whole chapters (profile `refs-only`)
    */
-  export const divisionSource: 'outlines' | 'sections' | 'none';
+  export const divisionSource: 'sections' | 'none';
   export const outlines: OutlineBook[];
   export default outlines;
 }

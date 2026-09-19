@@ -423,8 +423,23 @@ deciding where a chapter divides is editorial judgement, not a fact — so
 `data/source/bsb_usfm/`; see `src/data/sections/SOURCE.md`. Verse ranges from
 `topics.json` ship under both profiles — we authored those.
 
-Attribution for the BSB and KJV is not legally required and is given anyway —
+### Two Scripture sources, never merged
+
+The **verse text is the King James Version**, in every build, loaded from
+`src/data/kjv/`. The **BSB supplies section headings and the spans they divide
+the text into**, and no verse text at all. Do not let documentation, UI copy or
+an export blur the two: a reader of the archive in 2060 should be able to tell
+which words are whose.
+
+The KJV is public domain in the **United States** and is **not** in the
+**United Kingdom**, where perpetual Crown letters patent apply — a real
+constraint on a UK-facing public deployment. `src/data/kjv/SOURCE.md` holds the
+detail; do not restate it from memory.
+
+*Attribution* is not required by either source and is given anyway —
 `src/lib/attribution.ts`, shown on the site and written into every export.
+Attribution and permission are different questions, and crediting a text does
+not answer the second.
 
 ### Two checks, and what each one asks
 

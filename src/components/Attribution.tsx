@@ -1,11 +1,13 @@
 /**
  * Where the words came from, shown on the site.
  *
- * None of this is legally required — the KJV is public domain in the US, and
- * the BSB was dedicated to the public domain in 2023 with an explicit note that
- * attribution is appreciated but not required. It is given by decision. A book
+ * Attribution is not required by either source and is given by decision: a book
  * meant to be handed to a grandchild should say where its words came from, and
  * "nobody made us" is a poor reason for a record to be silent.
+ *
+ * Which is not the same as saying nothing is required of anyone. See
+ * src/lib/attribution.ts and src/data/kjv/SOURCE.md for the distinction
+ * between crediting a text and having permission to reproduce it.
  */
 
 import { divisionSource } from '../app/data';

@@ -1,8 +1,14 @@
 # Data licensing
 
-Everything in this repository is either public domain or written for this
-project. No licensed third-party data is here, and nothing here can build
-something that contains any.
+No licensed third-party compilation is in this repository, and nothing here
+can build something that contains one.
+
+What ships is public-domain or project-authored material — with one
+qualification that is stated rather than glossed: the King James Version is
+public domain in the United States, and **is not** public domain in the United
+Kingdom, where it rests under perpetual Crown letters patent. That is a real
+restriction on a UK-facing public deployment, not a formality. It is set out in
+`src/data/kjv/SOURCE.md` and summarised below.
 
 ---
 
@@ -10,15 +16,21 @@ something that contains any.
 
 | Data | Source | Status |
 | --- | --- | --- |
-| Bible text | King James Version | Public domain. See `src/data/kjv/SOURCE.md` for the UK Crown-patent note. |
-| Section headings and divisions | Berean Standard Bible | Dedicated to the public domain on 2023-04-30. Generated into `src/data/sections.json` by `npm run ingest:sections`; see `src/data/sections/SOURCE.md`. |
+| **Scripture text** | King James Version | Public domain **in the United States**. **Not** public domain in the **United Kingdom**: perpetual Crown letters patent. See `src/data/kjv/SOURCE.md`. |
+| **Section headings and divisions** (not the verse text) | Berean Standard Bible | Dedicated to the public domain on 2023-04-30. Generated into `src/data/sections.json` by `npm run ingest:sections`; see `src/data/sections/SOURCE.md`. |
 | Book introductions | Written for this project | `src/data/intros.json`. Drawn from plain historical fact and public-domain reference works. |
 | Life topics | Written for this project | `src/data/topics.json`. Forty topics and the verse ranges they point at. |
 | Everything a person writes | The person using the app | Theirs. It never leaves their device unless they export it. |
 
-Attribution for the BSB and the KJV is not legally required and is given
-anyway — `src/lib/attribution.ts`, shown in the app and written into every
-export.
+**The two Scripture sources are different things and are never merged.** The
+verse text a reader sees is the KJV. The BSB supplies only the section headings
+and the verse spans they divide the text into — it supplies no verse text at
+all, in any build.
+
+*Attribution* is not required by either source, and is given anyway —
+`src/lib/attribution.ts`, shown in the app and written into every export. Note
+that attribution and permission are separate questions: the UK position on the
+KJV above is about reproduction, and is not answered by crediting it.
 
 ## Build profiles
 
