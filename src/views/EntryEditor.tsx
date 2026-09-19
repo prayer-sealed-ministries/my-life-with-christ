@@ -36,6 +36,7 @@ import { CONTROL_COMPACT, FOCUS } from '../components/styles';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
+import { resolveFocusIntent } from '../lib/focus-intent';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import {
@@ -390,7 +391,31 @@ export default function EntryEditor({
    * to wait a render — and if it never happens, focus falls to <body> and a
    * keyboard user is dumped back at the top of the document.
    */
-  const focusAfterRender = useRef<(() => void) | null>(null);
+  /**
+   * Where the reader has asked focus to go next, and nothing else.
+   *
+   * Held as a resolver rather than a ready-made focus call, so it can be
+   * re-tried against the DOM on each commit: the control being waited for
+   * usually does not exist at the moment it is requested. See
+   * src/lib/focus-intent.ts for why an intent is never spent unhonoured.
+   */
+  const focusIntent = useRef<(() => HTMLElement | null | undefined) | null>(null);
+  /** Cancels the deferred default claim, while one is still in flight. */
+  const cancelDefaultFocus = useRef<(() => void) | null>(null);
+
+  /**
+   * Record where the reader wants to land, and retire the editor's default.
+   *
+   * A reader who pressed a button has said where they want to be, and that
+   * outranks the opening "cursor into the notes box" claim which may still be
+   * sitting on a frame — the exact collision that sent the caret to Notes when
+   * someone pressed "Add a link".
+   */
+  const claimFocus = useCallback((resolve: () => HTMLElement | null | undefined) => {
+    focusIntent.current = resolve;
+    cancelDefaultFocus.current?.();
+    cancelDefaultFocus.current = null;
+  }, []);
   const [topicChoice, setTopicChoice] = useState('');
   const [passageQuery, setPassageQuery] = useState('');
   /** Book chosen in the browse picker, and the section chosen within it. */
@@ -492,7 +517,15 @@ export default function EntryEditor({
   useEffect(() => {
     if (!loaded) return;
     if (entryId && !focused) return;
-    return nextFrame(() => {
+    // The reader has already said where they want to be. Do not queue a
+    // default that would compete with it.
+    if (focusIntent.current) return;
+    const cancel = nextFrame(() => {
+      cancelDefaultFocus.current = null;
+      // An intent raised after this frame was queued still outranks it. Without
+      // this the default wins any moment the intent's control has not mounted
+      // yet, because focus is on <body> and that reads as "free".
+      if (focusIntent.current) return;
       const textarea = notesBoxRef.current?.querySelector('textarea');
       if (!textarea) return;
       const shellTarget = document.querySelector('main [tabindex="-1"]');
@@ -512,6 +545,11 @@ export default function EntryEditor({
         textarea.focus({ preventScroll: true });
       }
     });
+    cancelDefaultFocus.current = cancel;
+    return () => {
+      cancelDefaultFocus.current = null;
+      cancel();
+    };
   }, [entryId, loaded, focused]);
 
   // Unsaved-changes guard, asked for through the platform rather than wired to
@@ -537,11 +575,9 @@ export default function EntryEditor({
    * to write" and the thing holding focus is the button they pressed.
    */
   const openFocus = useCallback(() => {
-    focusAfterRender.current = () => {
-      notesBoxRef.current?.querySelector('textarea')?.focus({ preventScroll: true });
-    };
+    claimFocus(() => notesBoxRef.current?.querySelector('textarea'));
     enterFocus();
-  }, [enterFocus]);
+  }, [claimFocus, enterFocus]);
 
   /**
    * Leave focus mode, handing focus back to the control that reappears.
@@ -551,9 +587,9 @@ export default function EntryEditor({
    * starts again from the top of the document.
    */
   const closeFocus = useCallback(() => {
-    focusAfterRender.current = () => focusToggleRef.current?.focus();
+    claimFocus(() => focusToggleRef.current);
     exitFocus();
-  }, [exitFocus]);
+  }, [claimFocus, exitFocus]);
 
   /**
    * Android Back leaves focus mode before it leaves the entry.
@@ -589,10 +625,23 @@ export default function EntryEditor({
   // render follows the click, and the ref guard makes every other pass a single
   // null check.
   useEffect(() => {
-    const claim = focusAfterRender.current;
-    if (!claim) return;
-    focusAfterRender.current = null;
-    claim();
+    const resolve = focusIntent.current;
+    if (!resolve) return;
+
+    const target = resolve();
+    const outcome = resolveFocusIntent({
+      target,
+      active: document.activeElement,
+      body: document.body,
+    });
+
+    // `wait` is the whole point: the control asked for is not on the page yet,
+    // so the request survives to the next commit instead of being spent on a
+    // render that could never have honoured it.
+    if (outcome === 'wait') return;
+
+    focusIntent.current = null;
+    if (outcome === 'focus') (target as HTMLElement).focus();
   });
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -1431,7 +1480,15 @@ export default function EntryEditor({
                               // <body> and a keyboard user loses their place
                               // entirely. Announce it too: a row vanishing is
                               // silent to anyone not watching the screen.
+                              // Synchronous on purpose: the button is already
+                              // on the page, and moving focus before React
+                              // detaches this row means focus never touches
+                              // <body> at all. Registered as an intent too, so
+                              // the default claim stands down and the
+                              // destination is re-asserted if a later commit
+                              // disturbs it.
                               addLinkRef.current?.focus();
+                              claimFocus(() => addLinkRef.current);
                               setMessage(`Link ${index + 1} removed.`);
                             }}
                           >
@@ -1450,10 +1507,11 @@ export default function EntryEditor({
                   onClick={() => {
                     // The new row renders above this button, so leaving focus
                     // here would put the fields it just created behind the user.
-                    focusAfterRender.current = () =>
-                      linksListRef.current
-                        ?.querySelector<HTMLInputElement>('li:last-child input[type="url"]')
-                        ?.focus();
+                    claimFocus(() =>
+                      linksListRef.current?.querySelector<HTMLInputElement>(
+                        'li:last-child input[type="url"]',
+                      ),
+                    );
                     update('links', [...form.links, { url: '', label: '', capturedTitle: '' }]);
                     setMessage(`Link ${form.links.length + 1} added.`);
                   }}
@@ -1597,7 +1655,7 @@ export default function EntryEditor({
                   onClick={() => {
                     // Backing out unmounts this button; hand focus to the one
                     // that takes its place rather than letting it drop.
-                    focusAfterRender.current = () => deleteRef.current?.focus();
+                    claimFocus(() => deleteRef.current);
                     setConfirmingDelete(false);
                   }}
                 >
