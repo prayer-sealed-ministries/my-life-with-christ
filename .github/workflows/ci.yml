@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
 
-# The repository is private and the outline data is purchased third-party
-# material (see DATA-LICENSE.md). Nothing here publishes a build anywhere.
+# Nothing here publishes a build anywhere. See DATA-LICENSE.md for what this
+# repository may and may not contain.
 permissions:
   contents: read
 

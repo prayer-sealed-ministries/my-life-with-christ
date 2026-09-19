@@ -1,6 +1,6 @@
 {
   "_README": [
-    "Hand-written for this project. NOT adapted from the purchased outlines, and",
+    "Hand-written for this project. NOT adapted from any licensed third-party source, and",
     "not from the BSB — only the section headings come from there.",
     "",
     "Drawn from plain historical fact and public-domain reference works (Matthew",
@@ -15,7 +15,7 @@
     "",
     "PROVENANCE: every intro records who drafted it and what they had been exposed",
     "to. See _provenance below and src/data/sections/SOURCE.md. Eight books are",
-    "reserved for the owner because an assistant had already read the purchased",
+    "reserved for the owner because an assistant had already read a licensed",
     "introductions for them in the session where the PDFs were ingested, and a",
     "no-shared-sentence check cannot detect borrowed structure or emphasis."
   ],
@@ -45,7 +45,7 @@
     },
     "drafted": {
       "by": "assistant (Claude Opus 5), sessions 2026-09-14 and 2026-09-15",
-      "exposure": "Had NOT read the purchased introductions for any of these books. Books were chosen specifically for that reason, and the list is checked against the reserved list by test.",
+      "exposure": "Had NOT read any licensed third-party introduction for these books. Books were chosen specifically for that reason, and the list is checked against the reserved list by test.",
       "sources": "Plain historical fact; public-domain reference works.",
       "books": [
         "ruth",

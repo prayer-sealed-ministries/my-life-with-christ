@@ -62,7 +62,6 @@ clean partition into duplicates. They are counted in
 - **Complete partition of the canon**: 31,102 of 31,102 verses covered, 0 gaps,
   0 overlaps. Confirmed twice, once through the shared coverage analyser and once
   by an independent walk over consecutive spans.
-- Compare against the purchased scheme in `data/coverage-comparison.md`.
 
 ## Who wrote the introductions, and what they had read
 
@@ -71,8 +70,8 @@ The machine-readable version is `_provenance` in `src/data/intros.json`.
 
 | Books | Drafted by | Exposure |
 | --- | --- | --- |
-| The 15 listed in `intros.json` `_provenance.drafted` | assistant (Claude Opus 5), 2026-09-14/15 | Had **not** read the purchased introduction for any of them. Asserted by test against the reserved list. |
-| The 11 named below | **reserved for the owner** | Purchased introduction read on 2026-09-13. |
+| The 15 listed in `intros.json` `_provenance.drafted` | assistant (Claude Opus 5), 2026-09-14/15 | Had **not** read any licensed third-party introduction for them. Asserted by test against the reserved list. |
+| The 11 named below | **reserved for the owner** | A licensed third-party introduction was read for these on 2026-09-13. |
 | The remaining 40 | not yet written | — |
 
 ### The eleven reserved books, by name
@@ -104,11 +103,13 @@ would have been drafted under the wrong assumption.
 None of the introductions drafted before the correction is among the eleven,
 verified by test rather than by inspection.
 
-They are reserved deliberately. A test asserts no drafted introduction
-shares a sentence with the purchased prose, but a sentence-level check cannot
-detect borrowed *structure* — which facts are chosen, in what order, where the
-emphasis falls. Having read the original, anything drafted for those books would
-be paraphrase-by-memory whatever the intent. They are also the books a reader
+They are reserved deliberately. A sentence-level check cannot detect borrowed
+*structure* — which facts are chosen, in what order, where the emphasis falls.
+Having read the original, anything drafted for those books would be
+paraphrase-by-memory whatever the intent. (The check that compared drafted
+prose against that original has since been removed along with the material it
+compared against; there is nothing left in this repository to compare with, and
+a check with no left-hand side examines nothing.) They are also the books a reader
 opens first, and the ones most worth having in the owner's own voice.
 
 A book with no introduction simply renders without one.
@@ -118,4 +119,4 @@ A book with no introduction simply renders without one.
 Only the **divisions and their titles** come from the BSB. The scripture text
 the app displays is still the KJV (`src/data/kjv/`, see its own `SOURCE.md`),
 and the book introductions are written from scratch for this project — not
-adapted from the BSB, and not from the purchased outlines.
+adapted from the BSB, and not from any licensed third-party source.

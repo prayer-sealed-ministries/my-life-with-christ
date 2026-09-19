@@ -45,10 +45,10 @@ android/local.properties
 # ---------------------------------------------------------------------------
 # Licensed source material. NEVER COMMITTED, on any branch.
 #
-# The purchased [licensed content removed] and everything generated from them are not
-# part of this repository — see DATA-LICENSE.md. A copy may sit in a working
-# tree because its purchaser owns one; these rules are what stop it being
-# staged by a wide `git add`.
+# Licensed third-party source documents and everything generated from them are
+# not part of this repository — see DATA-LICENSE.md. A copy may sit in a
+# working tree because its licensee owns one; these rules are what stop it
+# being staged by a wide `git add`.
 #
 # Deliberately NOT a blanket `*.pdf` or `data/source/**`: the Berean Standard
 # Bible files under data/source/bsb_usfm/ are public domain and ARE committed,

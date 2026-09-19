@@ -1,6 +1,7 @@
 # Operating contract
 
-Journey — a Bible outline and sermon/reflection journal. Local-first, no backend.
+My Life With Christ — a Bible reading and sermon/reflection journal.
+Local-first, no backend.
 
 The long-term purpose is inheritance: a lifetime of entries should export as a
 readable book a child or grandchild can hold. Every data decision follows from
@@ -403,7 +404,8 @@ as data, not as a test fixture, and not as a quoted example in a comment. The
 audit that removed it found licensed titles in three test files, which is where
 this kind of thing actually hides.
 
-**Note that GitHub Pages serves publicly even from a private repository.**
+**Note that GitHub Pages serves whatever is built, publicly.** Whatever ships
+must be material this project owns or that is public domain.
 
 `DATA_PROFILE` selects which division scheme is built:
 

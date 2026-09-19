@@ -29,7 +29,7 @@ RESET=$(tput sgr0 2>/dev/null || true)
 if [ "${SKIP_DATA_GATE:-}" = "1" ]; then
   echo ""
   echo "${BOLD}!! DATA GATE SKIPPED — SKIP_DATA_GATE=1 !!${RESET}"
-  echo "!! Nothing has checked this push for purchased outline content."
+  echo "!! Nothing has checked what this push contains."
   echo "!! See DATA-LICENSE.md. CI will still run data-gate on main."
   echo ""
   exit 0
@@ -49,7 +49,7 @@ fail() {
   echo ""
   echo "${BOLD}PUSH REFUSED — $1${RESET}"
   echo ""
-  echo "This protects against publishing purchased outline content. See DATA-LICENSE.md."
+  echo "This protects against publishing something this project may not. See DATA-LICENSE.md."
   echo "If you are certain this is wrong, 'git push --no-verify' bypasses it —"
   echo "but CI will still fail on main, and the Pages deploy will refuse to publish."
   echo ""
@@ -70,7 +70,7 @@ fi
 
 if ! node scripts/verify-bundle.mjs --profile refs-only >/tmp/journey-gate-verify.log 2>&1; then
   cat /tmp/journey-gate-verify.log
-  fail "the built artefact contains purchased content, or the gate has eroded"
+  fail "the built artefact contains something it should not, or the gate has eroded"
 fi
 
 echo "${BOLD}pre-push: gate passed${RESET}"

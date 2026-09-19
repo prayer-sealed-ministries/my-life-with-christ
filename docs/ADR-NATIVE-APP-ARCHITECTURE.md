@@ -175,7 +175,7 @@ Not "cross-platform development". Specifically:
 5. **The licensing gate transfers with no new tooling.** `verify-bundle.mjs`
    already accepts `--dist <path>`, so it can be pointed at
    `ios/App/App/public` and `android/app/src/main/assets/public` and prove the
-   packaged native assets carry no purchased material.
+   packaged native assets carry no licensed third-party material.
 6. **Hash routing suits a webview origin.** `location.hash` needs no server
    rewrite rules and behaves identically under `capacitor://localhost`.
 
@@ -438,11 +438,11 @@ Required before either store artefact may be produced:
 2. Capacitor copies them to `ios/App/App/public` and
    `android/app/src/main/assets/public`.
 3. **`verify-bundle.mjs --profile public --dist <that path>` runs against the
-   copied assets** and must report PASS on all seven assertions, including
+   copied assets** and must report PASS on every assertion, including
    `BUNDLE_WAS_READ` so it cannot pass having read nothing.
 4. A workflow-policy test — the native analogue of the existing one — asserts
-   that no packaging step sets `DATA_PROFILE=full`, that no step omits it
-   (which would default to `full`), and that verification precedes archiving.
+   that no packaging step omits `DATA_PROFILE`, and that verification precedes
+   archiving.
 5. **A post-archive check**: the assembled `.ipa` and `.aab` are opened as the
    zip archives they are, the web assets extracted, and the verifier run once
    more against what is actually inside the shipped container. The existing gate

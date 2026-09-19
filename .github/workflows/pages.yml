@@ -1,19 +1,15 @@
 name: Deploy to GitHub Pages
 
-# The repository is private, but a GitHub Pages site is PUBLIC regardless.
+# A GitHub Pages site is public, whatever the repository's own visibility.
 #
-# This deploys the `public` profile: BSB section headings, which were dedicated
-# to the public domain on 2023-04-30, plus introductions and topics written for
-# this project. All of it is ours to publish outright.
+# This deploys the `public` profile: BSB section headings, dedicated to the
+# public domain on 2023-04-30, plus introductions and topics written for this
+# project. All of it is ours to publish outright.
 #
 # No licensed third-party division data is in this build, and none is in this
-# repository to put there. In a
-# compilation the protected element is the selection and arrangement, not the
-# labels, so rewording would not have cleared it — hence a scheme we own.
+# repository to put there. Only a profile this project owns outright can be
+# deployed, because there is no other kind here.
 # See DATA-LICENSE.md and src/data/sections/SOURCE.md.
-#
-# Changing this to `full` would publish purchased material to the open web.
-# Do not do it without resolving the rights question first.
 
 on:
   push:
@@ -60,9 +56,9 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
-      # The gate. This greps the actual built files for the purchased titles and
-      # intro prose. If any survived, the deploy stops here.
-      - name: Verify no purchased content in the artefact
+      # The gate, run against the actual built files. If anything that must not
+      # be published survived into them, the deploy stops here.
+      - name: Verify the artefact carries nothing it should not
         run: npm run verify:bundle -- --profile public
 
       - uses: actions/configure-pages@v5

@@ -29,8 +29,8 @@ const config: CapacitorConfig = {
   /**
    * The built web assets. `npm run native:assets` is the only supported way to
    * produce them: it builds with DATA_PROFILE=public and then runs the bundle
-   * verifier over the result, so purchased Blueprint material cannot reach a
-   * native project. Running `vite build` directly would default to `full`.
+   * verifier over the result, so nothing unverified reaches a native project.
+   * Running `vite build` directly skips that check.
    */
   webDir: 'dist',
 
