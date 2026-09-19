@@ -18,6 +18,8 @@ import type {
   Visibility,
 } from '../types';
 
+import { ENTRY_KINDS } from '../lib/entry-kinds';
+
 export const CURRENT_VERSION = 1;
 
 const KNOWN_FIELDS = new Set([
@@ -58,7 +60,8 @@ function migrateSource(raw: unknown): EntrySource | undefined {
   return source;
 }
 
-const KINDS: EntryKind[] = ['sermon', 'reading', 'service', 'prayer', 'reflection', 'letter'];
+/** The kinds this build understands. One list, in src/lib/entry-kinds.ts. */
+const KINDS: readonly EntryKind[] = ENTRY_KINDS;
 
 export interface MigrationContext {
   /**

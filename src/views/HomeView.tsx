@@ -2,7 +2,7 @@
  * The front door.
  *
  * Someone arriving here is usually in one of two moods: they want to read
- * something, or a sermon just started and they need a box to type in. Four large
+ * something, or a sermon just started and they need a box to type in. Six large
  * targets cover both, and the page says plainly what the app is and where the
  * writing lives — on this device, not on someone's server. That is a promise the
  * product makes, so it is stated at the entrance rather than buried in settings.
@@ -14,7 +14,15 @@ import { Link, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { readIntro, rememberIntro } from './home-intro';
 import { cardClasses } from '../components/styles';
-import { BookIcon, PenIcon, SearchIcon, TopicsIcon, VolumeIcon } from '../components/icons';
+import {
+  BookIcon,
+  PenIcon,
+  PrayIcon,
+  ReflectIcon,
+  SearchIcon,
+  TopicsIcon,
+  VolumeIcon,
+} from '../components/icons';
 import { Spinner } from '../components/ui';
 import type { Entry, EntryKind } from '../types';
 
@@ -119,12 +127,20 @@ function formatDay(iso: string): string {
 }
 
 /**
- * The four things a person actually opens this app to do.
+ * The six things a person actually opens this app to do.
  *
- * Every one is a route that already exists. There is deliberately no "Prayer"
- * or "Reflection" card: the editor supports those kinds, but `newEntry` carries
- * no kind parameter, so such a card would either lie about where it goes or
- * require inventing a route inside a visual redesign. Noted rather than faked.
+ * Three of them write and three of them look something up, and they are
+ * ordered that way: a sermon has started and you need a box, or it has not and
+ * you are reading. Prayer and Reflection are here because the route can now
+ * say which kind it wants — `#/entry/new?kind=prayer` opens a blank entry
+ * already set to Prayer. Before that the only honest thing was to leave them
+ * out, because a card that opened the ordinary sermon form would have been a
+ * card that lied.
+ *
+ * Only the sermon note is featured, and that is a statement about frequency
+ * rather than worth: it is the one written in a hurry, standing up, while
+ * somebody is still talking. The other five carry the ordinary card surface,
+ * which is the same surface every other tappable thing on this page has.
  */
 const ACTIONS: Array<{
   route: Route;
@@ -139,6 +155,18 @@ const ACTIONS: Array<{
     description: 'Start writing now',
     Icon: PenIcon,
     primary: true,
+  },
+  {
+    route: { name: 'newEntry', kind: 'prayer' },
+    label: 'Prayer',
+    description: 'Record a prayer',
+    Icon: PrayIcon,
+  },
+  {
+    route: { name: 'newEntry', kind: 'reflection' },
+    label: 'Reflection',
+    description: 'Write what this meant to you',
+    Icon: ReflectIcon,
   },
   { route: { name: 'browse' }, label: 'Read Scripture', description: 'Open the Bible', Icon: BookIcon },
   { route: { name: 'topics' }, label: 'Topics', description: 'What you are facing', Icon: TopicsIcon },
@@ -215,24 +243,44 @@ export default function HomeView() {
         lines. `auto-rows-fr` keeps a card whose description wraps from leaving
         its neighbour short.
 
-        Four across once there is room: at two columns a 768px page gave each
-        card 530px with the words in the top-left corner, which read as four
-        empty rectangles rather than four things to do.
+        Three across once there is room, not four. With six actions four
+        columns makes a row of four and an orphaned row of two, which reads as
+        a page that ran out rather than a set; three gives two full rows of
+        three. At two columns a 768px page gave each card 530px with the words
+        in the top-left corner, which read as empty rectangles rather than
+        things to do, so the wide breakpoint stays.
 
         `min-w-0` on each item is not decoration: a grid item defaults to
         min-width:auto and refuses to shrink below its own content, so at 320px
         with doubled text the cards rendered 338px wide in a 280px column and
         took the whole page sideways with them.
       */}
-      <ul className="mt-5 grid auto-rows-fr gap-3 min-[22.5rem]:grid-cols-2 min-[48rem]:grid-cols-4">
+      <ul className="mt-5 grid auto-rows-fr gap-3 min-[22.5rem]:grid-cols-2 min-[48rem]:grid-cols-3">
         {ACTIONS.map(({ route, label, description, Icon, primary }) => (
           <li key={label} className="flex min-w-0">
             <Link
               to={route}
+              /*
+                Icon beside the words in the middle, icon above them at both
+                ends — and the low end is the one that was wrong.
+
+                A card puts the icon on the left when there is room for the
+                label beside it. Measured: the icon, the gap, the card's own
+                padding and the page's come to 8.1rem, and the longest label
+                needs about 8 — so below roughly 17rem of viewport the label
+                has nowhere to go. It did not fail by overflowing, which is why
+                nothing caught it: `break-word` did as it was told and a reader
+                at 320px with 200% text got "Ser / mo / n / not / e" down five
+                lines of a card. Stacking gives the label the whole width.
+
+                Both bounds are in rem so the reader's own text size moves
+                them, which is the entire point: at 200% text a 320px phone is
+                a 10rem viewport, and 10rem of anything cannot hold a row.
+              */
               className={`flex h-full w-full items-center gap-3.5 p-4 ${cardClasses({
                 featured: primary,
                 interactive: true,
-              })} active:brightness-95 min-[22.5rem]:flex-col min-[22.5rem]:items-start min-[22.5rem]:gap-3 min-[22.5rem]:p-5`}
+              })} active:brightness-95 max-[17rem]:flex-col max-[17rem]:items-start max-[17rem]:gap-3 min-[22.5rem]:flex-col min-[22.5rem]:items-start min-[22.5rem]:gap-3 min-[22.5rem]:p-5`}
             >
               <span
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-control ${

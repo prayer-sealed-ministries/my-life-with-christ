@@ -43,18 +43,16 @@ import {
   toPassageMatch,
   type PassageMatch,
 } from '../lib/passage-search';
+import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 import { segmentRef } from '../lib/passages';
 import { todayIso } from '../storage/db';
 import type { Entry, EntryAnchor, EntryKind, EntryLink } from '../types';
 
-const KINDS: Array<{ value: EntryKind; label: string }> = [
-  { value: 'sermon', label: 'Sermon' },
-  { value: 'reading', label: 'Bible reading' },
-  { value: 'service', label: 'Service' },
-  { value: 'prayer', label: 'Prayer' },
-  { value: 'reflection', label: 'Reflection' },
-  { value: 'letter', label: 'Letter' },
-];
+/** The dropdown, built from the canonical list so it cannot fall behind it. */
+const KINDS: Array<{ value: EntryKind; label: string }> = ENTRY_KINDS.map((value) => ({
+  value,
+  label: ENTRY_KIND_LABELS[value],
+}));
 
 /** A link row while it is being edited: every field a string, nothing optional. */
 interface LinkRow {
@@ -81,8 +79,16 @@ interface FormState {
   forDescendants: boolean;
 }
 
-const blankForm = (): FormState => ({
-  kind: 'sermon',
+/**
+ * A fresh form.
+ *
+ * `kind` defaults to sermon and always has: fast capture assumes a sermon is
+ * starting, and `#/entry/new` must keep meaning exactly what it meant before
+ * the route could carry a kind at all. A caller passes one only when the
+ * reader asked for one.
+ */
+const blankForm = (kind: EntryKind = 'sermon'): FormState => ({
+  kind,
   title: '',
   date: todayIso(),
   place: '',
@@ -270,9 +276,19 @@ const SECTION_HEADING = 'font-serif text-lg font-semibold text-ink';
 export default function EntryEditor({
   entryId,
   anchorParam,
+  kindParam,
 }: {
   entryId?: string;
   anchorParam?: string;
+  /**
+   * The kind the route asked for, already validated by the parser.
+   *
+   * Seeds a NEW entry and nothing else. It is read inside the `!entryId`
+   * branch below, so an existing entry cannot be re-kinded by a URL: a hash
+   * like `#/entry/abc?kind=prayer` does not even parse to a kind, and if it
+   * somehow arrived here it would never be reached.
+   */
+  kindParam?: EntryKind;
 }) {
   const { storage, ready, touch, error: storageError } = useStorage();
   const unsavedWork = useUnsavedWorkGuard();
@@ -381,7 +397,7 @@ export default function EntryEditor({
       queueMicrotask(() => {
         if (cancelled) return;
         const anchor = anchorParam ? anchorFromParam(anchorParam) : null;
-        const initial: FormState = { ...blankForm(), anchors: anchor ? [anchor] : [] };
+        const initial: FormState = { ...blankForm(kindParam), anchors: anchor ? [anchor] : [] };
         setForm(initial);
         setBaseline(JSON.stringify(initial));
         setDetailsOpen(false);
@@ -410,7 +426,7 @@ export default function EntryEditor({
     return () => {
       cancelled = true;
     };
-  }, [ready, storage, entryId, anchorParam]);
+  }, [ready, storage, entryId, anchorParam, kindParam]);
 
   // Fast capture: the cursor belongs in the notes box the moment the form opens.
   //

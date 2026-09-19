@@ -116,7 +116,17 @@ function CurrentView() {
     case 'entry':
       return <EntryEditor key={`entry:${route.id}`} entryId={route.id} />;
     case 'newEntry':
-      return <EntryEditor key={`new:${route.anchor ?? ''}`} anchorParam={route.anchor} />;
+      // The kind is part of the key as well as a prop. Without it, moving from
+      // `#/entry/new` to `#/entry/new?kind=prayer` would reuse the instance
+      // that had already seeded a blank sermon, and the card would open the
+      // wrong thing while the URL said otherwise.
+      return (
+        <EntryEditor
+          key={`new:${route.anchor ?? ''}:${route.kind ?? ''}`}
+          anchorParam={route.anchor}
+          kindParam={route.kind}
+        />
+      );
     case 'data':
       return <DataView />;
     case 'import':

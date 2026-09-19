@@ -1,7 +1,7 @@
 /**
  * Geometry, measured rather than eyeballed.
  *
- * The complaint that started this pass was that the four cards on the front
+ * The complaint that started this pass was that the cards on the front
  * page "do not feel like one professional component family" — mismatched
  * heights, and a primary card that looked like a different component. None of
  * that is visible to axe, to the contrast walker, or to a unit test: they are
@@ -16,13 +16,17 @@ import { dismissWelcome, forceTheme } from './seed';
 
 /** The breakpoints the design has to hold at, named so a failure reads. */
 const WIDTHS = [
-  { name: 'large desktop', width: 1600, columns: 4 },
-  { name: 'laptop', width: 1280, columns: 4 },
-  { name: 'tablet', width: 834, columns: 4 },
+  { name: 'large desktop', width: 1600, columns: 3 },
+  { name: 'laptop', width: 1280, columns: 3 },
+  { name: 'tablet', width: 834, columns: 3 },
   { name: 'small tablet', width: 640, columns: 2 },
   { name: 'mobile', width: 390, columns: 2 },
   { name: 'narrow', width: 320, columns: 1 },
 ] as const;
+
+/** Every quick action, so the measurement cannot quietly stop covering one. */
+const CARD_NAMES = /Sermon note|Prayer|Reflection|Read Scripture|Topics|Search/;
+const CARD_COUNT = 6;
 
 interface Box {
   w: number;
@@ -37,9 +41,9 @@ interface Box {
 async function cardBoxes(page: Page): Promise<Box[]> {
   return page
     .locator('main ul li a')
-    .filter({ hasText: /Sermon note|Read Scripture|Topics|Search/ })
+    .filter({ hasText: CARD_NAMES })
     .evaluateAll((els) =>
-      els.slice(0, 4).map((el) => {
+      els.slice(0, 6).map((el) => {
         const r = el.getBoundingClientRect();
         const cs = getComputedStyle(el);
         // The title, not the icon: the first span in a card is the icon's
@@ -60,7 +64,7 @@ async function cardBoxes(page: Page): Promise<Box[]> {
     );
 }
 
-test('the four Journey cards are one component family at every width', async ({ page }) => {
+test('the Journey cards are one component family at every width', async ({ page }) => {
   test.setTimeout(120_000);
   await dismissWelcome(page);
   await forceTheme(page, 'light');
@@ -74,7 +78,7 @@ test('the four Journey cards are one component family at every width', async ({ 
     await page.waitForTimeout(250);
 
     const boxes = await cardBoxes(page);
-    expect(boxes, `${name}: expected four cards`).toHaveLength(4);
+    expect(boxes, `${name}: expected ${CARD_COUNT} cards`).toHaveLength(CARD_COUNT);
     checked += boxes.length;
 
     const distinct = (pick: (b: Box) => string | number) => new Set(boxes.map(pick)).size;
@@ -102,7 +106,7 @@ test('the four Journey cards are one component family at every width', async ({ 
     expect(overflows, `${name}: the page scrolls sideways`).toBe(false);
   }
 
-  examinedAtLeast(checked, WIDTHS.length * 4, 'card boxes measured across breakpoints');
+  examinedAtLeast(checked, WIDTHS.length * CARD_COUNT, 'card boxes measured across breakpoints');
 });
 
 /**
@@ -114,9 +118,10 @@ test('the four Journey cards are one component family at every width', async ({ 
  * rows come out equal by coincidence. Removing `auto-rows-fr` as a deliberate
  * sabotage changed nothing and the suite stayed green.
  *
- * So this lengthens a description the way an editor would, and asserts the four
- * are still equal. Measured: with `auto-rows-fr` the heights are 140/140/140/140,
- * without it they are 140/140/118/118.
+ * So this lengthens a description the way an editor would, and asserts they are
+ * still equal. Measured with four cards: with `auto-rows-fr` the heights were
+ * 140/140/140/140, without it 140/140/118/118. The same reasoning holds for six
+ * across two rows.
  */
 test('the card grid stays square when a description grows', async ({ page }) => {
   await dismissWelcome(page);
@@ -130,7 +135,7 @@ test('the card grid stays square when a description grows', async ({ page }) => 
     const ul = document.querySelector('main ul');
     if (!ul) return null;
     const descriptions = [...ul.querySelectorAll('li a span:last-child')];
-    if (descriptions.length < 4) return null;
+    if (descriptions.length < 6) return null;
     const original = descriptions[0].textContent;
     descriptions[0].textContent =
       'Start writing now. The details can wait until afterwards, and this sentence is ' +
@@ -142,8 +147,8 @@ test('the card grid stays square when a description grows', async ({ page }) => 
     return measured;
   });
 
-  expect(heights, 'could not find the four cards to measure').not.toBeNull();
-  examinedAtLeast(heights!.length, 4, 'cards measured with a lengthened description');
+  expect(heights, 'could not find the cards to measure').not.toBeNull();
+  examinedAtLeast(heights!.length, 6, 'cards measured with a lengthened description');
   expect(
     new Set(heights).size,
     `a longer description broke the grid: heights were ${heights!.join(', ')}`,
@@ -160,9 +165,9 @@ test('the featured card belongs to the family it leads', async ({ page }) => {
 
   const [featured, ...rest] = await page
     .locator('main ul li a')
-    .filter({ hasText: /Sermon note|Read Scripture|Topics|Search/ })
+    .filter({ hasText: CARD_NAMES })
     .evaluateAll((els) =>
-      els.slice(0, 4).map((el) => {
+      els.slice(0, 6).map((el) => {
         const cs = getComputedStyle(el);
         const px = (c: string) => c.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
         const [r, g, b] = px(cs.backgroundColor);
@@ -173,7 +178,7 @@ test('the featured card belongs to the family it leads', async ({ page }) => {
   const page_ = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   void page_;
 
-  // It must read as distinct from its three siblings…
+  // It must read as distinct from its five siblings…
   expect(featured.bg, 'the featured card is indistinguishable from the others').not.toBe(rest[0].bg);
 
   // …but not as a different component. In dark mode the old treatment inverted

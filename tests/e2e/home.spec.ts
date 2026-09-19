@@ -13,10 +13,18 @@ import { expect, test, type Page } from '@playwright/test';
 import { examinedAtLeast } from './floor';
 import { dismissWelcome, seedEntries, SEED_ENTRIES } from './seed';
 
-const ACTIONS = ['Sermon note', 'Read Scripture', 'Topics', 'Search'] as const;
+/** In the order Home offers them: the three that write, then the three that find. */
+const ACTIONS = [
+  { name: 'Sermon note', href: '#/entry/new' },
+  { name: 'Prayer', href: '#/entry/new?kind=prayer' },
+  { name: 'Reflection', href: '#/entry/new?kind=reflection' },
+  { name: 'Read Scripture', href: '#/browse' },
+  { name: 'Topics', href: '#/topics' },
+  { name: 'Search', href: '#/search' },
+] as const;
 
-/** The action grid: one column, then two at 22.5rem, then four at 48rem. */
-const expectedColumns = (width: number) => (width >= 768 ? 4 : width >= 360 ? 2 : 1);
+/** The action grid: one column, then two at 22.5rem, then three at 48rem. */
+const expectedColumns = (width: number) => (width >= 768 ? 3 : width >= 360 ? 2 : 1);
 
 // Scoped to <main>: from 768px the header's own navigation also has links
 // called Topics and Search, and an unscoped match finds both.
@@ -53,19 +61,41 @@ test.describe('the way in', () => {
     await arrive(page, 390);
 
     const hrefs: string[] = [];
-    for (const name of ACTIONS) {
+    for (const { name } of ACTIONS) {
       const card = actionCard(page, name);
       await expect(card, `${name} is not on Home`).toBeVisible();
       hrefs.push((await card.getAttribute('href')) ?? '');
     }
-    examinedAtLeast(hrefs.length, 4, 'quick actions checked');
-    expect(hrefs).toEqual(['#/entry/new', '#/browse', '#/topics', '#/search']);
+    examinedAtLeast(hrefs.length, 6, 'quick actions checked');
+    expect(hrefs).toEqual(ACTIONS.map((action) => action.href));
+  });
+
+  test('opens Prayer and Reflection already set to that kind', async ({ page }) => {
+    // The point of the two new cards. A card that opened the ordinary sermon
+    // form would look identical from the outside and be a lie, so the check is
+    // what the editor's Kind field says after following the link.
+    for (const { name, href } of [
+      { name: 'Prayer', href: '#/entry/new?kind=prayer' },
+      { name: 'Reflection', href: '#/entry/new?kind=reflection' },
+    ]) {
+      await arrive(page, 390);
+      await actionCard(page, name).click();
+      await expect(page).toHaveURL(new RegExp(href.replace('?', '\\?')));
+      await expect(page.getByLabel('Kind', { exact: true })).toHaveValue(name.toLowerCase());
+    }
+  });
+
+  test('leaves the plain sermon route exactly as it was', async ({ page }) => {
+    await arrive(page, 390);
+    await actionCard(page, 'Sermon note').click();
+    await expect(page).toHaveURL(/#\/entry\/new$/);
+    await expect(page.getByLabel('Kind', { exact: true })).toHaveValue('sermon');
   });
 
   test('gives each card a tap target worth aiming at', async ({ page }) => {
     await arrive(page, 390);
 
-    for (const name of ACTIONS) {
+    for (const { name } of ACTIONS) {
       const box = await actionCard(page, name).boundingBox();
       expect(box, `${name} did not render`).not.toBeNull();
       // The whole card navigates, so the whole card has to be comfortably
@@ -122,7 +152,7 @@ test.describe('it holds together when squeezed', () => {
       expect(result.h1InMain).toBe(1);
       expect(result.h1Anywhere, `more than one h1 at ${width}px`).toBe(1);
 
-      for (const name of ACTIONS) {
+      for (const { name } of ACTIONS) {
         await expect(actionCard(page, name), `${name} vanished at ${width}px`).toBeVisible();
       }
     });
@@ -159,7 +189,11 @@ test.describe('what a journal shows of itself', () => {
     await seedEntries(page, SEED_ENTRIES);
     await page.waitForLoadState('networkidle');
 
-    const cards = page.locator('main a[href^="#/entry/"]').filter({ hasNotText: 'Sermon note' });
+    // Scoped to the "Recently written" region, not filtered by label. The quick
+    // actions now include Prayer and Reflection, whose hrefs also begin
+    // `#/entry/` — an exclusion list of names would have had to grow with every
+    // card added, and would have silently stopped excluding anything.
+    const cards = page.locator('section[aria-labelledby="recent-heading"] a[href^="#/entry/"]');
     const count = await cards.count();
     expect(count, 'Home grew into a second timeline').toBeLessThanOrEqual(3);
     expect(count, 'no recent entries showed at all').toBeGreaterThan(0);
@@ -209,4 +243,49 @@ test.describe('the promise that cannot be collapsed', () => {
     });
     expect(order, 'the explanation is back above the actions').toBe('after');
   });
+});
+
+test.describe('the cards stay readable when the reader enlarges their text', () => {
+  /** How many lines each action's own name is broken across. */
+  const labelLines = (page: Page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('main ul a')].map((card) => {
+        const label = card.querySelector('span:last-child > span') as HTMLElement;
+        const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight) || 1;
+        return {
+          text: (label.textContent ?? '').trim(),
+          lines: Math.round(label.getBoundingClientRect().height / lineHeight),
+        };
+      }),
+    );
+
+  for (const width of [320, 390]) {
+    test(`does not break a card's own name apart at ${width}px and 200% text`, async ({ page }) => {
+      // Found by looking at the screenshots rather than by any assertion, which
+      // is why this one exists: at 320px with doubled text the icon took most
+      // of the row and "Sermon note" came out as "Ser / mo / n / not / e" down
+      // five lines. Nothing overflowed and reflow passed — `break-word` did
+      // exactly as it was told — so every check in the suite was satisfied by a
+      // card no one could read.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Page.enable');
+      await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 32 } });
+
+      await arrive(page, width);
+      await expect(page.locator('html')).toHaveCSS('font-size', '32px');
+
+      const labels = await labelLines(page);
+      examinedAtLeast(labels.length, 6, `action labels measured at ${width}px`);
+
+      const broken = labels.filter((label) => label.lines > 2);
+      expect(
+        broken.map((label) => `${label.text}: ${label.lines} lines`).join('\n'),
+        `a card's name is broken across more than two lines at ${width}px and 200% text`,
+      ).toBe('');
+
+      const result = await layout(page);
+      expect(result.pageOverflow, `the page scrolls sideways at ${width}px`).toBeLessThanOrEqual(1);
+      expect(result.clipped, 'a card clipped its text').toBe(0);
+    });
+  }
 });

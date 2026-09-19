@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ENTRY_KINDS } from '../lib/entry-kinds';
 import { href, parseHash, type Route } from './router';
 
 describe('parseHash', () => {
@@ -36,6 +37,36 @@ describe('parseHash', () => {
     });
   });
 
+  it('reads a requested entry kind, and only a real one', () => {
+    // Every kind the model has, not the two Home happens to link to. A route
+    // that can express four of six is a route that will quietly stop matching
+    // the editor's dropdown.
+    for (const kind of ENTRY_KINDS) {
+      expect(parseHash(`#/entry/new?kind=${kind}`), kind).toEqual({ name: 'newEntry', kind });
+    }
+
+    // A hash is the one input a reader can type, so nonsense has to land on
+    // the ordinary blank entry rather than on a kind that does not exist.
+    for (const bad of ['garbage', '', 'SERMON', 'prayer ', '__proto__', 'sermon,prayer']) {
+      expect(parseHash(`#/entry/new?kind=${encodeURIComponent(bad)}`), bad).toEqual({
+        name: 'newEntry',
+      });
+    }
+
+    // And it composes with the anchor parameter that was already there.
+    expect(parseHash('#/entry/new?anchor=matthew-5-1-12&kind=reflection')).toEqual({
+      name: 'newEntry',
+      anchor: 'matthew-5-1-12',
+      kind: 'reflection',
+    });
+  });
+
+  it('never reads a kind for an entry that already exists', () => {
+    // The editor is the same component for both, so the route is where this
+    // has to be settled: a saved entry's kind is a fact about the entry.
+    expect(parseHash('#/entry/abc-123?kind=prayer')).toEqual({ name: 'entry', id: 'abc-123' });
+  });
+
   it('reads a search query', () => {
     expect(parseHash('#/search?q=whitfield')).toEqual({ name: 'search', query: 'whitfield' });
     expect(parseHash('#/search')).toEqual({ name: 'search', query: '' });
@@ -67,6 +98,8 @@ describe('href round-trips parseHash', () => {
     { name: 'entry', id: 'abc-123' },
     { name: 'newEntry' },
     { name: 'newEntry', anchor: 'matthew-5-1-12' },
+    ...ENTRY_KINDS.map((kind): Route => ({ name: 'newEntry', kind })),
+    { name: 'newEntry', anchor: 'matthew-5-1-12', kind: 'prayer' },
     { name: 'data' },
     { name: 'legacy' },
   ];

@@ -68,6 +68,43 @@ export function SearchIcon({ className }: IconProps) {
   );
 }
 
+/**
+ * A lit candle.
+ *
+ * Praying hands were tried first and abandoned after three attempts: at one
+ * stroke weight and 20 rendered pixels the shape read as a tulip, then a
+ * pencil, then a sailboat. Every version was a fair drawing of hands and none
+ * of them survived being small, which is the only size this icon is ever used
+ * at. A candle is unambiguous at any size, is as devotional a symbol as the
+ * hands were, and sits beside a card that says "Prayer" in words.
+ */
+export function PrayIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 3.2c1.5 1.7 2.3 2.9 2.3 3.9a2.3 2.3 0 0 1-4.6 0c0-1 .8-2.2 2.3-3.9Z" />
+      <path d="M12 9.1v2.1" />
+      <path d="M9.4 11.2h5.2a1 1 0 0 1 1 1v6.6H8.4v-6.6a1 1 0 0 1 1-1Z" />
+      <path d="M6.8 18.8h10.4" />
+    </svg>
+  );
+}
+
+/**
+ * A thought, trailing away: what this meant to me, rather than what was said.
+ *
+ * Not a speech bubble and not the concentric rings Topics already owns — a
+ * water-reflection glyph was tried first and read as a landscape photograph.
+ */
+export function ReflectIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M8 4.8h8a3.2 3.2 0 0 1 3.2 3.2v3.6a3.2 3.2 0 0 1-3.2 3.2H8a3.2 3.2 0 0 1-3.2-3.2V8A3.2 3.2 0 0 1 8 4.8Z" />
+      <circle cx="7.6" cy="17.6" r="1.3" />
+      <circle cx="4.6" cy="20.4" r=".9" />
+    </svg>
+  );
+}
+
 /** A bound volume: the journal as it becomes a book. */
 export function VolumeIcon({ className }: IconProps) {
   return (

@@ -17,6 +17,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import { isEntryKind } from '../lib/entry-kinds';
+import type { EntryKind } from '../types';
+
 export type Route =
   | { name: 'home' }
   | { name: 'browse' }
@@ -27,7 +30,19 @@ export type Route =
   | { name: 'timeline' }
   | { name: 'search'; query: string }
   | { name: 'entry'; id: string }
-  | { name: 'newEntry'; anchor?: string }
+  /**
+   * A blank entry, optionally opened as a particular kind.
+   *
+   * `kind` is a request, not a record: it seeds the editor's Kind field and
+   * nothing else. The reader can change it before saving, and what reaches
+   * storage is whatever the field says at that moment — the parameter is gone
+   * by then, because saving navigates to `#/entry/<id>`.
+   *
+   * A query parameter rather than a path segment, for the same reason `anchor`
+   * and `q` are: it is optional, it does not name a resource, and `#/entry/new`
+   * has to keep meaning exactly what it has always meant.
+   */
+  | { name: 'newEntry'; anchor?: string; kind?: EntryKind }
   | { name: 'data' }
   | { name: 'import' }
   | { name: 'legacy' }
@@ -65,7 +80,16 @@ export function parseHash(hash: string): Route {
     case 'entry':
       if (parts[1] === 'new') {
         const anchor = params.get('anchor');
-        return anchor ? { name: 'newEntry', anchor } : { name: 'newEntry' };
+        const kind = params.get('kind');
+        const route: Route = { name: 'newEntry' };
+        if (anchor) route.anchor = anchor;
+        // Anything this build does not recognise is dropped here rather than
+        // carried into the editor. A hash is the one input a person can type,
+        // and `?kind=garbage` must open the ordinary blank entry, not a broken
+        // one — the route simply does not have a way to express a kind that
+        // does not exist.
+        if (isEntryKind(kind)) route.kind = kind;
+        return route;
       }
       return parts[1] ? { name: 'entry', id: parts[1] } : { name: 'timeline' };
     case 'data':
@@ -106,8 +130,15 @@ export function href(route: Route): string {
       return route.query ? `#/search?q=${encodeURIComponent(route.query)}` : '#/search';
     case 'entry':
       return `#/entry/${encodeURIComponent(route.id)}`;
-    case 'newEntry':
-      return route.anchor ? `#/entry/new?anchor=${encodeURIComponent(route.anchor)}` : '#/entry/new';
+    case 'newEntry': {
+      // Built rather than concatenated: two optional parameters is where a
+      // hand-rolled `?a=` + `&b=` starts getting the first separator wrong.
+      const params = new URLSearchParams();
+      if (route.anchor) params.set('anchor', route.anchor);
+      if (route.kind) params.set('kind', route.kind);
+      const query = params.toString();
+      return query ? `#/entry/new?${query}` : '#/entry/new';
+    }
     case 'data':
       return '#/data';
     case 'import':
