@@ -34,7 +34,15 @@ jobs:
       - name: Gate — no licensed or private data is tracked
         run: npm run verify:no-private-data
 
-      - name: Workflow policy
+      # The native-policy tests assert against the assets actually copied into
+      # the iOS and Android projects, and those are generated, not committed.
+      # Without this step they have nothing to look at and say so by failing —
+      # which is the right behaviour for a check about shipped bytes, and the
+      # reason the build has to come first rather than the check being relaxed.
+      - name: Build and sync native assets
+        run: npm run native:assets && npm run native:sync
+
+      - name: Workflow policy and native packaging
         run: npx vitest run scripts/__tests__/
 
       - name: Build (refs-only)
@@ -63,6 +71,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Build and sync native assets
+        run: npm run native:assets && npm run native:sync
       - name: Typecheck
         run: npm run typecheck
       - name: Lint

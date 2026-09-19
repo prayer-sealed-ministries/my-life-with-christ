@@ -262,6 +262,14 @@ npm run test:e2e
 npm run test:a11y      # axe, keyboard, contrast, reflow
 ```
 
+A few checks in `npm test` inspect the web assets copied into the iOS and
+Android projects, which are generated rather than committed. On a fresh clone
+they have nothing to look at and say so. Generate them once:
+
+```bash
+npm run native:assets && npm run native:sync
+```
+
 Regenerating data (both outputs are committed; the ingest is idempotent and CI
 fails if re-running changes them):
 
