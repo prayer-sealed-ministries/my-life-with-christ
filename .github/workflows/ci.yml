@@ -21,7 +21,14 @@ jobs:
     name: data-gate
     runs-on: ubuntu-latest
     steps:
+      # Full history, not the default shallow checkout. The licensed-data guard
+      # reads commit messages as well as files, and with one commit to look at
+      # it reports NULL MEASUREMENT and exits — correctly, since a scan of one
+      # message proves nothing about a branch. Depth is what makes the check
+      # real here rather than what makes it pass.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
