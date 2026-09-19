@@ -37,7 +37,14 @@ import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
 import { applyImport, parseImport, previewImport, type ParsedImport } from '../export/importer';
 import { segmentRef } from '../lib/passages';
-import type { Entry, EntryKind, ExportFilter, ImportMode, ScriptureRef } from '../types';
+import type {
+  Entry,
+  EntryKind,
+  ExportFilter,
+  ImportMode,
+  ImportPreview,
+  ScriptureRef,
+} from '../types';
 
 const KINDS = Object.keys(KIND_LABELS) as EntryKind[];
 
@@ -346,7 +353,21 @@ export default function DataView() {
     }
   };
 
-  const modes: Array<{ value: ImportMode; label: string; detail: string }> = [
+  /**
+   * The two ways an import can land, described from the preview itself.
+   *
+   * The replace count comes from `preview.existing` — the very list the preview
+   * was computed from — and never from the page's own entry count. Those are
+   * two reads taken at two moments, and the count above starts at 0 until its
+   * read lands: choose a file quickly enough and the old code offered "Deletes
+   * all 0 entries in this journal first. There is no undo." over a journal that
+   * was not empty. The line beside a destructive action is the last place a
+   * number may be guessed at, and taking it from the preview means there is no
+   * second read left to disagree.
+   */
+  const describeModes = (
+    counted: ImportPreview,
+  ): Array<{ value: ImportMode; label: string; detail: string }> => [
     {
       value: 'merge',
       label: 'Merge (recommended)',
@@ -355,7 +376,7 @@ export default function DataView() {
     {
       value: 'replace',
       label: 'Replace — destructive',
-      detail: `Deletes all ${plural(entryCount, 'entry', 'entries')} in this journal first, then writes the file's entries. There is no undo.`,
+      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, then writes the file's entries. There is no undo.`,
     },
   ];
 
@@ -769,7 +790,7 @@ export default function DataView() {
                 label: the radio sits in column one spanning both rows, so the
                 label's own text is never buried in a wrapper element.
               */}
-              {modes.map((option) => (
+              {describeModes(preview).map((option) => (
                 <label
                   key={option.value}
                   className="mt-1 grid min-h-11 grid-cols-[auto_1fr] items-start gap-x-3 py-1 text-sm text-ink-soft"

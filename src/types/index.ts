@@ -391,6 +391,15 @@ export type ImportMode = 'merge' | 'replace';
 export interface ImportPreview {
   mode: ImportMode;
   incoming: number;
+  /**
+   * Entries already in this journal — exactly the set replace would delete.
+   *
+   * Carried on the preview rather than counted again by whoever is describing
+   * it. A second, separately-timed read can disagree with this one, and the
+   * place that disagreement surfaces is the sentence next to the destructive
+   * option, which must never state a number it has not actually read.
+   */
+  existing: number;
   newEntries: number;
   updated: number;
   unchanged: number;

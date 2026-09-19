@@ -140,6 +140,7 @@ export function previewImport(
   return {
     mode,
     incoming: incoming.entries.length,
+    existing: existing.length,
     newEntries,
     updated,
     unchanged,

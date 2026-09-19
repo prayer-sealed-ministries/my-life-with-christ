@@ -238,6 +238,62 @@ describe('DataView', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The race that made the test above fail about one CI run in forty.
+   *
+   * The page counts the journal through `useStorageQuery`, which cannot even
+   * start until the provider has opened AND read settings — three round-trips
+   * and a render. The import preview needs one `listEntries()`, issued straight
+   * at the provider. When the preview won, the destructive option quoted the
+   * count's *initial* value and said "Deletes all 0 entries in this journal
+   * first. There is no undo." beside a button that was about to delete one.
+   *
+   * Driven rather than waited for: settings never resolve here, so the page's
+   * own count is provably unread — no sleep, no interval, no luck. The preview
+   * must still state the truth, because it carries the list it was computed
+   * from.
+   */
+  it('says how many entries replace would delete before the page has counted any', async () => {
+    await db.putEntries([GRACE]);
+
+    // Everything real except settings, which hang. `ready` never flips, so
+    // useStorageQuery never issues its read and entryCount stays at its
+    // initial 0 for the whole test.
+    const neverSettles = new Promise<never>(() => {});
+    const uncounted: StorageProvider = Object.assign(Object.create(db) as StorageProvider, {
+      getSettings: () => neverSettles,
+    });
+
+    render(
+      <RouterProvider>
+        <StorageContextProvider provider={uncounted}>
+          <DataView />
+        </StorageContextProvider>
+      </RouterProvider>,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    // The page itself admits it has not counted; the preview may not pretend to.
+    expect(screen.getByText('Counting your entries…')).toBeInTheDocument();
+
+    const payload: JourneyExport = {
+      format: 'journey-export',
+      version: 1,
+      exportedAt: '2026-05-01T00:00:00.000Z',
+      entries: [QUIET],
+    };
+    const file = new File([JSON.stringify(payload)], 'journey.json', { type: 'application/json' });
+
+    fireEvent.change(screen.getByLabelText('Journal file to read'), { target: { files: [file] } });
+    await screen.findByRole('heading', { name: 'What this would do' });
+
+    // Still uncounted, and the destructive option still tells the truth.
+    expect(screen.getByText('Counting your entries…')).toBeInTheDocument();
+    expect(
+      screen.getByRole('radio', { name: /Deletes all 1 entry in this journal first/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Deletes all 0 entries/)).not.toBeInTheDocument();
+  });
+
   it('keeps an old bare-id anchor readable, or preserves it, but never stores it raw', async () => {
     renderView();
     await screen.findByRole('heading', { level: 1 });
