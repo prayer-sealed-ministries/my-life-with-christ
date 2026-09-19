@@ -128,6 +128,106 @@ describe('the Pages workflow can only ever publish a refs-only build', () => {
   });
 });
 
+/**
+ * Publication is discretionary; verification is not.
+ *
+ * While the repository is private and Pages is deliberately not enabled, every
+ * push used to fail at `configure-pages` — a permanently red deployment
+ * workflow sitting next to a build that had actually passed. The cure for that
+ * must not become the disease: the obvious "fix" is to make the whole workflow
+ * conditional, which would quietly take the public-profile bundle gate off
+ * every push as well.
+ *
+ * So these assert both halves. The Pages API is reachable only by hand, and
+ * nothing that checks the artefact is reachable only by hand.
+ */
+describe('the Pages workflow publishes only when a human asks it to', () => {
+  // Pinned exactly, so publishing on every push again is an edit to this line
+  // and not an accident. When the site goes live for real, this is the change.
+  const PUBLICATION_CONDITION = "github.event_name == 'workflow_dispatch'";
+
+  // YAML 1.1 would read the `on:` key as the boolean true; the parser here is
+  // 1.2 and reads it as a string. Accept either rather than depend on it.
+  const triggers = pages.on ?? pages[true];
+
+  /** Steps that talk to the Pages API — the ones that fail when it is off. */
+  const pagesApiSteps = stepsOf(pages, 'build').filter((step) =>
+    /configure-pages|upload-pages-artifact|deploy-pages/.test(step.uses ?? ''),
+  );
+
+  it('still has a way to publish at all', () => {
+    // A guard that only forbade would be satisfied by a workflow that can never
+    // deploy, which is not "deferred", it is deleted.
+    expect(triggers, 'the Pages workflow parsed no triggers').toBeTruthy();
+    expect(
+      Object.keys(triggers),
+      'no workflow_dispatch trigger: the site could never be published by hand',
+    ).toContain('workflow_dispatch');
+    expect(pages.jobs.deploy?.steps?.some((step) => /deploy-pages/.test(step.uses ?? ''))).toBe(true);
+  });
+
+  it('found the steps that touch the Pages API', () => {
+    // The floor. Every assertion below is "each of these is guarded", which an
+    // empty list satisfies perfectly.
+    expect(
+      pagesApiSteps.length,
+      'no Pages API steps found — the guard assertions below would pass vacuously',
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('guards every Pages API step with the publication condition', () => {
+    for (const step of pagesApiSteps) {
+      expect(
+        step.if,
+        `${step.uses} is not gated: a push would reach the Pages API and fail`,
+      ).toBe(PUBLICATION_CONDITION);
+    }
+  });
+
+  it('guards the deploy job with the same condition', () => {
+    expect(pages.jobs.deploy.if).toBe(PUBLICATION_CONDITION);
+  });
+
+  it('never lets a push publish', () => {
+    // Reads a value GitHub always sets. A condition resting on a repository
+    // field or a repo variable can evaluate to "publish" when the field is
+    // simply absent, which is the wrong way for this one to fail.
+    expect(PUBLICATION_CONDITION).toMatch(/github\.event_name\s*==\s*'workflow_dispatch'/);
+    // Stated positively, and tolerant of a missing `if`, so an ungated step
+    // fails here saying it would run on a push rather than throwing on a type.
+    for (const step of pagesApiSteps) {
+      expect(step.if ?? '', `${step.uses} would run on a push`).toMatch(
+        /event_name\s*==\s*'workflow_dispatch'/,
+      );
+    }
+  });
+
+  it('leaves every check unconditional, so declining to publish skips no gate', () => {
+    const guarded = /npm run typecheck|npm run lint|npm test|npm run build|verify:bundle|verify-bundle|native:assets/;
+    const checks = stepsOf(pages, 'build').filter((step) => guarded.test(step.run ?? ''));
+
+    expect(
+      checks.length,
+      'no check steps found in the build job — this assertion would mean nothing',
+    ).toBeGreaterThanOrEqual(3);
+
+    for (const step of checks) {
+      expect(
+        step.if,
+        `"${step.name ?? step.run}" is conditional; a gate that can be skipped is not a gate`,
+      ).toBeUndefined();
+    }
+  });
+
+  it('still verifies before it uploads, now that the upload is conditional', () => {
+    const steps = stepsOf(pages, 'build');
+    const verifyAt = steps.findIndex((step) => /verify:bundle|verify-bundle/.test(stepText(step)));
+    const uploadAt = steps.findIndex((step) => /upload-pages-artifact/.test(step.uses ?? ''));
+    expect(verifyAt).toBeGreaterThanOrEqual(0);
+    expect(uploadAt).toBeGreaterThan(verifyAt);
+  });
+});
+
 describe('CI verifies both profiles', () => {
   it('runs the verifier against a refs-only build', () => {
     const text = JSON.stringify(ci);

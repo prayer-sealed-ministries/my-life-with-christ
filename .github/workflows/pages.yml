@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Pages (build always, deploy on demand)
 
 # A GitHub Pages site is public, whatever the repository's own visibility.
 #
@@ -10,6 +10,33 @@ name: Deploy to GitHub Pages
 # repository to put there. Only a profile this project owns outright can be
 # deployed, because there is no other kind here.
 # See DATA-LICENSE.md and src/data/sections/SOURCE.md.
+#
+# --- Why a push does not publish -------------------------------------------
+#
+# Publication is an act, not a side effect of committing. While this repository
+# is private and Pages is deliberately not enabled, a push that tried to publish
+# failed at `configure-pages`, leaving a permanently red deployment workflow
+# next to a build that was in fact perfectly good. A red mark that everybody has
+# learned to ignore is worse than no mark: it is where a real failure would hide.
+#
+# So the two jobs answer two different questions, and only the second is
+# discretionary:
+#
+#   build   — is this publishable? Typecheck, lint, the suite under the profile
+#             this workflow deploys, the build itself, and the bundle gate.
+#             Runs on every push. Nothing here is conditional; the gate cannot
+#             be skipped by choosing not to publish.
+#   deploy  — publish it. Runs only when a human starts this workflow by hand
+#             (Actions -> this workflow -> Run workflow).
+#
+# `github.event_name == 'workflow_dispatch'` is fail-closed on purpose: it reads
+# a value GitHub always sets, so there is no missing repository field or unset
+# variable that could silently evaluate to "yes, publish". A push cannot reach
+# the Pages API however the repository is configured.
+#
+# When this site is published for real, that condition is the one line to
+# revisit — and scripts/__tests__/workflow-policy.test.mjs will make the change
+# a deliberate one.
 
 on:
   push:
@@ -63,18 +90,33 @@ jobs:
         run: npm run build
 
       # The gate, run against the actual built files. If anything that must not
-      # be published survived into them, the deploy stops here.
+      # be published survived into them, the run stops here — whether or not
+      # anyone asked for a deploy. Unconditional on purpose: a build that is not
+      # being published today is still the build that will be published later,
+      # and the answer must be known now.
       - name: Verify the artefact carries nothing it should not
         run: npm run verify:bundle -- --profile public
 
+      # Everything above has run and passed; nothing has been sent anywhere.
+      - name: Say plainly that nothing was published
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo "Built and verified. Not published: this run came from ${{ github.event_name }}," >> "$GITHUB_STEP_SUMMARY"
+          echo "and publication happens only when this workflow is started by hand." >> "$GITHUB_STEP_SUMMARY"
+
+      # The only two steps that touch the Pages API, and the first thing that
+      # fails when Pages is not enabled. Gated with the deploy job below.
       - uses: actions/configure-pages@v5
+        if: github.event_name == 'workflow_dispatch'
 
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'workflow_dispatch'
         with:
           path: dist
 
   deploy:
     needs: build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
