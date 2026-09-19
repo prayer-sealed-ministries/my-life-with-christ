@@ -78,3 +78,21 @@ export function VolumeIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Four arrows pushing outward: give this box the whole screen. */
+export function ExpandIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M9 4.5H4.5V9M15 4.5h4.5V9M9 19.5H4.5V15M15 19.5h4.5V15" />
+    </svg>
+  );
+}
+
+/** The same four arrows pulled back in: hand the screen back to the app. */
+export function CollapseIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4.5 9H9V4.5M19.5 9H15V4.5M4.5 15H9v4.5M19.5 15H15v4.5" />
+    </svg>
+  );
+}

@@ -13,7 +13,7 @@
  * boxes, separate headings and separate storage.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import {
   canonBooks,
@@ -24,10 +24,14 @@ import {
   topics,
   topicsById,
 } from '../app/data';
+import { useFocusMode } from '../app/focus-context';
+import { registerOverlay } from '../app/overlay';
 import { Link, useRouter } from '../app/router';
 import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
+import { CollapseIcon, ExpandIcon } from '../components/icons';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { CONTROL, FOCUS } from '../components/styles';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
 import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
@@ -289,6 +293,7 @@ export default function EntryEditor({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const { showNotice } = useNotice();
+  const { focused, enterFocus, exitFocus } = useFocusMode();
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -308,8 +313,11 @@ export default function EntryEditor({
   const bookPickerId = useId();
   const sectionPickerId = useId();
   const reasonId = useId();
+  const focusKindId = useId();
 
   const notesBoxRef = useRef<HTMLDivElement>(null);
+  /** The control that turns focus mode on; where focus goes when it turns off. */
+  const focusToggleRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   // Removing a row destroys the button that was clicked, which drops focus to
   // <body>. These two outlive every removal, so they are where focus goes
@@ -419,8 +427,19 @@ export default function EntryEditor({
   // So the claim only takes focus from the shell's own wrapper, or from
   // nothing. Anywhere the reader actually chose, it stands down. `from` names
   // the shell's container, which is the one place it IS allowed to take from.
+  //
+  // In focus mode the claim also applies to an entry that already exists, which
+  // is how writing survives a save. Saving a new entry navigates, App remounts
+  // this view under a new key, and the shell then moves focus to the page
+  // heading — so in the ordinary editor the caret leaves the notes box and, on
+  // a phone, the keyboard closes with it. That is defensible when the page has
+  // visibly changed. In focus mode nothing changed: the reader is mid-sermon
+  // and the next point is already being spoken. The guard below is what makes
+  // this safe to widen — it still only takes focus from the shell's own
+  // wrapper or from nothing, never from somewhere the reader chose.
   useEffect(() => {
-    if (entryId || !loaded) return;
+    if (!loaded) return;
+    if (entryId && !focused) return;
     return nextFrame(() => {
       const textarea = notesBoxRef.current?.querySelector('textarea');
       if (!textarea) return;
@@ -441,7 +460,7 @@ export default function EntryEditor({
         textarea.focus({ preventScroll: true });
       }
     });
-  }, [entryId, loaded]);
+  }, [entryId, loaded, focused]);
 
   // Unsaved-changes guard, asked for through the platform rather than wired to
   // `beforeunload` here.
@@ -457,6 +476,56 @@ export default function EntryEditor({
     return unsavedWork.protect(() => true);
   }, [dirty, unsavedWork]);
 
+
+  /**
+   * Enter focus mode and put the cursor where the point of it is.
+   *
+   * Safe to take focus unconditionally, unlike the fast-capture claim above:
+   * this runs from a click on the toggle, so the reader has just said "I want
+   * to write" and the thing holding focus is the button they pressed.
+   */
+  const openFocus = useCallback(() => {
+    focusAfterRender.current = () => {
+      notesBoxRef.current?.querySelector('textarea')?.focus({ preventScroll: true });
+    };
+    enterFocus();
+  }, [enterFocus]);
+
+  /**
+   * Leave focus mode, handing focus back to the control that reappears.
+   *
+   * The button that was just pressed is inside the focus bar, which this
+   * unmounts. Without the handover a keyboard user is dropped on <body> and
+   * starts again from the top of the document.
+   */
+  const closeFocus = useCallback(() => {
+    focusAfterRender.current = () => focusToggleRef.current?.focus();
+    exitFocus();
+  }, [exitFocus]);
+
+  /**
+   * Android Back leaves focus mode before it leaves the entry.
+   *
+   * Nothing here knows it is on Android, and that is the point. `decideBack`
+   * already ranks "something is on top — dismiss it" above navigating, and the
+   * overlay registry is how a view says it is that something. Registering here
+   * gets the behaviour for free and keeps every trace of platform identity out
+   * of this file, which the platform boundary requires.
+   *
+   * (The policy test that enforces that boundary is a literal text search, and
+   * it rightly caught the earlier wording of this very comment. Naming the
+   * check you are satisfying is not worth weakening it to allow.)
+   *
+   * The registry holds one entry, which is sound here because the only other
+   * claimant is the app menu — and the menu lives in the header, which focus
+   * mode does not render. `EntryEditor.focus-back.test.tsx` holds that invariant rather
+   * than leaving it as a comment.
+   */
+  useEffect(() => {
+    if (!focused) return;
+    registerOverlay(closeFocus);
+    return () => registerOverlay(null);
+  }, [focused, closeFocus]);
 
   // Send focus to the confirm button so a keyboard user is standing on the
   // decision rather than hunting for where the page changed.
@@ -668,12 +737,40 @@ export default function EntryEditor({
 
   const canSave = hasContent(form);
 
+  const kindLabels = KINDS.map((kind) => (
+    <option key={kind.value} value={kind.value}>
+      {kind.label}
+    </option>
+  ));
+
   return (
     <>
-      <h1 className="font-serif text-2xl font-semibold">{heading}</h1>
-      <p className="measure mt-1 text-sm text-ink-soft">
-        Write the notes now. Everything else can wait, or stay empty.
-      </p>
+      {/* The heading stays in focus mode and stops being seen.
+          It is the view's only h1 and the target the shell moves focus to after
+          navigation, so removing it would break both the document outline and
+          the route announcement. `sr-only` keeps every bit of that and gives
+          the writing surface the hundred pixels it was spending on a title the
+          reader can already see they are on. */}
+      {focused ? (
+        <h1 className="sr-only">{heading}</h1>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-serif text-2xl font-semibold">{heading}</h1>
+            <p className="measure mt-1 text-sm text-ink-soft">
+              Write the notes now. Everything else can wait, or stay empty.
+            </p>
+          </div>
+          {/* Not the Fullscreen API, deliberately. This hides the application's
+              own chrome and nothing else: no permission prompt, no system
+              gesture to learn, no platform call, and it works identically in a
+              browser tab and in the installed app. */}
+          <Button ref={focusToggleRef} onClick={openFocus} className="shrink-0">
+            <ExpandIcon className="h-5 w-5" />
+            Focus
+          </Button>
+        </div>
+      )}
 
       <LiveRegion message={message} />
 
@@ -686,25 +783,88 @@ export default function EntryEditor({
         </p>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+      <form
+        onSubmit={handleSubmit}
+        className={focused ? 'measure mx-auto space-y-6' : 'mt-6 space-y-6'}
+      >
+        {/* The only chrome in focus mode: the way out, what this entry is, and
+            Save. Inside the form on purpose — a submit button outside its form
+            needs the `form` attribute, and this way the button is simply a
+            submit button, which is the version that cannot go wrong.
+
+            `safe-top` on the outer element and the padding on the inner one,
+            because `.safe-top` sets `padding-top` outright and a `py-*` class
+            on the same element would beat it. */}
+        {focused ? (
+          <div className="safe-top sticky top-0 z-30 -mx-5 border-b border-line bg-app px-5">
+            {/* Wraps, and that is not decoration. At 320px with the reader's
+                text at 200% the three controls need 340px of a 240px line, and
+                a non-wrapping row pushed Save clean off the side of the screen
+                — a reader who had enlarged their text could not save. Save
+                takes its own line there, right-aligned by `ml-auto` wherever it
+                lands. */}
+            <div className="flex flex-wrap items-center gap-2 py-2">
+              <Button
+                variant="ghost"
+                onClick={closeFocus}
+                aria-label="Leave focus mode"
+                title="Leave focus mode"
+                className="shrink-0 px-2"
+              >
+                <CollapseIcon />
+              </Button>
+              {/* A real <label>, hidden. The select shows the current kind, so
+                  a sighted reader needs no second copy of the word; the a11y
+                  suite rightly refuses aria-label as a substitute for one. */}
+              <label htmlFor={focusKindId} className="sr-only">
+                Kind
+              </label>
+              <select
+                id={focusKindId}
+                value={form.kind}
+                onChange={(event) => update('kind', event.target.value as EntryKind)}
+                className={`${CONTROL} ${FOCUS} flex-1 text-sm`}
+              >
+                {kindLabels}
+              </select>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!canSave}
+                aria-describedby={canSave ? undefined : reasonId}
+                className="ml-auto shrink-0"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {/* Both fields subgrid onto these row tracks, so the two controls sit on
             one baseline even though only Title carries helper text. */}
+        {/* Kind moves into the focus bar rather than being duplicated there:
+            one control for one value, wherever it is rendered. Title stays put.
+            It is optional, but it is also the first thing a reader types for a
+            sermon, and burying it behind a disclosure to win 96 pixels would
+            trade the wrong thing away. */}
         <FieldRow>
-          <Select
-            label="Kind"
-            hint="You can change this later."
-            value={form.kind}
-            onChange={(event) => update('kind', event.target.value as EntryKind)}
-          >
-            {KINDS.map((kind) => (
-              <option key={kind.value} value={kind.value}>
-                {kind.label}
-              </option>
-            ))}
-          </Select>
+          {focused ? null : (
+            <Select
+              label="Kind"
+              hint="You can change this later."
+              value={form.kind}
+              onChange={(event) => update('kind', event.target.value as EntryKind)}
+            >
+              {kindLabels}
+            </Select>
+          )}
           <Field
             label="Title"
-            hint="Optional. Left blank, the entry is filed by its date."
+            /* The helper goes in focus mode and the label does not. Two wrapped
+               lines of "Optional. Left blank, the entry is filed by its date."
+               is 36px of the writing surface spent telling somebody who has
+               just asked for fewer words that a field is optional. */
+            hint={focused ? undefined : 'Optional. Left blank, the entry is filed by its date.'}
             value={form.title}
             onChange={(event) => update('title', event.target.value)}
           />
@@ -719,7 +879,9 @@ export default function EntryEditor({
           <MarkdownEditor
             label="Notes"
             hint="What was taught"
-            rows={8}
+            // The point of the mode: the space the header, the footer, the page
+            // heading and the kind field gave up goes to the box being typed in.
+            rows={focused ? 16 : 8}
             value={form.notes}
             onChange={(value) => update('notes', value)}
           />
@@ -733,7 +895,7 @@ export default function EntryEditor({
           <MarkdownEditor
             label="Reflection"
             hint="What it meant to me"
-            rows={5}
+            rows={focused ? 8 : 5}
             value={form.reflection}
             onChange={(value) => update('reflection', value)}
           />
@@ -1204,20 +1366,26 @@ export default function EntryEditor({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Not disabled while saving: disabling the button under a keyboard
-              user's own finger throws focus to <body>, and saving an edit does
-              not change the route, so nothing hands it back. handleSubmit
-              already refuses a second submit while one is in flight, and a
-              repeat save updates what the first one wrote rather than
-              duplicating it. */}
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!canSave}
-            aria-describedby={canSave ? undefined : reasonId}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
+          {/* One Save, wherever it is. In focus mode it is in the bar, which is
+              on screen the whole time, and a second one at the foot of the form
+              would be two controls with one name — ambiguous to announce, and
+              ambiguous to write a test against, which is how it was found. */}
+          {focused ? null : (
+            /* Not disabled while saving: disabling the button under a keyboard
+               user's own finger throws focus to <body>, and saving an edit does
+               not change the route, so nothing hands it back. handleSubmit
+               already refuses a second submit while one is in flight, and a
+               repeat save updates what the first one wrote rather than
+               duplicating it. */
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!canSave}
+              aria-describedby={canSave ? undefined : reasonId}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          )}
           {/* The entry route IS this editor, so there is no "back to the
               entry" to offer — the way out of both modes is the timeline. */}
           <Link

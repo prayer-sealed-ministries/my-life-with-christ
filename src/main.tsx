@@ -5,6 +5,7 @@ import App from './App';
 import { DATA_PROFILE } from './app/data';
 import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
+import { FocusProvider } from './app/focus';
 import { NoticeProvider } from './app/notice';
 import { ThemeProvider } from './app/theme';
 import { closeOverlay, overlayOpen } from './app/overlay';
@@ -56,7 +57,11 @@ createRoot(root).render(
             {/* Above the routed view on purpose: a save confirmation has to
                 outlive the navigation the save triggers. */}
             <NoticeProvider>
-              <App />
+              {/* Also above the routed view: a successful save remounts the
+                  editor, and focus mode has to survive it. */}
+              <FocusProvider>
+                <App />
+              </FocusProvider>
             </NoticeProvider>
           </RouterProvider>
         </StorageContextProvider>
