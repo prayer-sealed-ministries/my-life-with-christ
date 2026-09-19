@@ -72,15 +72,20 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
     const pdfjs = await import('pdfjs-dist');
     getDocument = pdfjs.getDocument;
 
-    // pdfjs refuses to start without a worker, and left to itself it resolves
-    // one from a CDN or a guessed path — a network request made on behalf of a
-    // document, which this app does not do.
+    // Left to itself, pdfjs resolves a worker from a CDN or a guessed path — a
+    // network request made on behalf of a document, which this app does not do.
+    // `?url` hands Vite the worker as a build input instead, so it is emitted
+    // beside the rest of the bundle and served from this origin like any other
+    // asset. Nothing is fetched from anywhere else.
     //
-    // `?url` hands Vite the worker as a build input, so it is emitted beside
-    // the rest of the bundle and served from this origin like any other asset.
-    // Nothing is fetched from anywhere else, and the import gate that forbids
-    // network egress stays true.
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    // Only where a worker can actually run. A plain Node host — the test
+    // runner — has no `Worker` at all, and pointing pdfjs at a worker file it
+    // cannot spawn makes it WAIT rather than fall back: four tests that pass
+    // on a developer's machine timed out at twenty seconds each on Linux CI,
+    // which is how this was found. With no `workerSrc` set, pdfjs runs on the
+    // calling thread, which is the right answer for a few-page handout.
+    const canSpawnWorker = typeof Worker !== 'undefined';
+    if (canSpawnWorker && !pdfjs.GlobalWorkerOptions.workerSrc) {
       const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
     }
