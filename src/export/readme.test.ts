@@ -67,7 +67,7 @@ function makeCtx(overrides: Partial<ExportContext> = {}): ExportContext {
     entries,
     excludedCount: 0,
     exportedAt: '2026-09-13T14:02:11.000Z',
-    profile: 'full',
+    profile: 'public',
     bookNames: new Map([
       ['genesis', 'Genesis'],
       ['mark', 'Mark'],

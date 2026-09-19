@@ -8,7 +8,7 @@ import { readZip, zipEntryText } from './zip';
 import { renderNote } from './notes';
 import { ALL_ENTRIES, AWKWARD, READING, SERMON } from './fixtures';
 import { outlinesForProfile } from '../../scripts/vite-plugin-data-profile.mjs';
-import outlines from '../data/outlines.json';
+import outlines from '../data/sections.json';
 import topicsFile from '../data/topics.json';
 import versification from '../data/kjv/versification.json';
 import { referenceSpan, buildIndex } from '../lib/verse-index';
@@ -42,7 +42,7 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
       entries: ALL_ENTRIES,
       outlineBooks: fullBooks,
       topics,
-      profile: 'full',
+      profile: 'public',
       now: NOW,
     });
 
@@ -62,7 +62,7 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
 
   it('leaves no dangling anchor — every passage anchor still resolves to scripture', async () => {
     const archive = await buildArchive({
-      entries: ALL_ENTRIES, outlineBooks: fullBooks, topics, profile: 'full', now: NOW,
+      entries: ALL_ENTRIES, outlineBooks: fullBooks, topics, profile: 'public', now: NOW,
     });
     const parsed = await parseImport(archive.bytes, { resolveOutlineId: () => undefined });
     await applyImport(parsed, db, 'merge');
@@ -96,7 +96,7 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
 
   it('leaves no orphaned entry — every entry keeps at least one resolvable anchor', async () => {
     const archive = await buildArchive({
-      entries: ALL_ENTRIES, outlineBooks: fullBooks, topics, profile: 'full', now: NOW,
+      entries: ALL_ENTRIES, outlineBooks: fullBooks, topics, profile: 'public', now: NOW,
     });
     const parsed = await parseImport(archive.bytes, { resolveOutlineId: () => undefined });
     await applyImport(parsed, db, 'merge');
@@ -114,7 +114,7 @@ describe('downgrade: a full-profile journal imported into a refs-only build', ()
 
   it('keeps the outline id as a secondary hint, unused but not discarded', async () => {
     const archive = await buildArchive({
-      entries: [SERMON], outlineBooks: fullBooks, topics, profile: 'full', now: NOW,
+      entries: [SERMON], outlineBooks: fullBooks, topics, profile: 'public', now: NOW,
     });
     const parsed = await parseImport(archive.bytes, { resolveOutlineId: () => undefined });
     await applyImport(parsed, db, 'merge');

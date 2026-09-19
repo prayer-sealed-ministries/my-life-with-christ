@@ -27,7 +27,7 @@ cd "$(dirname "$0")/.."
 
 PROFILES=("$@")
 if [ ${#PROFILES[@]} -eq 0 ]; then
-  PROFILES=(full refs-only public)
+  PROFILES=(refs-only public)
 fi
 
 LOG_DIR="${E2E_SWEEP_LOG_DIR:-$(mktemp -d)}"

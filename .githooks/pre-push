@@ -14,7 +14,7 @@
 # What it checks:
 #   1. The workflow policy tests — that pages.yml still pins refs-only, verifies
 #      before uploading, and cannot deploy without a passing build.
-#   2. The bundle gate — that a refs-only build carries none of the purchased
+#   2. The bundle gate — that a refs-only build carries none of the excluded
 #      compilation, and that the probe set has not eroded.
 #
 # It can be skipped with `git push --no-verify`. Git does not run the hook at
@@ -33,6 +33,14 @@ if [ "${SKIP_DATA_GATE:-}" = "1" ]; then
   echo "!! See DATA-LICENSE.md. CI will still run data-gate on main."
   echo ""
   exit 0
+fi
+
+echo "${BOLD}pre-push: checking no licensed or private data is tracked${RESET}"
+if ! node scripts/verify-no-private-data.mjs; then
+  echo ""
+  echo "${BOLD}Push refused.${RESET} Licensed or private source material is tracked."
+  echo "See DATA-LICENSE.md. This must not reach a remote, public or private."
+  exit 1
 fi
 
 echo "${BOLD}pre-push: checking the data gate${RESET}"

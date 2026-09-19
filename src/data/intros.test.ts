@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import intros from './intros.json';
-import outlines from './outlines.json';
 import versification from './kjv/versification.json';
 import { examinedAtLeast } from '../testing/floor';
 
@@ -92,44 +91,18 @@ describe('the provenance record matches reality', () => {
   });
 });
 
-describe('drafted prose is independent of the purchased introductions', () => {
-  it('shares no sentence with any purchased introduction', () => {
-    const purchased = new Set<string>();
-    for (const book of outlines as Array<{ intro?: string }>) {
-      for (const sentence of (book.intro ?? '').split(/(?<=[.!?])\s+/)) {
-        const trimmed = sentence.trim();
-        if (trimmed.length >= 24) purchased.add(trimmed);
-      }
-    }
-    examinedAtLeast(purchased.size, 100, 'purchased sentences to compare against');
-
-    const collisions: string[] = [];
-    for (const bookId of actual) {
-      for (const sentence of (intros as unknown as Record<string, string>)[bookId].split(/(?<=[.!?])\s+/)) {
-        const trimmed = sentence.trim();
-        if (trimmed.length >= 24 && purchased.has(trimmed)) collisions.push(`${bookId}: ${trimmed}`);
-      }
-    }
-    expect(collisions.join('\n')).toBe('');
-  });
-
-  it('shares no long phrase with a purchased introduction', () => {
-    // Sentence equality is a weak test; an eight-word run is a stronger one.
-    const shingles = new Set<string>();
-    for (const book of outlines as Array<{ intro?: string }>) {
-      const words = (book.intro ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-      for (let i = 0; i + 8 <= words.length; i += 1) shingles.add(words.slice(i, i + 8).join(' '));
-    }
-    examinedAtLeast(shingles.size, 500, 'eight-word phrases from the purchased intros');
-
-    const collisions: string[] = [];
-    for (const bookId of actual) {
-      const words = (intros as unknown as Record<string, string>)[bookId].toLowerCase().split(/\s+/).filter(Boolean);
-      for (let i = 0; i + 8 <= words.length; i += 1) {
-        const phrase = words.slice(i, i + 8).join(' ');
-        if (shingles.has(phrase)) collisions.push(`${bookId}: "${phrase}"`);
-      }
-    }
-    expect(collisions.join('\n')).toBe('');
-  });
-});
+/*
+ * The independence check that used to live here has been removed, not
+ * disabled.
+ *
+ * It compared every sentence and every eight-word phrase of these intros
+ * against the introductions in a licensed third-party compilation, to prove
+ * nothing had been copied or paraphrased. That compilation is not in this
+ * repository and cannot be read by anything in it, so the comparison has no
+ * left-hand side: it would have had to be skipped, and a skipped check is one
+ * that examines nothing.
+ *
+ * What replaces it is the provenance the file states about itself, asserted
+ * above, and the fact that there is no longer any licensed prose here to copy
+ * from. See DATA-LICENSE.md.
+ */

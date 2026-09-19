@@ -2,7 +2,7 @@
  * The list of views to sweep, resolved against the build actually under test.
  *
  * Hardcoding `#/passage/matthew/matthew-5-1-12` tied the whole suite to the
- * `full` data profile: under `refs-only` there are no outline divisions, so
+ * `public` data profile: under `refs-only` there are no divisions, so
  * that id names nothing and the view renders a graceful "passage not found".
  * Graceful is right for a reader following an old link — but as a test target
  * it meant the suite swept a not-found page and reported it clean.
@@ -22,16 +22,16 @@ export interface ViewTarget {
   hash: string;
 }
 
-export type DataProfile = 'full' | 'public' | 'refs-only';
+export type DataProfile = 'public' | 'refs-only';
 
-const PROFILES: DataProfile[] = ['full', 'public', 'refs-only'];
+const PROFILES: DataProfile[] = ['public', 'refs-only'];
 
 /**
  * Which data profile the build under test carries — read, not inferred.
  *
  * This used to count passage links on the Matthew page and return `refs-only`
- * if there were exactly 28 and `full` otherwise. That has two profiles in it
- * and there are three, so a `public` build reported itself as `full`: the
+ * if there were exactly 28 and something else otherwise. That guessed from a
+ * count, so a `public` build could report itself as another profile: the
  * suite printed a profile name that was simply wrong, which is worse than
  * printing nothing. The build now stamps the answer on the root element and
  * this reads it back, failing loudly if it is missing or unrecognised rather

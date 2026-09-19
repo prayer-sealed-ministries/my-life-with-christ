@@ -4,12 +4,12 @@
 declare const __APP_VERSION__: string;
 
 /** Injected by scripts/vite-plugin-data-profile.mjs. */
-declare const __DATA_PROFILE__: 'full' | 'public' | 'refs-only';
+declare const __DATA_PROFILE__: 'public' | 'refs-only';
 
 declare module 'virtual:journey-data' {
   import type { OutlineBook } from './types';
 
-  export const DATA_PROFILE: 'full' | 'public' | 'refs-only';
+  export const DATA_PROFILE: 'public' | 'refs-only';
   /**
    * True when this build carries a titled division scheme, whichever one.
    * False under `refs-only`, where no divisions ship at all.
@@ -20,7 +20,6 @@ declare module 'virtual:journey-data' {
   /**
    * Which scheme the divisions came from.
    *
-   *   'outlines' — the purchased [licensed content removed] (profile `full`, local only)
    *   'sections' — BSB section headings, public domain (profile `public`)
    *   'none'     — no divisions; whole chapters (profile `refs-only`)
    */

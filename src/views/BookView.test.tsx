@@ -140,7 +140,7 @@ describe('BookView', () => {
       } else {
         expect(links[index]).toHaveTextContent(segment.ref);
         // The row is read aloud as one string. Without punctuation the title
-        // runs into the reference: "[licensed content removed]Genesis 1".
+        // runs into the reference: "The CreationGenesis 1".
         expect(links[index].textContent).toContain(`, ${segment.ref}`);
       }
     });

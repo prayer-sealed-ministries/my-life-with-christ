@@ -6,7 +6,7 @@ import { refKey, type ExportContext } from './context';
 import { loadPassage, type PassageVerse } from '../lib/bible';
 import { BOOK_NAMES as CANON_NAMES, BOOK_ORDER } from '../lib/canon';
 import { ALL_ENTRIES, AWKWARD, SERMON } from './fixtures';
-import outlinesFile from '../data/outlines.json';
+import outlinesFile from '../data/sections.json';
 import topicsFile from '../data/topics.json';
 import type { Entry, EntryAnchor, OutlineBook, ScriptureRef, Topic } from '../types';
 
@@ -48,7 +48,7 @@ function context(overrides: Partial<ExportContext> = {}): ExportContext {
     entries: [],
     excludedCount: 0,
     exportedAt: '2026-09-13T12:00:00.000Z',
-    profile: 'full',
+    profile: 'public',
     bookNames: BOOK_NAMES,
     bookOrder: new Map(Object.entries(BOOK_ORDER)),
     outlineBooks: new Map(),
@@ -606,7 +606,7 @@ describe('as the archive actually builds it', () => {
       entries: ALL_ENTRIES,
       outlineBooks: outlinesFile as unknown as OutlineBook[],
       topics: topicsFile.topics as Topic[],
-      profile: 'full',
+      profile: 'public',
       now: new Date('2026-09-13T12:00:00.000Z'),
     });
 
@@ -718,7 +718,7 @@ describe('under the refs-only profile', () => {
     const full = await buildContext({
       ...options,
       outlineBooks: outlinesFile as unknown as OutlineBook[],
-      profile: 'full' as const,
+      profile: 'public' as const,
     });
     // Under refs-only there are no outline books at all, not empty ones.
     const lean = await buildContext({ ...options, outlineBooks: [], profile: 'refs-only' as const });

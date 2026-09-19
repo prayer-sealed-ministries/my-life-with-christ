@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildSegments, refsOverlap, segmentRef } from './passages';
 import { buildIndex } from './verse-index';
-import outlines from '../data/outlines.json';
+import outlines from '../data/sections.json';
 import versification from '../data/kjv/versification.json';
 import type { OutlineBook, OutlineEntry } from '../types';
 import { examinedAtLeast } from '../testing/floor';
@@ -159,29 +159,51 @@ describe('every real book is fully reachable', () => {
     examinedAtLeast(segmentsChecked, 1000, 'segments across the canon');
   });
 
-  it('makes Genesis 35:1-15 reachable as an uncovered segment', () => {
-    // The exact gap called out during adjudication.
-    const genesis = books.find((book) => book.id === 'genesis')!;
-    const segments = buildSegments(genesis, counts.genesis);
-    const gap = segments.find((s) => s.kind === 'uncovered' && s.ref === 'Genesis 35:1-15');
+  /*
+   * A division scheme with a deliberate hole in it.
+   *
+   * These two cases used to name real gaps in a purchased scheme — Genesis
+   * 35:1-15 and the Acts 6:8-7:7 cross-chapter span. That scheme is not in
+   * this repository, and the BSB sections that replaced it partition the canon
+   * completely, so there is no real gap left to point at. The behaviour still
+   * has to hold: rule 3 says every passage is reachable and journalable, and a
+   * reader who opens a chapter nobody divided must still find a way to write.
+   *
+   * So the gap is made here instead of borrowed. A synthetic book with one
+   * missing span tests the same code and does not depend on whose arrangement
+   * happens to ship.
+   */
+  it('makes a single-chapter hole reachable as an uncovered segment', () => {
+    const book = {
+      id: 'toy', name: 'Toy', testament: 'OT' as const, order: 1, intro: '',
+      entries: [
+        entry('toy-1', { chapterStart: 1, chapterEnd: 1, verseStart: 1, verseEnd: 10 }),
+        // Chapter 2 is left out entirely.
+        entry('toy-3', { chapterStart: 3, chapterEnd: 3, verseStart: 1, verseEnd: 8 }),
+      ],
+    };
+    const segments = buildSegments(book, TOY);
+    const gap = segments.find((s) => s.kind === 'uncovered');
 
-    expect(gap).toBeDefined();
-    expect(segmentRef(gap!, 'genesis')).toEqual({
-      book: 'genesis',
-      chapterStart: 35,
-      verseStart: 1,
-      chapterEnd: 35,
-      verseEnd: 15,
+    expect(gap, 'the hole is not reachable at all').toBeDefined();
+    expect(segmentRef(gap!, 'toy')).toEqual({
+      book: 'toy', chapterStart: 2, verseStart: 1, chapterEnd: 2, verseEnd: 5,
     });
   });
 
-  it('makes the Acts 6:8-7:7 cross-chapter gap one reachable segment', () => {
-    const acts = books.find((book) => book.id === 'acts')!;
-    const segments = buildSegments(acts, counts.acts);
-    const gap = segments.find((s) => s.kind === 'uncovered' && s.ref === 'Acts 6:8-7:7');
+  it('makes a cross-chapter hole one reachable segment', () => {
+    const book = {
+      id: 'toy', name: 'Toy', testament: 'OT' as const, order: 1, intro: '',
+      entries: [
+        entry('toy-a', { chapterStart: 1, chapterEnd: 1, verseStart: 1, verseEnd: 7 }),
+        // 1:8 through 2:3 is nobody's section.
+        entry('toy-b', { chapterStart: 2, chapterEnd: 2, verseStart: 4, verseEnd: 5 }),
+      ],
+    };
+    const gap = buildSegments(book, TOY).find((s) => s.kind === 'uncovered');
 
-    expect(gap).toBeDefined();
-    expect(gap).toMatchObject({ chapterStart: 6, verseStart: 8, chapterEnd: 7, verseEnd: 7 });
+    expect(gap, 'the cross-chapter hole is not reachable').toBeDefined();
+    expect(gap).toMatchObject({ chapterStart: 1, verseStart: 8, chapterEnd: 2, verseEnd: 3 });
   });
 });
 

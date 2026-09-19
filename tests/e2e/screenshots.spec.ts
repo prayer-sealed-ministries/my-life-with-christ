@@ -12,9 +12,9 @@
  *
  * Evidence has to say what it is evidence OF. These used to land in
  * `screenshots/<theme>/<width>/` with nothing recording which data profile the
- * build carried, so a folder of sixty-two images could show `full`, `public` or
+ * build carried, so a folder of sixty-two images could show `public` or
  * `refs-only` and there was no way to tell after the fact — the same defect as
- * the e2e suite reporting `full` while testing `public`. The profile is now
+ * the e2e suite reporting one profile while testing another. The profile is now
  * read from the running build, not from the environment, and it is in the path
  * of every file and in a `CAPTURED.json` beside them.
  */

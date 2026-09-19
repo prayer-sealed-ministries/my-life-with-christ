@@ -41,3 +41,31 @@ ios/DerivedData/
 **/xcuserdata/
 android/.gradle/
 android/local.properties
+
+# ---------------------------------------------------------------------------
+# Licensed source material. NEVER COMMITTED, on any branch.
+#
+# The purchased [licensed content removed] and everything generated from them are not
+# part of this repository — see DATA-LICENSE.md. A copy may sit in a working
+# tree because its purchaser owns one; these rules are what stop it being
+# staged by a wide `git add`.
+#
+# Deliberately NOT a blanket `*.pdf` or `data/source/**`: the Berean Standard
+# Bible files under data/source/bsb_usfm/ are public domain and ARE committed,
+# and a public PDF should stay addable. The patterns below name the licensed
+# material and its derivatives, and nothing else.
+# ---------------------------------------------------------------------------
+data/source/Purchased_*
+data/source/*.pdf
+src/data/outlines.json
+src/data/title-overrides.json
+src/data/reference-overrides.json
+data/ingest-report.md
+data/coverage-report.md
+data/coverage-comparison.md
+scripts/probe-baseline.json
+
+# Anywhere a person might reasonably stage private inputs.
+private/
+data/private/
+*.private.json

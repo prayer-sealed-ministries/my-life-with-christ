@@ -28,9 +28,13 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # The probe set must be as large as the frozen baseline, whichever build
-      # we are checking. A shrunken probe set means a weakened gate.
-      - name: Workflow policy and probe-set integrity
+      # Before anything is built: no licensed or private source data may be
+      # tracked at all. This runs first on purpose — it is cheap, it fails
+      # closed, and everything after it produces artefacts.
+      - name: Gate — no licensed or private data is tracked
+        run: npm run verify:no-private-data
+
+      - name: Workflow policy
         run: npx vitest run scripts/__tests__/
 
       - name: Build (refs-only)
@@ -38,16 +42,16 @@ jobs:
           DATA_PROFILE: refs-only
         run: npm run build
 
-      - name: Gate — no purchased compilation in a publishable build
+      - name: Gate — the refs-only build is clean
         run: npm run verify:bundle -- --profile refs-only
 
-      # The other direction: a silently empty dataset would pass the refs-only
-      # check trivially. Assert the full build really does carry the data.
-      - name: Build (full)
+      - name: Build (public)
+        env:
+          DATA_PROFILE: public
         run: npm run build
 
-      - name: Gate — full build still carries the compilation
-        run: npm run verify:bundle -- --profile full
+      - name: Gate — the deployed profile is clean
+        run: npm run verify:bundle -- --profile public
 
   check:
     name: typecheck, lint, test (all profiles)
@@ -63,12 +67,11 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      # `npm test` alone only ever tested `full`, because that is the default
-      # when DATA_PROFILE is unset — and `public` is the profile that is
-      # actually deployed. This runs the suite under all three and additionally
-      # asserts that no test is skipped under every one of them, which is the
-      # way a shape-gated test can quietly stop measuring anything.
-      - name: Test (full, public, refs-only)
+      # `npm test` alone tests whichever profile is the default. This runs the
+      # suite under both and additionally asserts that no test is skipped under
+      # every one of them, which is the way a shape-gated test can quietly stop
+      # measuring anything.
+      - name: Test (public, refs-only)
         run: npm run test:profiles
 
   # Accessibility is a stated non-negotiable, so it is enforced rather than
@@ -76,16 +79,15 @@ jobs:
   # widths, plus the checks axe cannot make: heading order, computed contrast,
   # real labels, and a keyboard-only walkthrough from load to saving an entry.
   accessibility:
-    # Run against both profiles that a person actually uses. `full` is what the
-    # owner runs locally; `public` is what is deployed to Pages and is the only
-    # one anyone else will ever see. They render different segment lists, so a
-    # pass on one is not a pass on the other — and until now only `full` was
-    # ever checked, because DATA_PROFILE was unset and `full` is the default.
+    # Both profiles this repository can build. `public` is deployed to Pages
+    # and is the one anyone else will ever see; `refs-only` is the fallback.
+    # They render different segment lists, so a pass on one is not a pass on
+    # the other.
     name: accessibility (${{ matrix.profile }})
     strategy:
       fail-fast: false
       matrix:
-        profile: [full, public]
+        profile: [public, refs-only]
     runs-on: ubuntu-latest
     env:
       DATA_PROFILE: ${{ matrix.profile }}
@@ -125,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [full, public]
+        profile: [public, refs-only]
     runs-on: ubuntu-latest
     env:
       DATA_PROFILE: ${{ matrix.profile }}
@@ -150,23 +152,3 @@ jobs:
           name: e2e-failure-traces-${{ matrix.profile }}
           path: test-results/
           retention-days: 7
-
-  # Re-running the ingest must reproduce exactly what is committed. If a parser
-  # change silently alters the data, this fails rather than drifting unnoticed.
-  ingest-is-reproducible:
-    name: ingest is reproducible
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run ingest
-      - name: Ingest output matches what is committed
-        run: |
-          if ! git diff --exit-code --stat -- src/data/outlines.json data/; then
-            echo "::error::Re-running the ingest changed committed data. Commit the regenerated files, or fix the parser."
-            exit 1
-          fi

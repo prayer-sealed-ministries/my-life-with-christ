@@ -6,7 +6,8 @@
 Bible**, with the verse span each one covers. This is the division scheme the
 project owns outright, and the one the public build uses.
 
-It exists because the purchased *[licensed content removed]* cannot be published. In a
+It exists because a licensed third-party division scheme cannot be published,
+and is not in this repository. In a
 compilation the protected element is the **selection and arrangement**, not the
 labels — so rewording the titles would not have cleared the rights, and
 paraphrasing the intros would have produced derivative works. The only durable

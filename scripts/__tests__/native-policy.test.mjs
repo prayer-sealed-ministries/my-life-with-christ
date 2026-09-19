@@ -14,7 +14,7 @@ import { COPIED_ASSETS } from '../native-sync.mjs';
  * accident there is an edit to pages.yml. The native builds have their own
  * version of the same problem, and it is worse in one respect: an App Store or
  * Play build is not revocable the way a Pages deploy is. Once a binary carrying
- * the purchased [licensed content removed] is on a stranger's phone, no amount of
+ * licensed third-party data is on a stranger's phone, no amount of
  * unpublishing takes it back.
  *
  * So these assertions hold the four things that cannot be allowed to drift:

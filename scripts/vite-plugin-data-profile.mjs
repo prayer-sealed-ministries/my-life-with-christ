@@ -1,39 +1,25 @@
 /**
- * Build-time gate on the purchased outline content.
+ * Which division scheme a build ships.
  *
- * The Blueprint outlines are purchased third-party material (see DATA-LICENSE.md).
- * What is protected is not only the prose.
+ * Every scheme this repository can build is material the project owns or that
+ * is public domain. There is no profile that reads licensed third-party data,
+ * and there is no switch that could turn one on — see DATA-LICENSE.md.
  *
- * In a compilation, copyright subsists in the SELECTION AND ARRANGEMENT. Deciding
- * that Matthew 5 divides at 1-12, 13-20, 21-48 is itself the author's editorial
- * work. Publishing those divisions while stripping the titles would ship the
- * skeleton of the compilation and keep the whole risk — the titles are merely the
- * most visible part of what must not be republished.
- *
- * So the profiles are not "with and without titles". They are about WHOSE
- * arrangement is being published:
- *
- *   full       the purchased outlines entire — divisions, titles, series,
- *              intros. Local use only, by the purchaser. Behind the gate.
- *   public     the BSB section headings, which were dedicated to the public
- *              domain on 2023-04-30, plus intros written for this project.
- *              Owned outright, publishable, and the answer to the whole
- *              problem: rewording purchased titles would never have cleared the
- *              rights, because the arrangement is the protected part.
- *   refs-only  NO division data whatsoever. Segmentation falls back to whole
+ *   public     the Berean Standard Bible section headings, dedicated to the
+ *              public domain on 2023-04-30, plus introductions written for
+ *              this project. The build that is deployed.
+ *   refs-only  no division data whatsoever. Segmentation falls back to whole
  *              chapters, which come from KJV versification — canonical,
- *              factual, and nobody's editorial work. The fallback, not the
- *              public build.
+ *              factual, and nobody's editorial work. The fallback.
  *
- * Verse-span divisions may still appear in a refs-only build when they come from
- * a source the project owns: src/data/topics.json is hand-authored here, and its
- * refs are ours to publish.
+ * Verse-span divisions may still appear in a refs-only build when they come
+ * from a source the project owns: src/data/topics.json is hand-authored here,
+ * and its refs are ours to publish.
  *
- * This is one switch rather than conditionals scattered through the app, and it
- * works by generating the module source: under `refs-only` the outline data is
- * never written into the module graph at all, so it cannot survive by way of a
- * missed branch or a tree-shake that did not fire. `npm run verify:bundle` proves
- * it against the built artefact rather than trusting this file.
+ * One switch rather than conditionals scattered through the app, and it works
+ * by generating the module source: under `refs-only` no division data is
+ * written into the module graph at all, so it cannot survive by way of a
+ * missed branch or a tree-shake that did not fire.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -42,7 +28,7 @@ import { resolve } from 'node:path';
 const VIRTUAL_ID = 'virtual:journey-data';
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 
-export const DATA_PROFILES = ['full', 'public', 'refs-only'];
+export const DATA_PROFILES = ['public', 'refs-only'];
 
 /**
  * What `refs-only` ships of any division scheme: nothing.
@@ -55,13 +41,15 @@ export const OUTLINE_FREE = [];
 
 /** Which file each profile draws its divisions from. */
 export const DIVISION_SOURCE = {
-  full: 'outlines',
   public: 'sections',
   'refs-only': 'none',
 };
 
 export function resolveProfile(value) {
-  const profile = value ?? process.env.DATA_PROFILE ?? 'full';
+  // Defaults to the profile that is deployed. There is nothing else to default
+  // to, and a default that had to be overridden to be safe is how the wrong
+  // build gets made.
+  const profile = value ?? process.env.DATA_PROFILE ?? 'public';
   if (!DATA_PROFILES.includes(profile)) {
     throw new Error(`DATA_PROFILE must be one of ${DATA_PROFILES.join(', ')} — got "${profile}"`);
   }
@@ -72,18 +60,18 @@ export function resolveProfile(value) {
  * What the app receives for a given profile.
  *
  * Exported so the bundle verifier and the downgrade tests share one definition
- * of what a publishable build contains.
+ * of what a build contains. Every profile that carries divisions carries them
+ * from `sections.json`; `refs-only` carries none.
  */
 export function outlinesForProfile(books, profile) {
-  return profile === 'full' ? books : OUTLINE_FREE;
+  return profile === 'refs-only' ? OUTLINE_FREE : books;
 }
 
 /**
  * Merge hand-written introductions into a division set.
  *
- * The intros shipped under `public` are written from scratch for this project.
- * They are NOT adapted from the purchased outlines, whose prose is the author's
- * and whose paraphrase would be a derivative work.
+ * The intros shipped under `public` are written from scratch for this project,
+ * from plain historical fact and public-domain reference works.
  */
 export function withIntros(books, intros) {
   return books.map((book) => ({ ...book, intro: intros[book.id] ?? '' }));
@@ -108,13 +96,9 @@ export default function dataProfilePlugin(options = {}) {
     load(id) {
       if (id !== RESOLVED_ID) return null;
 
-      // Each profile reads only the file it ships. Under `public` and
-      // `refs-only` the purchased outlines.json is not opened at all, which is
-      // one fewer way for it to leak.
+      // Each profile reads only the file it ships.
       let shipped = OUTLINE_FREE;
-      if (profile === 'full') {
-        shipped = JSON.parse(readFileSync(resolve(root, 'src/data/outlines.json'), 'utf8'));
-      } else if (profile === 'public') {
+      if (profile === 'public') {
         const sections = JSON.parse(readFileSync(resolve(root, 'src/data/sections.json'), 'utf8'));
         const introsPath = resolve(root, 'src/data/intros.json');
         const intros = existsSync(introsPath)

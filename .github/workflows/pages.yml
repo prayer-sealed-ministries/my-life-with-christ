@@ -6,7 +6,8 @@ name: Deploy to GitHub Pages
 # to the public domain on 2023-04-30, plus introductions and topics written for
 # this project. All of it is ours to publish outright.
 #
-# The purchased [licensed content removed] are NOT in this build and must never be. In a
+# No licensed third-party division data is in this build, and none is in this
+# repository to put there. In a
 # compilation the protected element is the selection and arrangement, not the
 # labels, so rewording would not have cleared it — hence a scheme we own.
 # See DATA-LICENSE.md and src/data/sections/SOURCE.md.
@@ -42,11 +43,9 @@ jobs:
 
       - run: npm ci
 
-      # Tested under the profile this workflow deploys, not the default.
-      # `npm test` with DATA_PROFILE unset runs `full`, which is the one
-      # profile that must never be published — so the deploy was gated on a
-      # suite that had never exercised the build it was about to upload.
-      # CI runs all three profiles; this job runs the one it is deploying.
+      # Tested under the profile this workflow deploys, not the default, so
+      # the deploy is never gated on a suite that exercised a different build
+      # from the one it is about to upload.
       - name: Typecheck, lint, test (public)
         env:
           DATA_PROFILE: public

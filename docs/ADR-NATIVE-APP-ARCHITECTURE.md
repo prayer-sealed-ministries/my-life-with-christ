@@ -42,7 +42,7 @@ These are existing, enforced behaviours — not aspirations.
 5. **The canonical archive layout is fixed** — `README.txt`, `MANIFEST.txt`,
    `data/journey.json`, `data/schema.json`, `data/entries.csv`, `indexes/*.md`,
    `book/my-journey-with-christ.html`.
-6. **Purchased Blueprint material must never reach a distributed artefact.**
+6. **No licensed third-party material may reach a distributed artefact.**
    Enforced by `scripts/verify-bundle.mjs` against built files, not flags.
 7. **WCAG 2.1 AA is checked in CI**, against the built site.
 
@@ -422,9 +422,9 @@ public`, and `scripts/__tests__/workflow-policy.test.mjs` pins that exact value.
 `public` ships BSB section headings — public domain since 2023-04-30 per
 `src/data/sections/SOURCE.md` — plus introductions written for this project.
 
-`full` carries purchased [licensed content removed] and is **local use by the purchaser
-only**. `refs-only` remains the fallback and is publishable but offers no
-section titles, which would make a paid app materially poorer.
+`refs-only` remains the fallback and is publishable but offers no section
+titles, which would make a paid app materially poorer. There is no profile that
+carries licensed third-party data: none is in this repository.
 
 ### The build-time gate
 

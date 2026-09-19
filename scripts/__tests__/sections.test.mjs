@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import sections from '../../src/data/sections.json';
-import outlines from '../../src/data/outlines.json';
 import versification from '../../src/data/kjv/versification.json';
 import intros from '../../src/data/intros.json';
 import { cleanHeading, parseUsfmSections } from '../lib/parse-usfm-sections.mjs';
-import {
-  divisionProbes,
-  exclusionsBySource,
-  proseProbes,
-  untraceableExclusions,
-} from '../lib/probes.mjs';
-import topicsFile from '../../src/data/topics.json';
 import { examinedAtLeast } from '../../src/testing/floor.ts';
 
 const counts = versification;
@@ -131,158 +123,21 @@ describe('book introductions', () => {
     }
   });
 
-  // The constraint that matters: these must not be the purchased prose.
-  it('shares no sentence with a purchased introduction', () => {
-    const purchased = new Set();
-    for (const book of outlines) {
-      for (const sentence of (book.intro ?? '').split(/(?<=[.!?])\s+/)) {
-        const trimmed = sentence.trim();
-        if (trimmed.length >= 24) purchased.add(trimmed);
-      }
-    }
-    examinedAtLeast(purchased.size, 100, 'purchased intro sentences to compare against');
-
-    const collisions = [];
-    for (const [bookId, text] of written) {
-      for (const sentence of text.split(/(?<=[.!?])\s+/)) {
-        const trimmed = sentence.trim();
-        if (trimmed.length >= 24 && purchased.has(trimmed)) collisions.push(`${bookId}: ${trimmed}`);
-      }
-    }
-    expect(collisions.join('\n')).toBe('');
-  });
 });
 
-describe('every exclusion names the source that justifies it', () => {
-  const { topics } = topicsFile;
-
-  // The wrong rule would be "exclude anything present in both sets" — that
-  // would excuse a genuine leak that happened to coincide with owned content.
-  // The rule is that a specific, identified owned source contains it.
-  it('records a named source for every excluded probe', () => {
-    const record = [];
-    proseProbes(outlines, sections, record);
-    divisionProbes(outlines, topics, sections, record);
-
-    examinedAtLeast(record.length, 100, 'recorded exclusions');
-    expect(untraceableExclusions(record)).toEqual([]);
-
-    for (const row of record) {
-      const by = row.excludedBy;
-      expect(by.kind, `${row.probe} has no source kind`).toMatch(/^(bsb-section|topics-json)$/);
-      if (by.kind === 'bsb-section') {
-        expect(by.id, `${row.probe} names no BSB section id`).toBeTruthy();
-        expect(by.ref, `${row.probe} names no BSB reference`).toBeTruthy();
-      } else {
-        expect(by.topicId, `${row.probe} names no topic`).toBeTruthy();
-      }
-    }
-  });
-
-  it('every BSB-justified exclusion resolves to a section that really exists', () => {
-    const record = [];
-    proseProbes(outlines, sections, record);
-    divisionProbes(outlines, topics, sections, record);
-
-    const byId = new Map();
-    for (const book of sections) for (const entry of book.entries) byId.set(entry.id, entry);
-
-    let checked = 0;
-    for (const row of record) {
-      if (row.excludedBy.kind !== 'bsb-section') continue;
-      checked += 1;
-      const section = byId.get(row.excludedBy.id);
-      expect(section, `${row.excludedBy.id} is not a real BSB section`).toBeDefined();
-      expect(section.ref).toBe(row.excludedBy.ref);
-    }
-    examinedAtLeast(checked, 100, 'BSB-justified exclusions verified against sections.json');
-  });
-
-  it('every topic-justified exclusion resolves to a real topic range', () => {
-    const record = [];
-    divisionProbes(outlines, topics, sections, record);
-
-    const ranges = new Set();
-    for (const topic of topics) {
-      for (const ref of topic.refs) {
-        ranges.add(`${ref.book}:${ref.chapterStart}:${ref.verseStart}:${ref.chapterEnd}:${ref.verseEnd}`);
-      }
-    }
-
-    let checked = 0;
-    for (const row of record) {
-      if (row.excludedBy.kind !== 'topics-json') continue;
-      checked += 1;
-      expect(topics.some((t) => t.id === row.excludedBy.topicId)).toBe(true);
-      expect(ranges.has(row.excludedBy.ref), `${row.excludedBy.ref} is not a topic range`).toBe(true);
-    }
-    examinedAtLeast(checked, 10, 'topic-justified exclusions verified against topics.json');
-  });
-
-  it('flags an exclusion that cannot name its source', () => {
-    // A check that never fails is not a check.
-    const bad = [
-      { probe: 'a', excludedBy: { kind: 'bsb-section', id: 'x', ref: 'X 1:1' } },
-      { probe: 'b', excludedBy: { kind: 'bsb-section' } },
-      { probe: 'c', excludedBy: { kind: 'it-appears-in-both' } },
-      { probe: 'd' },
-    ];
-    expect(untraceableExclusions(bad).map((r) => r.probe)).toEqual(['b', 'c', 'd']);
-  });
-
-  it('excludes nothing owned when no owned scheme is published', () => {
-    // Under refs-only the BSB sections do not ship, so none of them may justify
-    // removing a probe. Only topics.json, which ships under every profile, does.
-    const record = [];
-    proseProbes(outlines, [], record);
-    divisionProbes(outlines, topics, [], record);
-
-    const kinds = exclusionsBySource(record);
-    expect(kinds.has('bsb-section')).toBe(false);
-    expect(kinds.get('topics-json')?.total ?? 0).toBeGreaterThan(0);
-  });
-});
-
-describe('the gate treats owned content correctly', () => {
-  const { topics } = topicsFile;
-
-  it('probes every purchased division when nothing owned is published', () => {
-    const all = divisionProbes(outlines, topics, []);
-    examinedAtLeast(all.size, 800, 'division probes with no owned scheme');
-  });
-
-  it('probes fewer when the BSB sections legitimately ship', () => {
-    const all = divisionProbes(outlines, topics, []);
-    const unique = divisionProbes(outlines, topics, sections);
-    expect(unique.size).toBeLessThan(all.size);
-    examinedAtLeast(unique.size, 300, 'purchased-only division probes');
-  });
-
-  it('never excludes a division the BSB does not independently make', () => {
-    const unique = divisionProbes(outlines, topics, sections);
-    const bsb = new Set();
-    for (const b of sections) {
-      for (const e of b.entries) {
-        bsb.add(`${e.book}:${e.chapterStart}:${e.verseStart}:${e.chapterEnd}:${e.verseEnd}`);
-      }
-    }
-    for (const entry of unique.values()) {
-      const key = `${entry.book}:${entry.chapterStart}:${entry.verseStart}:${entry.chapterEnd}:${entry.verseEnd}`;
-      expect(bsb.has(key), `${entry.id} should have been excluded`).toBe(false);
-    }
-  });
-
-  it('excludes a purchased title only when the BSB carries it too', () => {
-    const all = proseProbes(outlines, []);
-    const trimmed = proseProbes(outlines, sections);
-    expect(trimmed.size).toBeLessThan(all.size);
-
-    const bsbTitles = sections.flatMap((b) => b.entries.map((e) => e.title));
-    for (const probe of trimmed.keys()) {
-      expect(
-        bsbTitles.some((title) => title.includes(probe)),
-        `"${probe}" is in the BSB and should have been excluded`,
-      ).toBe(false);
-    }
-  });
-});
+/*
+ * The exclusion and probe describes that used to follow have been removed.
+ *
+ * They compared a licensed third-party compilation against the BSB sections to
+ * work out which of its divisions the BSB independently makes, so that a
+ * publishable build could be proven free of the ones it does not. That
+ * comparison needed the compilation to be present. It is not in this
+ * repository any more, and nothing here can read it — so there is nothing left
+ * to exclude, and no exclusion left to justify.
+ *
+ * The guarantee they supported is now structural rather than measured: every
+ * division this repository can ship comes from `src/data/sections.json`, which
+ * is generated from the public-domain BSB, or from `src/data/topics.json`,
+ * which is written here. `npm run verify:no-private-data` holds the line that
+ * nothing else has crept back in.
+ */

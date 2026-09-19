@@ -16,11 +16,11 @@ npm run dev            # Vite dev server
 npm test               # Vitest
 npm run typecheck      # tsc -b
 npm run lint           # eslint
-npm run build          # full data profile — local only, never published
-npm run build:public   # the profile the Pages workflow deploys
+npm run build          # public profile, which is what the Pages workflow deploys
 npm run build:refs-only
 npm run verify:bundle -- --profile public
-npm run gate           # workflow policy + probe integrity + a refs-only bundle check
+npm run verify:no-private-data   # nothing licensed or private is tracked
+npm run gate           # the guard, workflow policy, and a refs-only bundle check
 ```
 
 ```bash
@@ -31,13 +31,9 @@ npm run test:a11y      # axe + keyboard + contrast + reflow
 ## Regenerating data
 
 ```bash
-npm run ingest         # PDFs -> src/data/outlines.json + both reports
-npm run fetch:kjv      # re-vendor the KJV (rarely needed; output is committed)
+npm run ingest:sections  # BSB USFM -> src/data/sections.json
+npm run fetch:kjv        # re-vendor the KJV (rarely needed; output is committed)
 ```
-
-`npm run ingest` is idempotent. CI re-runs it and fails if the committed output
-changes, so a parser edit that silently alters the data is caught rather than
-merged.
 
 ---
 
@@ -47,11 +43,10 @@ merged.
 
 | Path | What it is |
 | --- | --- |
-| `src/data/outlines.json` | 66 books, 1,312 entries parsed from the PDFs |
+| `src/data/sections.json` | 66 books of BSB section headings |
 | `src/data/kjv/*.json` | KJV text, one file per book |
 | `src/data/kjv/versification.json` | verse counts per chapter |
-| `data/ingest-report.md` | every line the parser could not read strictly |
-| `data/coverage-report.md` | passages the outlines do not cover, and overlaps |
+| `data/sections-ingest-report.md` | every heading the parser could not read strictly |
 | `src/lib/canon.ts` | book names/order, generated from `scripts/lib/books.mjs` |
 
 **Hand-edited — the ingest reads these and never writes them.**
@@ -59,12 +54,11 @@ merged.
 | Path | What it is |
 | --- | --- |
 | `src/data/topics.json` | 40 life topics, mapped to scripture refs |
-| `src/data/title-overrides.json` | readable wording for specific outline entries |
-| `src/data/reference-overrides.json` | adjudications of bad or ambiguous references |
 | `src/data/kjv/SOURCE.md` | KJV provenance and the UK Crown-patent note |
-| `scripts/probe-baseline.json` | frozen size of the data gate — see below |
+| `src/data/intros.json` | book introductions, written for this project |
 
-Source PDFs live in `data/source/`. The ingest reads them and never writes them.
+The BSB's USFM files live in `data/source/bsb_usfm/`. The sections ingest reads
+them and never writes them. Nothing else belongs under `data/source/`.
 
 ---
 
@@ -72,12 +66,13 @@ Source PDFs live in `data/source/`. The ingest reads them and never writes them.
 
 ### 1. Never silently correct the source
 
-The purchased PDFs carry OCR and typing artifacts. The parser does not guess.
+Source documents carry typesetting artifacts. The parser does not guess.
 Anything it cannot read strictly, or reads only by applying an alias or a layout
-repair, is recorded in `data/ingest-report.md` for a human to adjudicate.
+repair, is recorded in `data/sections-ingest-report.md` for a human to
+adjudicate.
 
-Every entry keeps `title` and `sourceRef` verbatim. Readable wording goes in the
-derived `displayTitle`; reference corrections go in `reference-overrides.json`.
+Every entry keeps its source wording verbatim. Readable wording goes in the
+derived `displayTitle`.
 The original spelling always stays on the record.
 
 An adjudication marked `resolved: false` is an open question. It is NOT applied —
@@ -91,8 +86,9 @@ pointing at outline ids would resolve to nothing.
 
 The outline layer is an *enhancement* over topics, never a dependency. Same rule
 for journal entries: a passage anchor always carries a resolved scripture ref and
-may additionally carry an outline entry id. A journal written under `full` must
-stay fully readable after an export/import into `refs-only`.
+may additionally carry an outline entry id — a format-compatibility field, kept
+so archives written by older versions still read. A journal written under
+`public` must stay fully readable after an export/import into `refs-only`.
 
 `src/lib/topic-index.ts` builds the reverse index — passage to topics — at load,
 from `topics.json` and versification alone. Under `refs-only` it is the entire
@@ -259,7 +255,7 @@ outside the one that should have caught it, never by the layer itself:
 | --- | --- | --- |
 | 1 | contrast suite | matched zero colours (Tailwind emits `oklch()`, the regex wanted `rgb()`) and reported a clean pass having measured nothing |
 | 2 | data gate | an **empty `dist/`** passed all four assertions and printed "This build is publishable" |
-| 3 | e2e suite | hardcoded a passage id that exists only under `full`, so it swept a not-found page and called it clean — and never said which profile it had tested |
+| 3 | e2e suite | hardcoded a passage id that exists under only one profile, so it swept a not-found page and called it clean — and never said which profile it had tested |
 | 4 | attribution | written, exported, unit-tested, passing, and **called by nothing** — it shipped to production entirely unwired |
 
 | 5 | the flake hunt | 40 iterations run with `--reporter=basic`, which does not exist in vitest 5. Every run failed to start; the loop recorded 40 identical "failures" and would have hidden the real one underneath |
@@ -371,9 +367,9 @@ guess carried forward.
 
 ### Never
 
-- **Let purchased-outline content reach a public artefact.** This is the one
-  irreversible mistake available in this repository. Everything else can be
-  corrected.
+- **Let licensed third-party data into this repository, or into an artefact
+  built from it.** This is the one irreversible mistake available here.
+  Everything else can be corrected. See `DATA-LICENSE.md`.
 - **Silence or skip a failing test.** Quarantine it by name, with its measured
   rate, the hypothesis, and the date — or fix it. A skipped test is a check that
   examines nothing, which is the failure this whole file is about.
@@ -396,76 +392,74 @@ guess carried forward.
 
 ## The data licensing constraint
 
-`src/data/outlines.json` derives from **purchased** third-party material. The
-repository is private and must stay private.
+Everything here is public domain or written for this project. **No licensed
+third-party data is in this repository or its history**, and no build profile
+can produce something containing any. See `DATA-LICENSE.md`.
 
-**GitHub Pages serves publicly even from a private repository.** Publishing a
-`full` build would republish the purchased titles and the author's intro prose.
+A licensed third-party outline compilation was used during earlier development.
+It is gone: the source documents, everything generated from them, the profile
+that read them, and the history that carried them. Do not bring it back — not
+as data, not as a test fixture, and not as a quoted example in a comment. The
+audit that removed it found licensed titles in three test files, which is where
+this kind of thing actually hides.
 
-**What is protected is the selection and arrangement, not just the prose.**
-Deciding that Matthew 5 divides at 1-12 / 13-20 / 21-48 is the author's editorial
-work. Stripping the titles but keeping the divisions would publish the skeleton
-of the compilation and keep the whole risk.
+**Note that GitHub Pages serves publicly even from a private repository.**
 
-`DATA_PROFILE` selects whose arrangement is published:
+`DATA_PROFILE` selects which division scheme is built:
 
 | Profile | Divisions | Use |
 | --- | --- | --- |
-| `full` | purchased [licensed content removed] | local only, by the purchaser. The default. |
-| `public` | **BSB section headings** — public domain since 2023-04-30 — plus intros written here | publishable, owned outright. **This is what `pages.yml` deploys.** |
+| `public` | **BSB section headings** — public domain since 2023-04-30 — plus intros written here | **what `pages.yml` deploys**, and the default |
 | `refs-only` | none; whole chapters from KJV versification | the fallback |
 
-Each profile reads only the file it ships: under `public` and `refs-only` the
-purchased `outlines.json` is never opened. Verse ranges from `topics.json` ship
-under all three — we authored those.
+`refs-only` ships no division data at all rather than a copy with the titles
+stripped. In a compilation the selection and arrangement is the substance —
+deciding where a chapter divides is editorial judgement, not a fact — so
+"the same divisions without the titles" redacts nothing.
 
-**The sections layer is deliberately separate from the outlines layer**, in file
-names, scripts and profile. `src/data/sections.json` is generated by
-`npm run ingest:sections` from `data/source/bsb_usfm/`; see
-`src/data/sections/SOURCE.md`. `npm run compare:coverage` puts the two schemes
-side by side.
+`src/data/sections.json` is generated by `npm run ingest:sections` from
+`data/source/bsb_usfm/`; see `src/data/sections/SOURCE.md`. Verse ranges from
+`topics.json` ship under both profiles — we authored those.
 
 Attribution for the BSB and KJV is not legally required and is given anyway —
 `src/lib/attribution.ts`, shown on the site and written into every export.
 
-`scripts/verify-bundle.mjs` proves it against the built artefact with seven named
-assertions. **The flag is not evidence; the assertions are.**
+### Two checks, and what each one asks
+
+`npm run verify:no-private-data` asks it of **the repository**: that no
+licensed or private material is tracked, by path, by private location, or by a
+short set of distinctive strings. It has floors, so a run that scanned nothing
+fails as loudly as one that found something. It runs in the pre-push hook, as
+the first step of CI's `data-gate`, and as the first step of `npm run gate`.
+
+`npm run verify:bundle` asks it of **a built artefact**, with four named
+assertions. The flag is not evidence; the assertions are.
 
 | Assertion | What it means |
 | --- | --- |
 | `BUNDLE_WAS_READ` | files were actually opened and three known-present sentinels found |
-| `EXCLUSIONS_TRACEABLE` | every exclusion resolves to a source this project owns |
-| `PROBE_SET_INTACT` | the gate is at least as strong as its frozen baseline |
-| `NO_SOURCE_FILES` | no PDFs, reports or `outlines.json` in `dist/` |
+| `NO_SOURCE_FILES` | no source documents or generated reports in `dist/` |
 | `NO_SOURCE_MAPS` | no `.map` files — they can carry a whole module post-tree-shake |
-| `NO_OUTLINE_PROSE` | every title and intro passage absent, the complete set |
-| `NO_OUTLINE_DIVISIONS` | every verse-span division absent, minus ranges we authored |
+| `NO_LICENSED_CONTENT` | none of the licensed sentinels appear |
 
-### Three ways the gate could be lost, and what stops each
+Both read `scripts/lib/licensed-sentinels.mjs`, so the two cannot drift into
+disagreeing about what they are looking for. The list is kept short on purpose:
+a guard that embedded a substantial excerpt in order to detect it would be
+republishing it to detect it.
 
-**1. The data shrinks.** Probes are derived from `outlines.json` at verify time,
-so if the ingest ever dropped entries the probe set would shrink with it and the
-gate would weaken while still reporting PASS.
+### Two ways the line could be lost, and what stops each
 
-`scripts/probe-baseline.json` freezes the expected size. `PROBE_SET_INTACT` fails
-on any decrease. Accepting a smaller set takes an explicit flag:
+**1. Someone re-adds the data.** `.gitignore` names the locations it would land
+in, so a wide `git add` cannot stage it, and `verify:no-private-data` fails
+closed if it is tracked anyway. Both were proven by staging representative
+violations and watching them fail.
 
-```bash
-node scripts/verify-bundle.mjs --accept-smaller-probe-set
-```
-
-which rewrites the baseline and prints exactly what shrank. **Never pass that
-flag in CI** — a policy test asserts neither workflow does. Understand why the
-data shrank first.
-
-**2. The workflow is edited.** The realistic path to an accidental publication is
-not a bug in the verifier; it is one line in `.github/workflows/pages.yml`.
+**2. The workflow is edited.** The realistic path to an accidental publication
+is one line in `.github/workflows/pages.yml`.
 `scripts/__tests__/workflow-policy.test.mjs` parses both workflows and asserts
 the deployed profile is pinned to the exact value it expects — `public` — that
-no step sets it to `full`, that no
-build step omits it (which would default to `full`), that verification happens
-*before* the artefact upload, that `deploy` needs `build`, and that the deploy
-job builds nothing of its own.
+no build step omits it, that verification happens *before* the artefact upload,
+that `deploy` needs `build`, and that the deploy job builds nothing of its own.
 
 **3. Someone pushes past it.** `data-gate` is a standalone CI job, required by
 branch protection on `main`. It depends on no other job on purpose: chained
@@ -514,7 +508,7 @@ See `DATA-LICENSE.md`.
 ## Layout
 
 ```
-data/source/           purchased PDFs (read-only inputs)
+data/source/bsb_usfm/  BSB USFM files, public domain (read-only inputs)
 data/*.md              generated reports
 scripts/               ingest, KJV fetch, vite plugin, bundle verifier
   lib/                 pure parsers, tested hard

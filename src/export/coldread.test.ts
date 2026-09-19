@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext } from './archive';
 import { renderNote } from './notes';
 import { ALL_ENTRIES, AWKWARD, READING, SERMON } from './fixtures';
-import outlines from '../data/outlines.json';
+import outlines from '../data/sections.json';
 import topicsFile from '../data/topics.json';
 import type { OutlineBook, Topic } from '../types';
 
@@ -12,7 +12,7 @@ const topics = topicsFile.topics as Topic[];
 const NOW = new Date('2026-09-13T12:00:00.000Z');
 
 const context = () =>
-  buildContext({ entries: ALL_ENTRIES, outlineBooks, topics, profile: 'full', now: NOW });
+  buildContext({ entries: ALL_ENTRIES, outlineBooks, topics, profile: 'public', now: NOW });
 
 /** Pull the YAML front matter block out of a note file. */
 function frontMatter(note: string): Record<string, string> {

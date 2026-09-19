@@ -268,7 +268,7 @@ export function renderReadme(ctx: ExportContext): string {
   blocks.push(
     section(
       'WHERE THESE WORDS CAME FROM',
-      ...attributionText(ctx.profile === 'full' ? 'outlines' : ctx.profile === 'public' ? 'sections' : 'none')
+      ...attributionText(ctx.profile === 'public' ? 'sections' : 'none')
         .split('\n\n')
         .map((entry) => para(entry.replace(/\n/g, ' '))),
     ),

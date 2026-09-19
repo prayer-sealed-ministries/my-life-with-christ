@@ -52,7 +52,7 @@ function at(book: string, chapterStart: number, verseStart: number, chapterEnd =
 }
 
 /**
- * A populated outline layer, as the `full` profile carries one.
+ * A populated division layer, as the `public` profile carries one.
  *
  * Built with titles and an intro that would be unmistakable in the output, so
  * the refs-only comparison below is a real test: if any index ever started
@@ -92,11 +92,11 @@ function outlineLayer(): { books: Map<string, OutlineBook>; entries: Map<string,
 }
 
 interface CtxOptions {
-  profile?: 'full' | 'refs-only';
+  profile?: 'public' | 'refs-only';
   topics?: Topic[];
   /** Entry ids to leave out of the filename map, to test the no-link path. */
   withoutFilenames?: string[];
-  /** Populate the outline layer, as the `full` profile does. */
+  /** Populate the division layer, as the `public` profile does. */
   withOutline?: boolean;
 }
 
@@ -109,7 +109,7 @@ function makeCtx(entries: Entry[], options: CtxOptions = {}): ExportContext {
     entries,
     excludedCount: 0,
     exportedAt: '2026-09-13T12:00:00.000Z',
-    profile: options.profile ?? 'full',
+    profile: options.profile ?? 'public',
     bookNames: new Map(BOOKS.map(([id, name]) => [id, name])),
     bookOrder: new Map(BOOKS.map(([id, , order]) => [id, order])),
     // Empty under refs-only, and this module must never read them either way.
@@ -215,7 +215,7 @@ describe('renderIndexes', () => {
       entry('a', { anchors: [at('genesis', 35, 1, 35, 15)], speaker: 'Rev. Ames' }),
       entry('b', { date: '2021-03-04', anchors: [{ kind: 'topic', topicId: 'money' }], place: 'back porch' }),
     ];
-    // The full profile carries an outline layer, refs-only carries none. If any
+    // The public profile carries a division layer, refs-only carries none. If any
     // index ever read it, the loud outline strings would show up on one side.
     const full = renderIndexes(makeCtx(entries, { withOutline: true }));
     const refsOnly = renderIndexes(makeCtx(entries, { profile: 'refs-only' }));

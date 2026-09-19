@@ -19,11 +19,10 @@ export type Testament = 'OT' | 'NT';
 /**
  * Which division scheme a build carries.
  *
- *   full       the purchased [licensed content removed] — local use only
  *   public     BSB section headings, public domain — publishable
  *   refs-only  no divisions at all; whole chapters from KJV versification
  */
-export type DataProfile = 'full' | 'public' | 'refs-only';
+export type DataProfile = 'public' | 'refs-only';
 
 /** How a reference was written in the source outline. */
 export type ReferenceForm =

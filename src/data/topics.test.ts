@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import topicsFile from './topics.json';
 import versification from './kjv/versification.json';
-import outlines from './outlines.json';
+import outlines from './sections.json';
 import { resolveTopicEntries } from '../lib/passages';
 import { examinedAtLeast } from '../testing/floor';
 import type { OutlineBook, Topic } from '../types';

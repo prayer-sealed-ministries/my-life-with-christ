@@ -182,35 +182,28 @@ supplies verse text.
 come from a different source depending on how the app was built. That is what
 `DATA_PROFILE` selects:
 
-| Profile | Section divisions come from | Publishable | Used for |
-| --- | --- | --- | --- |
-| `full` | purchased *[licensed content removed]* | **No** | local use by the purchaser; the default when no profile is set |
-| `public` | **BSB section headings** plus introductions written for this project | Yes | **the current public deployment** |
-| `refs-only` | none — whole chapters from KJV versification | Yes | fallback |
+| Profile | Section divisions come from | Used for |
+| --- | --- | --- |
+| `public` | **BSB section headings** plus introductions written for this project | **the deployed build**, and the default |
+| `refs-only` | none — whole chapters from KJV versification | fallback |
 
-Each profile reads only the file it ships. Under `public` and `refs-only` the
-purchased data file is never opened.
+Each profile reads only the file it ships. Both are publishable.
 
-### The purchased outlines are not distributed
+### No licensed third-party data is in this repository
 
-The `full` profile derives from **purchased** third-party material — *Blueprint
-Outlines*, Old and New Testament. That material is the author's intellectual
-property. Nothing in this repository grants a licence to redistribute it, and it
-is not in the public build.
+Every division scheme here is either public domain or written for this project:
+the section headings come from the Berean Standard Bible, dedicated to the
+public domain on 2023-04-30, and the book introductions were written here from
+plain historical fact and public-domain reference works.
 
-**What is protected is the selection and arrangement, not only the wording.** In
-a compilation, the editorial choices are the work: deciding where a chapter
-divides is the author's judgement. Publishing those divisions with the titles
-stripped would republish the skeleton and keep the whole risk. That is why the
-publishable profile uses a division scheme this project owns outright rather than
-a redacted version of the purchased one.
+A licensed third-party outline compilation was used during earlier development.
+**It is not part of this repository** — not the source documents, not anything
+generated from them, and not in the history. There is no build profile that
+reads it and no flag that can turn one on. See `DATA-LICENSE.md`.
 
-**This repository is private and must stay private** — and note that **GitHub
-Pages serves publicly even from a private repository.**
-
-A commercial binary must not ship the purchased outlines without first resolving
-the rights question. Nothing here should be read as a legal conclusion; see
-`DATA-LICENSE.md` for the full record.
+Private or licensed source data must never be committed here.
+`npm run verify:no-private-data` fails closed if any is, and runs in CI before
+anything is built or uploaded, and in the pre-push hook.
 
 ### The gate
 
@@ -252,13 +245,14 @@ Full provenance: `src/data/kjv/SOURCE.md`, `src/data/sections/SOURCE.md`,
 
 ```bash
 npm install
-npm run dev            # Vite dev server (full profile by default)
+npm run dev            # Vite dev server (public profile by default)
 npm test               # unit tests
 npm run typecheck
 npm run lint
-npm run build          # full profile — local use only
-npm run build:public   # the profile the public site deploys
-npm run gate           # workflow policy + the data gate
+npm run build          # public profile, the one that deploys
+npm run build:refs-only
+npm run verify:no-private-data   # no licensed or private data is tracked
+npm run gate           # the guard, workflow policy, and the data gate
 ```
 
 End-to-end and accessibility suites run against the built site:
@@ -272,9 +266,7 @@ Regenerating data (both outputs are committed; the ingest is idempotent and CI
 fails if re-running changes them):
 
 ```bash
-npm run ingest           # purchased PDFs  -> src/data/outlines.json
-npm run ingest:sections  # BSB USFM        -> src/data/sections.json
-npm run compare:coverage # the two schemes side by side
+npm run ingest:sections  # BSB USFM -> src/data/sections.json
 ```
 
 ### The native shells
@@ -292,10 +284,9 @@ npm run native:android   # sync, then open Android Studio
 
 **Never run `npx cap sync` or `npx cap copy` directly.** The Capacitor CLI
 copies whatever is sitting in `dist/`, and `dist/` holds whichever profile was
-built last — the default being `full`, the purchased outlines. `native:sync`
-exists to refuse that: it will not copy without a marker proving the bytes on
-disk are the bytes a `public` build verified, and it re-runs the data gate on
-the copied assets afterwards. A store build is not revocable the way a Pages
+built last, verified or not. `native:sync` exists to refuse that: it will not
+copy without a marker proving the bytes on disk are the bytes a `public` build
+verified, and it re-runs the data gate on the copied assets afterwards. A store build is not revocable the way a Pages
 deploy is.
 
 **Tested JDK: 21.** The Android project was built with Android Studio's bundled
@@ -319,16 +310,11 @@ hand-edited, and the rules that are not open to renegotiation.
 
 Regenerated by the ingest, not maintained by hand.
 
-- **`data/ingest-report.md`** — every line the parser could not read strictly.
-  Rows dropped entirely: 0. Rows kept but flagged: 74 — alias resolutions,
-  layout repairs, and references adjudicated by hand. Nothing is silently
-  corrected; the original spelling always stays on the record.
-- **`data/coverage-report.md`** — under `full`, the purchased outlines cover
-  30,876 of 31,102 verses, leaving 226 verses across 42 gaps and 12 overlapping
-  pairs. These are the shape of the source, not ingest defects, and uncovered
-  passages remain browsable and journalable.
-- Under `public`, the BSB scheme is a complete partition: 3,016 sections, every
-  verse covered, no gaps or overlaps.
+- **`data/sections-ingest-report.md`** — every heading the USFM parser could
+  not read strictly. Nothing is silently corrected.
+- The BSB scheme is a complete partition: 3,016 sections, every verse covered,
+  no gaps or overlaps. A division scheme with holes in it is still supported —
+  uncovered passages remain browsable and journalable — but this one has none.
 
 ---
 
@@ -360,9 +346,9 @@ install, and OCR for scanned documents.
 
 ## Licence
 
-Code is MIT — see `LICENSE`. That covers the ingest parser too: it is the
-parser, not the data.
+Code is MIT — see `LICENSE`.
 
-Data licensing is a separate matter and is documented separately in
-`DATA-LICENSE.md`. The short version is that the purchased outlines are not
-ours to give away, and the build is arranged so they cannot leave by accident.
+Data licensing is documented separately in `DATA-LICENSE.md`. The short version
+is that everything here is public domain or written for this project, no
+licensed third-party data is in this repository or its history, and
+`npm run verify:no-private-data` is what keeps it that way.

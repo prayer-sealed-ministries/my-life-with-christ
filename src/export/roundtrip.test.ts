@@ -6,7 +6,7 @@ import { applyImport, parseImport, previewImport } from './importer';
 import { readZip, zipEntryText } from './zip';
 import { ALL_ENTRIES, AWKWARD, COLLIDER_A, COLLIDER_B, READING, SERMON } from './fixtures';
 import { examinedAtLeast } from '../testing/floor';
-import outlines from '../data/outlines.json';
+import outlines from '../data/sections.json';
 import topicsFile from '../data/topics.json';
 import type { Entry, OutlineBook, Topic } from '../types';
 
@@ -18,7 +18,7 @@ const archiveOptions = (entries: Entry[], overrides = {}) => ({
   entries,
   outlineBooks,
   topics,
-  profile: 'full' as const,
+  profile: 'public' as const,
   now: NOW,
   ...overrides,
 });

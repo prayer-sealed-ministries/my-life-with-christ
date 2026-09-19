@@ -20,7 +20,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const PROFILES = ['full', 'public', 'refs-only'];
+const PROFILES = ['public', 'refs-only'];
 
 /**
  * A floor, not a target. The suite is ~715 tests; this only has to be high

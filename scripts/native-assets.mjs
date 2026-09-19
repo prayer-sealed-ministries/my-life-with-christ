@@ -7,7 +7,8 @@
  *
  * `npx cap sync` copies whatever is sitting in `dist/`. It does not know or care
  * which DATA_PROFILE produced it. `dist/` holds whichever profile was built
- * last, and the default profile is `full` — the purchased [licensed content removed].
+ * last, and a build made without a stated profile is not necessarily the one
+ * that should be shipped.
  * So the realistic accident is not someone deciding to ship purchased material;
  * it is someone running `npm run build` to check something, then running
  * `cap sync` an hour later, and quietly packaging the compilation into an app.

@@ -4,8 +4,8 @@
  *
  * This wraps `cap sync` rather than aliasing it. The Capacitor CLI copies
  * whatever is in `dist/` without knowing which data profile produced it, so
- * calling it directly is the one step that could put purchased Blueprint
- * material inside an iOS or Android application.
+ * calling it directly is the one step that could put an unverified build
+ * inside an iOS or Android application.
  *
  * Three refusals, in order of how likely the mistake is:
  *
@@ -72,8 +72,8 @@ function requireVerifiedAssets() {
   if (!existsSync(markerPath)) {
     fail(
       `dist/ carries no verification marker.\n\n` +
-        `It was probably built by \`npm run build\`, which defaults to the \`full\`\n` +
-        `profile and contains the purchased [licensed content removed].\n\n` +
+        `It was built without going through the data gate, so nothing has\n` +
+        `checked what it contains.\n\n` +
         `Run: npm run native:assets`,
     );
   }
