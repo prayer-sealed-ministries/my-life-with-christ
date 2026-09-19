@@ -77,7 +77,7 @@ export default function AboutView() {
         </h2>
         {/* Text, not a link: the app must not depend on a website, must not
             fetch anything, and cannot vouch for an address while offline. */}
-        <p className="text-sm text-ink-soft">myjourneywithchrist.com</p>
+        <p className="text-sm text-ink-soft">mylifewithchrist.com</p>
         <p className="text-sm text-ink-muted">Version {APP_VERSION}</p>
       </section>
     </div>

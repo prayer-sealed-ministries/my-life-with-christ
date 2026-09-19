@@ -170,6 +170,10 @@ describe('the app runs from bundled assets or not at all', () => {
     // is not a remote origin; everything else named here would be.
     const forbidden = [
       'systemslibrarian.github.io',
+      'mylifewithchrist.com/app',
+      // The product home was named myjourneywithchrist.com before it was
+      // settled as mylifewithchrist.com. Both stay on this list: a retired
+      // address is still a remote origin if anything ever points at it.
       'myjourneywithchrist.com/app',
       '192.168.',
       '10.0.2.2',

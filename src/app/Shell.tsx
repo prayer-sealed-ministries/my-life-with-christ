@@ -305,7 +305,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
               A link would be a destination this application does not need and
               cannot vouch for offline; naming it costs nothing and adds no
               network dependency of any kind. */}
-          <p className="mt-1">{APP_NAME} · myjourneywithchrist.com</p>
+          <p className="mt-1">{APP_NAME} · mylifewithchrist.com</p>
         </footer>
       )}
     </div>

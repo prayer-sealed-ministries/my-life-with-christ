@@ -11,7 +11,7 @@ on.
 | --- | --- |
 | Application | **My Life With Christ** |
 | The journal it produces | **My Journey With Christ** |
-| Planned product home | **myjourneywithchrist.com** |
+| Planned product home | **mylifewithchrist.com** |
 
 ---
 

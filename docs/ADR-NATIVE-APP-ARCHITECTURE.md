@@ -133,7 +133,7 @@ licensing gate wrong.
 
 Fails App Store Review Guideline 4.2 (minimum functionality) if it is a thin
 wrapper, and fails the product on its own terms: a wrapper around a hosted site
-would make the journal depend on `myjourneywithchrist.com` being up, which
+would make the journal depend on `mylifewithchrist.com` being up, which
 contradicts invariant 1. A locally-bundled PWA without a native shell also
 cannot reach the Files app or the Storage Access Framework, so the user could
 never possess their archive as an ordinary file.
@@ -399,7 +399,7 @@ calls.
 | Export an archive | yes — bytes built locally, handed to the OS |
 | Import an archive or document | yes |
 
-**No runtime dependency on** `myjourneywithchrist.com`, GitHub Pages, any API,
+**No runtime dependency on** `mylifewithchrist.com`, GitHub Pages, any API,
 any CDN, analytics, or authentication.
 
 **Exceptions, stated honestly:**
