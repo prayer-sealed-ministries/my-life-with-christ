@@ -19,7 +19,7 @@
  * carries EXPORT-NOTE.txt stating plainly what was left out and how much.
  */
 
-import type { Entry, ExportFilter, JourneyExport, OutlineBook, ScriptureRef, Topic, DataProfile} from '../types';
+import type { Entry, EntryDraft, ExportFilter, JourneyExport, OutlineBook, ScriptureRef, Topic, DataProfile} from '../types';
 import { BOOK_NAMES, BOOK_ORDER } from '../lib/canon';
 import { loadPassage, type PassageVerse } from '../lib/bible';
 import { buildNoteFilenames, refKey, type ExportContext } from './context';
@@ -32,6 +32,14 @@ import { CURRENT_VERSION } from './migrate';
 
 export interface BuildArchiveOptions {
   entries: Entry[];
+  /**
+   * Unfinished writing to carry in the canonical JSON.
+   *
+   * "Export everything" that knowingly left out the reader's most recent words
+   * would be a lie, so a full export includes them. They travel apart from
+   * entries and never reach the book.
+   */
+  drafts?: EntryDraft[];
   /** Every entry in the journal, so a filtered export can say what it omitted. */
   allEntries?: Entry[];
   filter?: ExportFilter;
@@ -131,6 +139,9 @@ export async function buildContext(options: BuildArchiveOptions): Promise<Export
 
   return {
     entries,
+    // Absent for callers that do not have them — a context built for a preview
+    // or a test is still a valid one.
+    drafts: options.drafts ?? [],
     filter: options.filter,
     excludedCount: Math.max(0, (options.allEntries?.length ?? entries.length) - entries.length),
     exportedAt: now.toISOString(),
@@ -155,6 +166,11 @@ export function buildJourneyJson(ctx: ExportContext): JourneyExport {
     exportedAt: ctx.exportedAt,
     ...(ctx.filter ? { filter: ctx.filter } : {}),
     entries: ctx.entries,
+    // Omitted entirely when there are none, so an archive from a journal with
+    // no unfinished work is byte-identical to one this feature never touched.
+    // That is what keeps the format at version 1: the key is additive, and its
+    // absence is the v1 reading.
+    ...(ctx.drafts.length > 0 ? { drafts: ctx.drafts } : {}),
   };
 }
 

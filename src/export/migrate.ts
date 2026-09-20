@@ -9,6 +9,7 @@
  */
 
 import type {
+  EntryDraft,
   Entry,
   EntryAnchor,
   EntryKind,
@@ -126,6 +127,14 @@ export interface MigrationContext {
 
 export interface MigrationResult {
   entries: Entry[];
+  /**
+   * Unfinished writing carried by the archive, if it had any.
+   *
+   * Always an array, empty for the archives written before drafts existed —
+   * which is most of them, and all of the ones written by version 1 of this
+   * app. An absent key is the v1 reading and is not an error.
+   */
+  drafts: EntryDraft[];
   /** Human-readable notes on everything the migration changed or could not map. */
   warnings: string[];
   migratedFrom?: number;
@@ -306,6 +315,48 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
   return entry;
 }
 
+/**
+ * Read the drafts an archive carried, defensively.
+ *
+ * Absent is the normal case and is silent: every archive written before this
+ * existed has no such key, and treating that as a problem would make old
+ * backups look damaged. Anything present but malformed is dropped with a note
+ * rather than crashing the import — an unfinished note is not worth refusing
+ * somebody's whole journal over.
+ */
+function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    warnings.push('The "drafts" section was not a list, so unfinished writing was not restored.');
+    return [];
+  }
+
+  const drafts: EntryDraft[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const value = item as Record<string, unknown>;
+    const id = typeof value.id === 'string' ? value.id : '';
+    const form = value.form;
+    if (!id || !form || typeof form !== 'object') {
+      warnings.push('A draft in this archive was malformed and could not be restored.');
+      continue;
+    }
+    drafts.push({
+      id,
+      ...(typeof value.entryId === 'string' ? { entryId: value.entryId } : {}),
+      // Kept verbatim: a draft's whole purpose is to be exactly what was typed,
+      // and this build must not tidy a snapshot it is only passing through.
+      form: form as EntryDraft['form'],
+      createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
+      updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date(0).toISOString(),
+      ...(value._unmigrated && typeof value._unmigrated === 'object'
+        ? { _unmigrated: value._unmigrated as Record<string, unknown> }
+        : {}),
+    });
+  }
+  return drafts;
+}
+
 /** Migrate a parsed export envelope forward to the current schema. */
 export function migrateExport(raw: unknown, context: MigrationContext = {}): MigrationResult {
   const warnings: string[] = [];
@@ -334,6 +385,7 @@ export function migrateExport(raw: unknown, context: MigrationContext = {}): Mig
 
   return {
     entries,
+    drafts: readDrafts(envelope.drafts, warnings),
     warnings,
     migratedFrom: version !== undefined && version !== CURRENT_VERSION ? version : undefined,
   };

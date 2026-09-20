@@ -122,7 +122,8 @@ function CurrentView() {
       // wrong thing while the URL said otherwise.
       return (
         <EntryEditor
-          key={`new:${route.anchor ?? ''}:${route.kind ?? ''}`}
+          key={`new:${route.anchor ?? ''}:${route.kind ?? ''}:${route.draft ?? ''}`}
+          draftParam={route.draft}
           anchorParam={route.anchor}
           kindParam={route.kind}
         />

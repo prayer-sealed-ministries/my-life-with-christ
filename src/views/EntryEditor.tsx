@@ -37,6 +37,9 @@ import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextA
 import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
 import { resolveFocusIntent } from '../lib/focus-intent';
+import { Autosaver, type AutosaveResult } from '../lib/autosave';
+import { hasDraftContent } from '../lib/drafts';
+import { newId } from '../storage/semantics';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import {
@@ -51,7 +54,14 @@ import { describeProvenance } from '../lib/provided-notes';
 import { SermonNotesImport } from './SermonNotesImport';
 import { segmentRef } from '../lib/passages';
 import { todayIso } from '../storage/db';
-import type { Entry, EntryAnchor, EntryKind, EntryLink, SourceMaterial } from '../types';
+import type {
+  DraftForm,
+  DraftLinkRow,
+  Entry,
+  EntryAnchor,
+  EntryKind,
+  EntryLink,
+} from '../types';
 
 /** The dropdown, built from the canonical list so it cannot fall behind it. */
 const KINDS: Array<{ value: EntryKind; label: string }> = ENTRY_KINDS.map((value) => ({
@@ -59,47 +69,17 @@ const KINDS: Array<{ value: EntryKind; label: string }> = ENTRY_KINDS.map((value
   label: ENTRY_KIND_LABELS[value],
 }));
 
+/**
+ * The editor's own state, and the shape a recovery draft stores verbatim.
+ *
+ * One type rather than two: a snapshot that could drift from what the editor
+ * actually holds would restore something subtly different from what was on the
+ * screen, and the whole promise here is that it does not.
+ */
+type FormState = DraftForm;
 /** A link row while it is being edited: every field a string, nothing optional. */
-interface LinkRow {
-  url: string;
-  label: string;
-  capturedTitle: string;
-  capturedAt?: string;
-}
+type LinkRow = DraftLinkRow;
 
-interface FormState {
-  kind: EntryKind;
-  title: string;
-  date: string;
-  place: string;
-  speaker: string;
-  sermonSeries: string;
-  notes: string;
-  reflection: string;
-  prayer: string;
-  /** Raw text as typed; split on save. */
-  tagsText: string;
-  links: LinkRow[];
-  anchors: EntryAnchor[];
-  forDescendants: boolean;
-  /**
-   * Free-text references on the entry.
-   *
-   * Not edited in this form — anchors are how a reader attaches a passage
-   * here. It is carried so that a value already on the entry survives a save
-   * unchanged, and so an imported handout's stated references can land on the
-   * entry rather than being visible only inside the provided material.
-   */
-  scriptureRefs: string[];
-  /**
-   * Sermon notes somebody else provided, or nothing.
-   *
-   * Part of the form so that an import proposes and a save commits — the
-   * journal is not touched in between. Never edited here: the reader writes
-   * around it, and the only thing they can do to it is remove it.
-   */
-  sourceMaterial: SourceMaterial | null;
-}
 
 /**
  * A fresh form.
@@ -308,9 +288,18 @@ export default function EntryEditor({
   entryId,
   anchorParam,
   kindParam,
+  draftParam,
 }: {
   entryId?: string;
   anchorParam?: string;
+  /**
+   * Which unfinished piece of work this editor is resuming.
+   *
+   * Only meaningful for a new entry: a saved entry finds its own draft by id.
+   * Carried in the route so that "Continue writing" reopens the same draft
+   * rather than a different blank page, and so two started notes stay distinct.
+   */
+  draftParam?: string;
   /**
    * The kind the route asked for, already validated by the parser.
    *
@@ -326,8 +315,45 @@ export default function EntryEditor({
   const { navigate } = useRouter();
 
   const [form, setForm] = useState<FormState | null>(null);
-  /** The serialized form as last loaded or saved; drives the dirty check. */
-  const [baseline, setBaseline] = useState('');
+
+  // --- crash-safe drafts --------------------------------------------------
+  //
+  // Everything typed here is snapshotted into its own durable collection as it
+  // is written, so a process death costs at most the text typed inside the
+  // current settle window. See docs/ADR-CRASH-SAFE-DRAFTS.md. The draft is not
+  // an entry and never becomes one until Save says so.
+
+  /**
+   * This editor's draft id, stable for as long as it is open.
+   *
+   * Minted lazily — a blank editor someone opened and closed must leave
+   * nothing behind — and then held, so a second new entry cannot overwrite the
+   * first one's unfinished work.
+   */
+  const draftId = useRef<string | null>(draftParam ?? null);
+  /** When the draft was first written, so "started at" means something. */
+  const draftCreatedAt = useRef<string | null>(null);
+  /**
+   * Whether there is unfinished work to offer discarding.
+   *
+   * State rather than reading the ref while rendering: the ref is the
+   * authority for async callbacks, but a ref changing does not re-render, so
+   * the control would not appear at the moment the draft was minted.
+   */
+  const [hasDraft, setHasDraft] = useState(Boolean(draftParam));
+  /** Said once, quietly, when work was brought back. */
+  const [draftRestored, setDraftRestored] = useState(false);
+  /** Shown only once persistence has failed repeatedly; never per keystroke. */
+  const [draftTrouble, setDraftTrouble] = useState(false);
+  /**
+   * Is there text on screen that has not reached durable storage yet?
+   *
+   * This — not "is the form different from the saved entry" — is what the
+   * unsaved-work guard now protects. Once a snapshot is written, leaving does
+   * not lose anything, and warning about a loss that cannot happen teaches
+   * people to click through warnings.
+   */
+  const [notYetDurable, setNotYetDurable] = useState(false);
   /**
    * The id that turned out not to exist, not a bare flag.
    *
@@ -344,6 +370,8 @@ export default function EntryEditor({
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const discardRef = useRef<HTMLButtonElement>(null);
   /** Is the church-notes import panel open? Nothing is written while it is. */
   const [importingNotes, setImportingNotes] = useState(false);
   const [confirmingRemoveProvided, setConfirmingRemoveProvided] = useState(false);
@@ -423,7 +451,81 @@ export default function EntryEditor({
   const [browseSegmentId, setBrowseSegmentId] = useState('');
 
   const loaded = form !== null;
-  const dirty = form !== null && JSON.stringify(form) !== baseline;
+  /**
+   * The writer. One per editor, created lazily so a blank editor makes nothing.
+   *
+   * `write` is given the snapshot and does exactly one thing with it — there is
+   * no conversion to an entry here, because converting trims and drops empty
+   * link rows, and a recovery snapshot must give back the half-typed state the
+   * reader actually had.
+   */
+  const autosaver = useRef<Autosaver<FormState> | null>(null);
+
+  const onAutosaveResult = useCallback((result: AutosaveResult) => {
+    // Never per-cycle noise. A single failure is usually transient; a run of
+    // them means the writing is not being kept and the reader should be told.
+    if (result.status === 'saved') {
+      setDraftTrouble(false);
+      setNotYetDurable(false);
+      return;
+    }
+    // A failed write leaves the words on screen and nowhere else, so the guard
+    // must keep saying so.
+    setNotYetDurable(true);
+    if (result.consecutiveFailures >= 3) setDraftTrouble(true);
+  }, []);
+
+  const getAutosaver = useCallback((): Autosaver<FormState> => {
+    if (!autosaver.current) {
+      autosaver.current = new Autosaver<FormState>({
+        write: async (snapshot) => {
+          const id = draftId.current;
+          if (!id) return;
+          const now = new Date().toISOString();
+          draftCreatedAt.current ??= now;
+          await storage.putDraft({
+            id,
+            ...(entryId ? { entryId } : {}),
+            form: snapshot,
+            createdAt: draftCreatedAt.current,
+            updatedAt: now,
+          });
+        },
+        onResult: onAutosaveResult,
+      });
+    }
+    return autosaver.current;
+  }, [entryId, onAutosaveResult, storage]);
+
+  /**
+   * Snapshot the editor whenever it changes.
+   *
+   * Change-driven rather than timer-driven: the autosaver coalesces a burst of
+   * keystrokes into one write and refuses any write carrying stale content, so
+   * nothing here depends on a timer winning a race.
+   */
+  useEffect(() => {
+    if (!form) return;
+    if (!hasDraftContent(form)) return;
+
+    // First meaningful keystroke on a new entry: the work becomes recoverable
+    // from this moment, without anyone having pressed Save.
+    if (!draftId.current) {
+      draftId.current = newId();
+      setHasDraft(true);
+      // Deliberately NOT written into the route. Putting it there rewrote the
+      // URL on the first keystroke, and since the route is part of this view's
+      // React key that remounted the editor mid-sentence. The way back to this
+      // work after a relaunch is "Continue writing" on the home page, which
+      // opens `#/entry/new?draft=<id>` explicitly.
+    }
+    // Deferred to a microtask for the reason the storage hook defers its own
+    // loading flag: a synchronous setState inside an effect costs an extra
+    // render pass before paint, and this runs on every keystroke.
+    queueMicrotask(() => setNotYetDurable(true));
+    getAutosaver().queue(form);
+  }, [form, getAutosaver]);
+
   /** What a save writes to: the entry being edited, or the one just created. */
   const targetId = entryId ?? createdId;
 
@@ -455,31 +557,58 @@ export default function EntryEditor({
     if (!entryId) {
       // Deferred to a microtask for the same reason as elsewhere: a synchronous
       // setState in an effect body costs an extra render pass before paint.
-      queueMicrotask(() => {
+      void (async () => {
+        // Work in progress wins over a blank page. There is no ambiguity to
+        // resolve here — nothing has ever been saved under this id, so the
+        // draft IS the entry as far as the reader is concerned.
+        const resuming = draftParam ? await storage.getDraft(draftParam).catch(() => undefined) : undefined;
         if (cancelled) return;
+
+        if (resuming) {
+          draftId.current = resuming.id;
+          draftCreatedAt.current = resuming.createdAt;
+          setHasDraft(true);
+          setForm(resuming.form);
+          setDetailsOpen(hasDetails(resuming.form));
+          setDraftRestored(true);
+          return;
+        }
+
         const anchor = anchorParam ? anchorFromParam(anchorParam) : null;
         const initial: FormState = { ...blankForm(kindParam), anchors: anchor ? [anchor] : [] };
         setForm(initial);
-        setBaseline(JSON.stringify(initial));
         setDetailsOpen(false);
-      });
+      })();
       return () => {
         cancelled = true;
       };
     }
 
-    storage
-      .getEntry(entryId)
-      .then((entry) => {
+    Promise.all([storage.getEntry(entryId), storage.getDraftForEntry(entryId).catch(() => undefined)])
+      .then(([entry, draft]) => {
         if (cancelled) return;
         if (!entry) {
           setMissingId(entryId);
           return;
         }
-        const next = formFromEntry(entry);
-        setForm(next);
-        setBaseline(JSON.stringify(next));
-        setDetailsOpen(hasDetails(next));
+        const saved = formFromEntry(entry);
+
+        // Unsaved edits to this entry outrank the saved copy on screen, because
+        // they are the newer thing the reader wrote. The saved entry is not
+        // touched — it stays exactly as it was until Save says otherwise, so
+        // discarding the draft still gets them back to it.
+        if (draft) {
+          draftId.current = draft.id;
+          draftCreatedAt.current = draft.createdAt;
+          setHasDraft(true);
+          setForm(draft.form);
+          setDetailsOpen(hasDetails(draft.form));
+          setDraftRestored(true);
+          return;
+        }
+
+        setForm(saved);
+        setDetailsOpen(hasDetails(saved));
       })
       .catch(() => {
         if (!cancelled) setMissingId(entryId);
@@ -487,7 +616,7 @@ export default function EntryEditor({
     return () => {
       cancelled = true;
     };
-  }, [ready, storage, entryId, anchorParam, kindParam]);
+  }, [ready, storage, entryId, anchorParam, kindParam, draftParam]);
 
   // Fast capture: the cursor belongs in the notes box the moment the form opens.
   //
@@ -561,10 +690,23 @@ export default function EntryEditor({
   // person who is still present and can still choose, and nothing more —
   // durable writes must never depend on it firing. Saving remains explicit, on
   // the Save button, exactly as before.
+  /**
+   * Warn only about a loss that is real.
+   *
+   * This used to fire on `dirty` — any difference from the saved entry — and
+   * that is no longer true of anything. Work in progress is written to its own
+   * durable record as it is typed, so closing the tab with unsaved changes
+   * keeps them; they come back as a draft. The only text genuinely at risk is
+   * text inside the current settle window, or text whose write failed, which is
+   * exactly what `notYetDurable` tracks.
+   *
+   * Left deliberately in place rather than removed: that window is real, and
+   * the guard is what covers it.
+   */
   useEffect(() => {
-    if (!dirty) return;
+    if (!notYetDurable) return;
     return unsavedWork.protect(() => true);
-  }, [dirty, unsavedWork]);
+  }, [notYetDurable, unsavedWork]);
 
 
   /**
@@ -753,13 +895,43 @@ export default function EntryEditor({
     };
 
     try {
+      // Flush before the canonical write, so Save cannot race the settle
+      // window and commit against text the reader can no longer see.
+      await getAutosaver().flush().catch(() => {
+        // A draft that would not write does not stop an explicit save: the
+        // canonical write below is the one that matters, and it reports its own
+        // failure. Swallowing here only means the draft is stale, and the next
+        // line is about to make it irrelevant.
+      });
+
       const saved = targetId
         ? await storage.updateEntry(targetId, patch)
         : await storage.createEntry(patch);
 
+      // The draft has done its job. Retire it behind the autosaver's fence
+      // FIRST, so a write still in flight cannot recreate it afterwards and put
+      // superseded text back under a finished entry.
+      getAutosaver().retire();
+      // Retiring is permanent for that writer, which is the point of the fence.
+      // Editing does not stop when a save happens, though: dropping the
+      // reference means the next keystroke builds a fresh writer and a fresh
+      // draft, so work done after a save is protected exactly as before it.
+      autosaver.current = null;
+      const finishedDraft = draftId.current;
+      draftId.current = null;
+      draftCreatedAt.current = null;
+      setHasDraft(false);
+      setDraftRestored(false);
+      if (finishedDraft) {
+        await storage.deleteDraft(finishedDraft).catch(() => {
+          // The entry is saved; a draft that outlives it is untidy, not a loss.
+          // It will be offered as unfinished work, which is recoverable, and
+          // the next save of this entry clears it.
+        });
+      }
+
       // Claimed before anything else, so a second submit lands on an update.
       setCreatedId(saved.id);
-      setBaseline(JSON.stringify(form)); // stands the unsaved-changes guard down
       touch();
       // The route switch renders this same component for "new entry" and for an
       // existing entry, so saving a new note does NOT unmount this instance —
@@ -785,11 +957,41 @@ export default function EntryEditor({
     }
   }
 
+  /**
+   * Throw the unfinished work away, on purpose.
+   *
+   * Emptying the boxes and waiting is not a way to discard something — it
+   * leaves a draft that says nothing and still offers to be continued. This is
+   * the deliberate act, and it is confirmed because it destroys writing.
+   */
+  async function handleDiscardDraft() {
+    const id = draftId.current;
+    getAutosaver().retire();
+    autosaver.current = null;
+    draftId.current = null;
+    draftCreatedAt.current = null;
+    setHasDraft(false);
+    setDraftRestored(false);
+    setConfirmingDiscard(false);
+    if (id) await storage.deleteDraft(id).catch(() => {});
+
+    if (entryId) {
+      // Back to the entry as the journal has it. The saved copy was never
+      // touched by the draft, so this is a real return rather than a guess.
+      const entry = await storage.getEntry(entryId).catch(() => undefined);
+      if (entry) {
+        const saved = formFromEntry(entry);
+        setForm(saved);
+      }
+      return;
+    }
+    navigate({ name: 'timeline' });
+  }
+
   async function handleDelete() {
     if (!entryId) return;
     try {
       await storage.deleteEntry(entryId);
-      setBaseline(form ? JSON.stringify(form) : baseline);
       touch();
       // Same reason as the save above: this navigates, so anything said from
       // here would be gone before it could be read. Deleting something and
@@ -1586,6 +1788,38 @@ export default function EntryEditor({
           </div>
         </details>
 
+        {/*
+          Said once, when work is brought back, and then it goes away on the
+          next change. Deliberately NOT announced on every settle cycle: a
+          screen reader repeating "draft saved" every few hundred milliseconds
+          would make the editor unusable, which is why ordinary autosave is
+          silent and only the meaningful events speak.
+        */}
+        {draftRestored ? (
+          <p
+            role="status"
+            className="rounded-control border border-line bg-raised px-3 py-2 text-sm text-ink-soft"
+          >
+            Your recent changes were restored.
+          </p>
+        ) : null}
+
+        {/*
+          Only after persistence has failed repeatedly. One failed write is
+          usually nothing; a run of them means the writing is not being kept,
+          and staying quiet about that would be the same lie as claiming a
+          backup exists.
+        */}
+        {draftTrouble ? (
+          <p
+            role="alert"
+            className="rounded-control border border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-400 dark:bg-amber-950/40 dark:text-amber-100"
+          >
+            Your writing is on the screen but is not being saved to this device.
+            Use <strong>Save</strong> to keep it, and export a copy if this continues.
+          </p>
+        ) : null}
+
         {saveError ? (
           <p
             role="alert"
@@ -1631,6 +1865,33 @@ export default function EntryEditor({
             {entryId ? 'Back to my journey' : 'Cancel'}
           </Link>
 
+          {/*
+            Only offered when there is unfinished work to throw away. Leaving
+            the editor keeps the draft, so this is the deliberate act of
+            deciding not to keep it.
+          */}
+          {hasDraft && !focused ? (
+            confirmingDiscard ? (
+              <span className="flex flex-wrap items-center gap-3">
+                <span className="text-sm text-ink-soft">Throw this draft away?</span>
+                <Button variant="danger" onClick={() => void handleDiscardDraft()}>
+                  Yes, discard it
+                </Button>
+                <Button
+                  onClick={() => {
+                    claimFocus(() => discardRef.current);
+                    setConfirmingDiscard(false);
+                  }}
+                >
+                  Keep writing
+                </Button>
+              </span>
+            ) : (
+              <Button ref={discardRef} onClick={() => setConfirmingDiscard(true)}>
+                Discard draft
+              </Button>
+            )
+          ) : null}
         </div>
       </form>
 

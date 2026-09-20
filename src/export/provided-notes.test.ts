@@ -61,6 +61,7 @@ const entry = (overrides: Partial<Entry> = {}): Entry => ({
 /** The smallest context these renderers need: no outlines, no passages. */
 const context = (entries: Entry[]): ExportContext => ({
   entries,
+  drafts: [],
   excludedCount: 0,
   exportedAt: '2026-09-21T09:00:00.000Z',
   profile: 'refs-only',

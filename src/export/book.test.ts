@@ -71,6 +71,7 @@ function makeContext(entries: Entry[], overrides: Partial<ExportContext> = {}): 
 
   return {
     entries,
+    drafts: [],
     excludedCount: 0,
     exportedAt: '2026-09-13T18:04:00.000Z',
     profile: 'public',

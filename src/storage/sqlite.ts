@@ -29,7 +29,7 @@
  * must not claim more than that.
  */
 
-import type { Entry, NewEntry, Settings } from '../types';
+import type { Entry, EntryDraft, NewEntry, Settings } from '../types';
 import {
   PLACES,
   SPEAKERS,
@@ -44,6 +44,7 @@ import {
   indexed,
   matches,
 } from './semantics';
+import { byRecency } from '../lib/drafts';
 import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
 
 /**
@@ -62,7 +63,7 @@ import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvide
 export const DATABASE_NAME = 'journey';
 
 /** What this build of the app understands. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SETTINGS_KEY = 'singleton';
 
@@ -118,7 +119,7 @@ export interface Migration {
  * schema cannot round-trip a field it has no column for, and dropping those
  * fields would silently damage a journal on its way through this version.
  */
-const MIGRATIONS: Migration[] = [
+export const MIGRATIONS: Migration[] = [
   {
     to: 1,
     statements: [
@@ -151,6 +152,32 @@ const MIGRATIONS: Migration[] = [
          key  TEXT PRIMARY KEY NOT NULL,
          data TEXT NOT NULL
        );`,
+    ],
+  },
+  {
+    // Recovery drafts: work in progress that must survive the process dying.
+    //
+    // A table of its own rather than a column on `entries`, so that nothing
+    // reading entries can show an unfinished sentence by forgetting to filter.
+    // See docs/ADR-CRASH-SAFE-DRAFTS.md.
+    //
+    // Purely additive — no existing table is touched, so a journal written by
+    // v1 is byte-for-byte what it was after this step runs. `data` holds the
+    // whole snapshot as JSON for the same reason `entries.data` does: the
+    // payload carries optional fields and `_unmigrated`, and a
+    // column-per-field schema cannot round-trip a field it has no column for.
+    to: 2,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS drafts (
+         id         TEXT PRIMARY KEY NOT NULL,
+         entry_id   TEXT,
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         data       TEXT NOT NULL
+       );`,
+      // "Has this entry got unsaved edits?" is asked on every entry open.
+      `CREATE INDEX IF NOT EXISTS drafts_entry_id ON drafts (entry_id);`,
+      `CREATE INDEX IF NOT EXISTS drafts_updated_at ON drafts (updated_at);`,
     ],
   },
 ];
@@ -609,6 +636,52 @@ export class SqliteStorageProvider implements StorageProvider {
     // Settings are a different table and are deliberately untouched — a
     // replace-mode import must not forget when the reader last exported.
     await this.inTransaction(() => this.write(`DELETE FROM entries;`));
+  }
+
+  // --- recovery drafts ---------------------------------------------------
+
+  async putDraft(draft: EntryDraft): Promise<void> {
+    // One statement inside one transaction: the snapshot lands whole or not at
+    // all. A half-applied draft would give back a title from one keystroke and
+    // notes from another, which is worse than losing it.
+    await this.inTransaction(() =>
+      this.write(
+        `INSERT INTO drafts (id, entry_id, created_at, updated_at, data)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             entry_id   = excluded.entry_id,
+             updated_at = excluded.updated_at,
+             data       = excluded.data;`,
+        [draft.id, draft.entryId ?? null, draft.createdAt, draft.updatedAt, JSON.stringify(draft)],
+      ),
+    );
+  }
+
+  async getDraft(id: string): Promise<EntryDraft | undefined> {
+    const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [id]);
+    return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+  }
+
+  async getDraftForEntry(entryId: string): Promise<EntryDraft | undefined> {
+    const rows = await this.select<{ data: string }>(
+      `SELECT data FROM drafts WHERE entry_id = ? ORDER BY updated_at DESC LIMIT 1;`,
+      [entryId],
+    );
+    return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+  }
+
+  async listDrafts(): Promise<EntryDraft[]> {
+    const rows = await this.select<{ data: string }>(
+      `SELECT data FROM drafts ORDER BY updated_at DESC;`,
+    );
+    // Sorted again in JS so the tie-break matches Dexie exactly. Two providers
+    // disagreeing about order is the class of bug src/storage/semantics.ts
+    // exists to prevent.
+    return rows.map((row) => JSON.parse(row.data) as EntryDraft).sort(byRecency);
+  }
+
+  async deleteDraft(id: string): Promise<void> {
+    await this.inTransaction(() => this.write(`DELETE FROM drafts WHERE id = ?;`, [id]));
   }
 
   async getSettings(): Promise<Settings> {

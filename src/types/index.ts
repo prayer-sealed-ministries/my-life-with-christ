@@ -351,6 +351,87 @@ export interface Entry {
 export type NewEntry = Partial<Omit<Entry, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ---------------------------------------------------------------------------
+// Recovery drafts
+// ---------------------------------------------------------------------------
+
+/**
+ * One link row as the editor holds it, before a save decides what survives.
+ *
+ * Separate from `EntryLink` because the editor keeps rows a save would drop —
+ * a row someone started and has not finished typing into is still on their
+ * screen, and a recovery snapshot that silently removed it would not be a
+ * recovery of what they had.
+ */
+export interface DraftLinkRow {
+  url: string;
+  label: string;
+  capturedTitle: string;
+  capturedAt?: string;
+}
+
+/**
+ * The editor's state, exactly as it stands.
+ *
+ * This is deliberately NOT a `Partial<Entry>`. Turning editor state into an
+ * entry trims whitespace, drops empty link rows and splits the tag text into an
+ * array — all correct when someone deliberately presses Save, and all wrong for
+ * a crash snapshot, which has to give back the half-typed state they actually
+ * had. `tagsText` is the raw string for that reason.
+ */
+export interface DraftForm {
+  kind: EntryKind;
+  title: string;
+  date: string;
+  place: string;
+  speaker: string;
+  sermonSeries: string;
+  notes: string;
+  reflection: string;
+  prayer: string;
+  /** Raw, as typed. Not split into tags until a save asks for that. */
+  tagsText: string;
+  links: DraftLinkRow[];
+  anchors: EntryAnchor[];
+  forDescendants: boolean;
+  scriptureRefs: string[];
+  /**
+   * Somebody else's words, carried so a restore is faithful.
+   *
+   * Provided material is not user-authored and is never merged into `notes`.
+   * It rides along in the snapshot so that recovering a draft gives back the
+   * handout the reader had imported, with its provenance intact.
+   */
+  sourceMaterial: SourceMaterial | null;
+}
+
+/**
+ * Work in progress, durable enough to survive the process dying.
+ *
+ * A draft is a snapshot of the editor, not an unfinished `Entry`, and it lives
+ * in its own collection. That separation is the whole safety property: the
+ * timeline, search and *My Journey With Christ* read entries, so a half-written
+ * sentence cannot reach them by someone forgetting a filter. See
+ * docs/ADR-CRASH-SAFE-DRAFTS.md.
+ */
+export interface EntryDraft {
+  /** Stable across relaunches. Carried in the route for an unsaved new entry. */
+  id: string;
+  /**
+   * The saved entry being edited, when there is one.
+   *
+   * Absent for work that has never been saved. Present means "unsaved edits to
+   * this entry", which is how reopening the entry finds its own draft and why
+   * two entries can never share one.
+   */
+  entryId?: string;
+  form: DraftForm;
+  createdAt: string;
+  updatedAt: string;
+  /** Preserved verbatim from a newer version, exactly as on `Entry`. */
+  _unmigrated?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Export format
 // ---------------------------------------------------------------------------
 
@@ -372,6 +453,17 @@ export interface JourneyExport {
   /** Absent on a full export; present and explicit when anything was filtered. */
   filter?: ExportFilter;
   entries: Entry[];
+  /**
+   * Unfinished work, carried so "Export everything" is not a lie.
+   *
+   * Additive and optional on purpose: a v1 archive written before drafts
+   * existed simply has no key here and imports exactly as it always did, so the
+   * format version does not move. Drafts are kept apart from `entries` in the
+   * archive for the same reason they are kept apart in storage — the book and
+   * the timeline are built from finished entries, and an unfinished sentence is
+   * not one.
+   */
+  drafts?: EntryDraft[];
   _unmigrated?: Record<string, unknown>;
 }
 

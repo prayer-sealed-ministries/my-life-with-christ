@@ -137,7 +137,7 @@ export async function runNativeContract(): Promise<NativeContractResult> {
       floors.push(`unexpected platform "${result.platform}"`);
     }
     if (!result.pluginAvailable) floors.push('the CapacitorSQLite plugin is not available');
-    if (CONTRACT_CASE_COUNT < 47) floors.push(`only ${CONTRACT_CASE_COUNT} contract cases exist`);
+    if (CONTRACT_CASE_COUNT < 57) floors.push(`only ${CONTRACT_CASE_COUNT} contract cases exist`);
 
     const probeStore = env.newStoreId();
     const probe = new SqliteStorageProvider(guardStoreName(probeStore));

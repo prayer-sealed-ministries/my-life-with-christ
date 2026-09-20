@@ -7,12 +7,21 @@
  * note is written under is the same filename every index links to.
  */
 
-import type { Entry, EntryKind, ExportFilter, OutlineBook, OutlineEntry, ScriptureRef, Topic, DataProfile} from '../types';
+import type { Entry, EntryDraft, EntryKind, ExportFilter, OutlineBook, OutlineEntry, ScriptureRef, Topic, DataProfile} from '../types';
 import type { PassageVerse } from '../lib/bible';
 
 export interface ExportContext {
   /** Already filtered and sorted oldest-first. */
   entries: Entry[];
+  /**
+   * Unfinished writing, carried so the archive is not missing the newest words.
+   *
+   * Kept out of `entries` deliberately. Every generator that renders the
+   * journal — the book, the CSV, the note files — reads `entries`, so a draft
+   * cannot appear as a finished piece of writing by any of them forgetting to
+   * check. Only the canonical JSON carries these, and it labels them.
+   */
+  drafts: EntryDraft[];
   /** Present only when something was filtered out. */
   filter?: ExportFilter;
   /** How many entries the filter excluded. Zero on a full export. */

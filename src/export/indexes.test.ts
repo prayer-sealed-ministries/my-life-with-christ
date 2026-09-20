@@ -107,6 +107,7 @@ function makeCtx(entries: Entry[], options: CtxOptions = {}): ExportContext {
 
   return {
     entries,
+    drafts: [],
     excludedCount: 0,
     exportedAt: '2026-09-13T12:00:00.000Z',
     profile: options.profile ?? 'public',

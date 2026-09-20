@@ -35,7 +35,7 @@ export function runStorageConformance(name: string, options: ConformanceOptions)
     // array, and an array that came back empty would report a clean, silent
     // pass — the exact failure this repository keeps rediscovering.
     it('has a contract to run', () => {
-      expect(CONTRACT_CASE_COUNT).toBeGreaterThanOrEqual(47);
+      expect(CONTRACT_CASE_COUNT).toBeGreaterThanOrEqual(57);
       expect(CONTRACT_CASES).toHaveLength(CONTRACT_CASE_COUNT);
       expect(new Set(CONTRACT_CASES.map((c) => `${c.group}/${c.name}`)).size).toBe(
         CONTRACT_CASE_COUNT,

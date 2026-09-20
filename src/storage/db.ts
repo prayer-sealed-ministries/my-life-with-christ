@@ -12,7 +12,7 @@
 
 import Dexie, { type EntityTable } from 'dexie';
 
-import type { Entry, NewEntry, Settings } from '../types';
+import type { Entry, EntryDraft, NewEntry, Settings } from '../types';
 import {
   PLACES,
   SPEAKERS,
@@ -26,6 +26,7 @@ import {
   indexed,
   matches,
 } from './semantics';
+import { byRecency } from '../lib/drafts';
 import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
 
 // Re-exported for the views and tests that already import them from here. The
@@ -42,6 +43,7 @@ interface SettingsRow extends Settings {
 class JourneyDatabase extends Dexie {
   entries!: EntityTable<Entry, 'id'>;
   settings!: EntityTable<SettingsRow, 'key'>;
+  drafts!: EntityTable<EntryDraft, 'id'>;
 
   constructor(name = 'journey') {
     super(name);
@@ -50,6 +52,14 @@ class JourneyDatabase extends Dexie {
     this.version(1).stores({
       entries: 'id, date, kind, speaker, place, updatedAt, *tags, *anchorKeys',
       settings: 'key',
+    });
+    // v2 adds recovery drafts. Purely additive: Dexie carries the existing
+    // stores forward untouched, so an upgrade cannot disturb a journal.
+    // `entryId` is indexed because "has this entry got unsaved edits?" is asked
+    // every time an entry is opened, and scanning for it would get slower as
+    // someone's unfinished work accumulated.
+    this.version(2).stores({
+      drafts: 'id, entryId, updatedAt',
     });
   }
 }
@@ -139,6 +149,35 @@ export class DexieStorageProvider implements StorageProvider {
 
   async clearEntries(): Promise<void> {
     await this.db.entries.clear();
+  }
+
+  // --- recovery drafts ---------------------------------------------------
+  //
+  // One row, one snapshot. Dexie's put is a single transaction, so a draft is
+  // never half-written: either the whole snapshot is there or the previous one
+  // still is.
+
+  async putDraft(draft: EntryDraft): Promise<void> {
+    await this.db.drafts.put(draft);
+  }
+
+  async getDraft(id: string): Promise<EntryDraft | undefined> {
+    return this.db.drafts.get(id);
+  }
+
+  async getDraftForEntry(entryId: string): Promise<EntryDraft | undefined> {
+    const found = await this.db.drafts.where('entryId').equals(entryId).toArray();
+    // Newest wins if an older build ever left two behind; nothing here writes a
+    // second draft for one entry.
+    return found.sort(byRecency)[0];
+  }
+
+  async listDrafts(): Promise<EntryDraft[]> {
+    return (await this.db.drafts.toArray()).sort(byRecency);
+  }
+
+  async deleteDraft(id: string): Promise<void> {
+    await this.db.drafts.delete(id);
   }
 
   async getSettings(): Promise<Settings> {

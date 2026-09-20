@@ -66,7 +66,18 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
   const allEntries = await storage.listEntriesChronological();
   const entries = filter ? allEntries.filter((entry) => matchesFilter(entry, filter)) : allEntries;
 
-  const archive = await buildArchive({ ...rest, entries, allEntries, filter });
+  /*
+   * Unfinished writing rides along on a FULL export only.
+   *
+   * "Export everything" that left out the words someone typed five minutes ago
+   * would be exactly the kind of quiet omission this archive exists to prevent.
+   * A partial export is a different promise — it already says it is not a
+   * backup of the whole journal — and filters describe entries, not drafts, so
+   * there is no honest way to narrow them.
+   */
+  const drafts = filter ? [] : await storage.listDrafts().catch(() => []);
+
+  const archive = await buildArchive({ ...rest, entries, allEntries, filter, drafts });
   const { saved } = await files.save(outgoingArchive(archive));
 
   // Two conditions, and both are about honesty rather than tidiness.

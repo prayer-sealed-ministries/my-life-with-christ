@@ -46,6 +46,7 @@ beforeAll(async () => {
 function context(overrides: Partial<ExportContext> = {}): ExportContext {
   return {
     entries: [],
+    drafts: [],
     excludedCount: 0,
     exportedAt: '2026-09-13T12:00:00.000Z',
     profile: 'public',

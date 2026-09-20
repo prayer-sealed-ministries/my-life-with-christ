@@ -726,6 +726,18 @@ export function renderSchema(): string {
           'Every entry in this export, ordered oldest first by the date the ' +
           'thing happened.',
       },
+      drafts: {
+        type: 'array',
+        items: { $ref: '#/$defs/draft' },
+        description:
+          'Writing that had been started but not finished when this copy was ' +
+          'made, newest first. Absent when there was none, which is why an ' +
+          'archive written before drafts existed is still a valid version 1 ' +
+          'file. These are NOT journal entries: they were never finished, they ' +
+          'are not in the book, and they should not be read as though the ' +
+          'writer had decided on them. They are here so that an export made ' +
+          'mid-sentence does not lose the sentence.',
+      },
       _unmigrated: {
         type: 'object',
         description:
@@ -737,6 +749,49 @@ export function renderSchema(): string {
     required: ['format', 'version', 'exportedAt', 'entries'],
     additionalProperties: false,
     $defs: {
+      draft: {
+        title: 'Draft',
+        description:
+          'Unfinished writing, saved automatically as it was typed so that a ' +
+          'phone locking or an app closing could not take it. A draft is a ' +
+          'snapshot of what was on the screen, not a finished entry: the text ' +
+          'is exactly as it was left, including whitespace and half-typed ' +
+          'link rows. If you are reading this archive to recover someone\'s ' +
+          'journal, the entries are the record; these are the last things they ' +
+          'were working on.',
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Identifies this draft. Unrelated to any entry id.',
+          },
+          entryId: {
+            type: 'string',
+            description:
+              'Present when this draft holds unsaved changes to an existing ' +
+              'entry, and names that entry. Absent when the writing had never ' +
+              'been saved at all.',
+          },
+          form: {
+            type: 'object',
+            description:
+              'The editor exactly as it stood: the same fields an entry has, ' +
+              'plus tags still as one line of typed text rather than a list. ' +
+              'Nothing here has been tidied.',
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When the writing was first kept.',
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When it was last touched. The newest is the one most likely wanted.',
+          },
+        },
+        required: ['id', 'form', 'createdAt', 'updatedAt'],
+      },
       entry: {
         title: 'Entry',
         description:

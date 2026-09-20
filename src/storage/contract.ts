@@ -27,7 +27,7 @@
  * down, because callers rely on what is, not on what would have been tidier.
  */
 
-import type { Entry, EntryKind } from '../types';
+import type { DraftForm, Entry, EntryDraft, EntryKind } from '../types';
 import { assert, assertDefined } from './contract-assert';
 import type { StorageProvider } from './StorageProvider';
 
@@ -74,6 +74,33 @@ export function contractEnv(
     },
   };
 }
+
+const draftForm = (overrides: Partial<DraftForm> = {}): DraftForm => ({
+  kind: 'sermon',
+  title: '',
+  date: '2026-03-01',
+  place: '',
+  speaker: '',
+  sermonSeries: '',
+  notes: '',
+  reflection: '',
+  prayer: '',
+  tagsText: '',
+  links: [],
+  anchors: [],
+  forDescendants: false,
+  scriptureRefs: [],
+  sourceMaterial: null,
+  ...overrides,
+});
+
+const draft = (overrides: Partial<EntryDraft> = {}): EntryDraft => ({
+  id: 'd1',
+  form: draftForm(),
+  createdAt: '2026-03-01T09:00:00.000Z',
+  updatedAt: '2026-03-01T09:00:00.000Z',
+  ...overrides,
+});
 
 const entry = (overrides: Partial<Entry> = {}): Entry => ({
   id: 'e1',
@@ -884,6 +911,164 @@ export const CONTRACT_CASES: ContractCase[] = [
       const read = await second.getEntry(created.id);
       assertDefined(read, 'the entry did not survive a reopen');
       assert.is(read.notes, 'Written once.', 'the notes survived a reopen');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'stores a draft and gives it back exactly',
+    run: async (env) => {
+      const storage = await env.fresh();
+      // Deliberately ragged: trailing spaces, a half-typed link row, raw tag
+      // text. A recovery snapshot has to give back what was on the screen, not
+      // a tidied version of it.
+      const messy = draft({
+        id: 'd-messy',
+        form: draftForm({
+          title: '  Grace at the door  ',
+          notes: 'He read the whole letter aloud.\n\nStill thinking about it. ',
+          tagsText: ' grace , patience ,,',
+          links: [{ url: '', label: 'the audio', capturedTitle: '' }],
+        }),
+      });
+
+      await storage.putDraft(messy);
+      const read = await storage.getDraft('d-messy');
+
+      assertDefined(read, 'the draft was stored');
+      assert.equal(read, messy, 'the draft came back byte for byte');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'a draft survives a reopen, which is the whole point of it',
+    run: async (env) => {
+      const store = env.newStoreId();
+      const first = env.create(store);
+      await first.open();
+      await first.putDraft(
+        draft({ id: 'd-survives', form: draftForm({ notes: 'Typed and never saved.' }) }),
+      );
+
+      // The nearest a test gets to the process being killed and relaunched.
+      const second = env.create(store);
+      await second.open();
+
+      const read = await second.getDraft('d-survives');
+      assertDefined(read, 'the draft did not survive a reopen');
+      assert.is(read.form.notes, 'Typed and never saved.', 'the exact text survived');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'writing the same draft again replaces it rather than duplicating it',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putDraft(draft({ id: 'd1', form: draftForm({ notes: 'first' }) }));
+      await storage.putDraft(
+        draft({ id: 'd1', form: draftForm({ notes: 'second' }), updatedAt: '2026-03-01T09:05:00.000Z' }),
+      );
+
+      const all = await storage.listDrafts();
+      assert.is(all.length, 1, 'one draft, not two');
+      assert.is(all[0].form.notes, 'second', 'the newer snapshot won');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'two unfinished pieces of work do not overwrite each other',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putDraft(draft({ id: 'd-sermon', form: draftForm({ notes: 'the sermon' }) }));
+      await storage.putDraft(
+        draft({ id: 'd-prayer', form: draftForm({ kind: 'prayer', notes: 'the prayer' }) }),
+      );
+
+      assert.is((await storage.listDrafts()).length, 2, 'both drafts are there');
+      assert.is((await storage.getDraft('d-sermon'))?.form.notes, 'the sermon', 'the first survived');
+      assert.is((await storage.getDraft('d-prayer'))?.form.notes, 'the prayer', 'the second survived');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'lists newest first',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putDraft(draft({ id: 'older', updatedAt: '2026-03-01T09:00:00.000Z' }));
+      await storage.putDraft(draft({ id: 'newer', updatedAt: '2026-03-02T09:00:00.000Z' }));
+
+      assert.equal(
+        (await storage.listDrafts()).map((d) => d.id),
+        ['newer', 'older'],
+        'continue-where-you-left-off needs the newest first',
+      );
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'finds the unsaved edits belonging to one entry',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putDraft(draft({ id: 'd-for-a', entryId: 'entry-a', form: draftForm({ notes: 'edits to A' }) }));
+      await storage.putDraft(draft({ id: 'd-for-b', entryId: 'entry-b', form: draftForm({ notes: 'edits to B' }) }));
+      await storage.putDraft(draft({ id: 'd-loose', form: draftForm({ notes: 'never saved' }) }));
+
+      assert.is((await storage.getDraftForEntry('entry-a'))?.form.notes, 'edits to A', 'found A');
+      assert.is((await storage.getDraftForEntry('entry-b'))?.form.notes, 'edits to B', 'found B');
+      assert.is(await storage.getDraftForEntry('entry-missing'), undefined, 'none for an entry with no draft');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'discarding one draft leaves the others alone',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putDraft(draft({ id: 'keep' }));
+      await storage.putDraft(draft({ id: 'discard' }));
+
+      await storage.deleteDraft('discard');
+
+      assert.is(await storage.getDraft('discard'), undefined, 'the discarded one is gone');
+      assertDefined(await storage.getDraft('keep'), 'the other one survived');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'discarding something already gone is not an error',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.deleteDraft('never-existed');
+      assert.is((await storage.listDrafts()).length, 0, 'still empty, still fine');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'drafts and entries are separate collections',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const saved = await storage.createEntry({ title: 'Finished', notes: 'A real entry.' });
+      await storage.putDraft(draft({ id: 'd-unfinished', form: draftForm({ notes: 'half a sentence' }) }));
+
+      // The safety property the whole design rests on: nothing that reads
+      // entries can see a draft, so the timeline, search and the book cannot
+      // show unfinished work by forgetting to filter.
+      const entries = await storage.listEntries();
+      assert.is(entries.length, 1, 'the draft did not become an entry');
+      assert.is(entries[0].id, saved.id, 'the one entry is the saved one');
+      assert.is((await storage.listDrafts()).length, 1, 'the draft is still a draft');
+    },
+  },
+  {
+    group: 'recovery drafts',
+    name: 'clearing entries leaves drafts alone',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.createEntry({ title: 'Finished' });
+      await storage.putDraft(draft({ id: 'd-keep' }));
+
+      await storage.clearEntries();
+
+      assert.is((await storage.listEntries()).length, 0, 'the journal was cleared');
+      assertDefined(await storage.getDraft('d-keep'), 'unfinished work is not part of a journal wipe');
     },
   },
 ];

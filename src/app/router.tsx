@@ -42,7 +42,7 @@ export type Route =
    * and `q` are: it is optional, it does not name a resource, and `#/entry/new`
    * has to keep meaning exactly what it has always meant.
    */
-  | { name: 'newEntry'; anchor?: string; kind?: EntryKind }
+  | { name: 'newEntry'; anchor?: string; kind?: EntryKind; draft?: string }
   | { name: 'data' }
   | { name: 'import' }
   | { name: 'legacy' }
@@ -89,6 +89,11 @@ export function parseHash(hash: string): Route {
         // one — the route simply does not have a way to express a kind that
         // does not exist.
         if (isEntryKind(kind)) route.kind = kind;
+        // Which unfinished piece of work this is. An id rather than a flag,
+        // because someone may have two started notes and resuming the wrong one
+        // would be worse than not offering to resume at all.
+        const draft = params.get('draft');
+        if (draft) route.draft = draft;
         return route;
       }
       return parts[1] ? { name: 'entry', id: parts[1] } : { name: 'timeline' };
@@ -136,6 +141,7 @@ export function href(route: Route): string {
       const params = new URLSearchParams();
       if (route.anchor) params.set('anchor', route.anchor);
       if (route.kind) params.set('kind', route.kind);
+      if (route.draft) params.set('draft', route.draft);
       const query = params.toString();
       return query ? `#/entry/new?${query}` : '#/entry/new';
     }

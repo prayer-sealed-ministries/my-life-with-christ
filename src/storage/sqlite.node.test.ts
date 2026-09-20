@@ -29,7 +29,13 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { CONTRACT_CASES, CONTRACT_CASE_COUNT, contractEnv } from './contract';
-import { SCHEMA_VERSION, SchemaTooNewError, SqliteStorageProvider, type Migration } from './sqlite';
+import {
+  MIGRATIONS,
+  SCHEMA_VERSION,
+  SchemaTooNewError,
+  SqliteStorageProvider,
+  type Migration,
+} from './sqlite';
 
 const root = mkdtempSync(join(tmpdir(), 'journey-sqlite-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -129,7 +135,7 @@ describe('SqliteStorageProvider — SQL against a real SQLite engine (not a nati
   const env = contractEnv('sqlite-node', createProvider);
 
   it('has a contract to run', () => {
-    expect(CONTRACT_CASE_COUNT).toBeGreaterThanOrEqual(47);
+    expect(CONTRACT_CASE_COUNT).toBeGreaterThanOrEqual(57);
     expect(CONTRACT_CASES).toHaveLength(CONTRACT_CASE_COUNT);
   });
 
@@ -166,8 +172,67 @@ describe('the schema and its migrations', () => {
       .then((result) => (result.values as { name: string }[]).map((row) => row.name));
 
     expect(await names).toEqual(
-      expect.arrayContaining(['entries', 'entry_anchor_keys', 'schema_meta', 'settings']),
+      expect.arrayContaining(['drafts', 'entries', 'entry_anchor_keys', 'schema_meta', 'settings']),
     );
+  });
+
+  /**
+   * The upgrade, run on a database that already holds someone's journal.
+   *
+   * A migration proven only on a fresh database is not proven at all: the
+   * thing that can go wrong is doing it to a file with years of entries in it.
+   * So this stands a real v1 database up — the v1 ledger, nothing more — writes
+   * an entry through it, and then opens the same file with the current build.
+   */
+  it('upgrades a v1 journal to v2 without disturbing it', async () => {
+    const V1_ONLY = MIGRATIONS.filter((migration) => migration.to <= 1);
+    expect(V1_ONLY, 'the v1 ledger should exist to migrate from').toHaveLength(1);
+
+    const before = new SqliteStorageProvider('schema-v1-upgrade', {
+      loadPlugin,
+      migrations: V1_ONLY,
+    });
+    await before.open();
+    expect(await before.schemaVersion()).toBe(1);
+    const written = await before.createEntry({ title: 'Written under v1', notes: 'Years of this.' });
+    await before.updateSettings({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+    await before.close();
+
+    // The same file, opened by this build.
+    const after = new SqliteStorageProvider('schema-v1-upgrade', { loadPlugin });
+    await after.open();
+
+    expect(await after.schemaVersion()).toBe(SCHEMA_VERSION);
+    const entries = await after.listEntries();
+    expect(entries, 'the journal survived the upgrade').toHaveLength(1);
+    expect(entries[0].id).toBe(written.id);
+    expect(entries[0].notes).toBe('Years of this.');
+    expect((await after.getSettings()).lastExportAt).toBe('2026-01-01T00:00:00.000Z');
+
+    // And the new table is usable, which is the point of the step.
+    await after.putDraft({
+      id: 'd-after-upgrade',
+      form: {
+        kind: 'sermon',
+        title: '',
+        date: '2026-03-01',
+        place: '',
+        speaker: '',
+        sermonSeries: '',
+        notes: 'Typed after the upgrade.',
+        reflection: '',
+        prayer: '',
+        tagsText: '',
+        links: [],
+        anchors: [],
+        forDescendants: false,
+        scriptureRefs: [],
+        sourceMaterial: null,
+      },
+      createdAt: '2026-03-01T09:00:00.000Z',
+      updatedAt: '2026-03-01T09:00:00.000Z',
+    });
+    expect((await after.getDraft('d-after-upgrade'))?.form.notes).toBe('Typed after the upgrade.');
   });
 
   it('reopening an existing database does not re-run the migration', async () => {

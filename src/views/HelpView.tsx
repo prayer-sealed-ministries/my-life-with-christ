@@ -62,9 +62,30 @@ export default function HelpView() {
           reference — &ldquo;sermon on the mount&rdquo;, or &ldquo;John 4&rdquo;.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
-          Entries are saved when you press <strong>Save</strong>. There is no autosave, so an entry
-          you have not saved is not yet in your journal.
+          Your writing is saved locally as you type, so you can write for an hour without
+          thinking about it. If the phone locks, a call interrupts you, or the app closes, your
+          words are still here when you come back — look for <strong>Continue writing</strong>
+          on the home page.
         </p>
+        {/*
+          Three words that sound alike and mean different things. Worth ten
+          seconds of anyone's time, because getting them confused is how a
+          person ends up believing their journal is backed up when it is not.
+        */}
+        <ul className="measure list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink-soft">
+          <li>
+            A <strong>draft</strong> is writing in progress, kept on this device. It is not in
+            your journal yet.
+          </li>
+          <li>
+            <strong>Save</strong> puts an entry into your journal, where it joins your timeline,
+            your search, and the book.
+          </li>
+          <li>
+            An <strong>export</strong> is your backup: a file you keep somewhere that is not this
+            device. Neither drafts nor saved entries are backed up until you make one.
+          </li>
+        </ul>
       </section>
 
       {/*

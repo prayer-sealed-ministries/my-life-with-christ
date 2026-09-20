@@ -806,11 +806,17 @@ describe('EntryEditor — editing', () => {
     fireEvent.change(screen.getByLabelText('Reflection'), { target: { value: 'Changed my mind.' } });
     fireEvent.click(save());
 
-    await waitFor(() => expect(window.location.hash).toBe(`#/entry/${existing.id}`));
+    // Wait for the write, not for the hash: editing an existing entry does not
+    // change the route, so the old wait on the hash was already satisfied
+    // before the save had happened and only passed because the save used to be
+    // quick. Saving now flushes the draft first, which made that visible.
+    await waitFor(async () => {
+      const [saved] = await storage.listEntries();
+      expect(saved?.reflection).toBe('Changed my mind.');
+    });
     const entries = await storage.listEntries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].reflection).toBe('Changed my mind.');
-    expect(entries[0].notes).toBe('Original notes.');
+    expect(entries[0].notes, 'the untouched field survived the save').toBe('Original notes.');
     // Confirmation is the shell's job now — see the note in "writes the entry
     // when Save is pressed" above. This test already proves what it owns: the
     // edit reached storage, on the same entry.
@@ -1004,10 +1010,31 @@ describe('EntryEditor — unsaved changes', () => {
     expect(fireBeforeUnload()).toBe(false);
   });
 
-  it('warns once there are words in it, and stops warning after a save', async () => {
+  /**
+   * What the guard means now that drafts exist.
+   *
+   * It used to fire on any difference from the saved entry, and that warning
+   * has stopped being true: work in progress is written to its own durable
+   * record as it is typed, so closing the tab keeps it. What it guards now is
+   * the only text still genuinely at risk — text inside the settle window that
+   * has not reached storage yet. Narrower, and true, which is the point: a
+   * warning about a loss that cannot happen teaches people to click through
+   * warnings.
+   */
+  it('warns while typed text has not reached storage, and stops once it has', async () => {
     const { storage } = setup(<EntryEditor />);
     fireEvent.change(await notesBox(), { target: { value: 'Half a thought.' } });
-    expect(fireBeforeUnload()).toBe(true);
+
+    await waitFor(() => expect(fireBeforeUnload()).toBe(true));
+
+    // Once the snapshot is durable, leaving loses nothing and the guard says so.
+    await waitFor(async () => expect((await storage.listDrafts()).length).toBe(1));
+    await waitFor(() => expect(fireBeforeUnload()).toBe(false));
+  });
+
+  it('stops warning after a save', async () => {
+    const { storage } = setup(<EntryEditor />);
+    fireEvent.change(await notesBox(), { target: { value: 'Half a thought.' } });
 
     fireEvent.click(save());
     await savedEntry(storage);

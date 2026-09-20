@@ -173,6 +173,7 @@ export async function applyImport(
     // leave a reader with neither journal if the write failed after the delete
     // succeeded, which is reachable from an ordinary restore.
     await storage.replaceEntries(incoming.entries);
+    await restoreDrafts(incoming, storage);
     return { imported: incoming.entries.length, replaced: true, preview };
   }
 
@@ -186,5 +187,24 @@ export async function applyImport(
   }
 
   await storage.putEntries(toWrite);
+  await restoreDrafts(incoming, storage);
   return { imported: toWrite.length, replaced: false, preview };
+}
+
+/**
+ * Put unfinished writing back as unfinished writing.
+ *
+ * Restored as drafts, never as entries: an archive made mid-sentence carries
+ * the sentence, and importing it must not promote a half-thought into the
+ * finished journal. The count reported to the reader stays the entry count for
+ * the same reason — drafts are recovered work, not entries received.
+ *
+ * Failures here are deliberately not fatal. The journal has already been
+ * written by the time this runs, and refusing the whole import because an
+ * unfinished note would not restore would be the wrong trade.
+ */
+async function restoreDrafts(incoming: ParsedImport, storage: StorageProvider): Promise<void> {
+  for (const draft of incoming.drafts) {
+    await storage.putDraft(draft).catch(() => {});
+  }
 }

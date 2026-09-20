@@ -12,7 +12,7 @@
  * that only Dexie could satisfy.
  */
 
-import type { Entry, EntryKind, NewEntry, Settings } from '../types';
+import type { Entry, EntryDraft, EntryKind, NewEntry, Settings } from '../types';
 
 /** Narrowing applied to a list or search. */
 export interface EntryQuery {
@@ -64,6 +64,27 @@ export interface StorageProvider {
    * Settings are untouched, exactly as `clearEntries` leaves them.
    */
   replaceEntries(entries: Entry[]): Promise<void>;
+
+  /**
+   * Work in progress, kept apart from the journal itself.
+   *
+   * Drafts are their own collection rather than flagged entries, so nothing
+   * that reads entries — the timeline, search, the book — can show an
+   * unfinished sentence by forgetting to filter. See
+   * docs/ADR-CRASH-SAFE-DRAFTS.md.
+   *
+   * `putDraft` writes the whole snapshot in one transaction. A snapshot that
+   * could be half-applied would give back a title from one keystroke and notes
+   * from another, which is a worse outcome than losing the draft outright.
+   */
+  putDraft(draft: EntryDraft): Promise<void>;
+  getDraft(id: string): Promise<EntryDraft | undefined>;
+  /** The draft holding unsaved edits to a saved entry, if there is one. */
+  getDraftForEntry(entryId: string): Promise<EntryDraft | undefined>;
+  /** All drafts, newest first. */
+  listDrafts(): Promise<EntryDraft[]>;
+  /** Idempotent: discarding something already gone is not an error. */
+  deleteDraft(id: string): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;

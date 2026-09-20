@@ -65,6 +65,7 @@ function makeCtx(overrides: Partial<ExportContext> = {}): ExportContext {
   const entries = overrides.entries ?? [SERMON, LETTER];
   return {
     entries,
+    drafts: [],
     excludedCount: 0,
     exportedAt: '2026-09-13T14:02:11.000Z',
     profile: 'public',
