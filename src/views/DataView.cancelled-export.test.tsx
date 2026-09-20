@@ -44,15 +44,43 @@ const entry = (id: string): Entry => ({
 });
 
 /** The real web platform, with only the saver's answer replaced. */
-function platformAnswering(saved: boolean): Platform {
+function platformAnswering(saved: boolean, delayMs = 0): Platform {
   return {
     ...webPlatform,
     files: {
       async save(): Promise<SaveResult> {
+        // A picker the reader takes a moment over, or a machine under load.
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
         return { saved };
       },
     },
   };
+}
+
+/**
+ * Wait for the export attempt to finish and say what it did.
+ *
+ * This replaces `await new Promise((r) => setTimeout(r, 50))`, which was not a
+ * synchronisation point but a guess at how long building an archive takes. On a
+ * loaded machine the guess was wrong: measured at 5 failures in 148
+ * oversubscribed full-suite runs. At the 50ms mark the export is still in
+ * flight — the button reads "Building your archive…" and nothing has been
+ * announced — so the assertions below ran against a page that had not answered
+ * yet. The product was correct in every one of those runs; only the test was
+ * early.
+ *
+ * Two conditions, both meaningful. The sentence is set after `updateSettings`
+ * has been awaited, so once it is on the page the re-read export state is too.
+ * The button returning to idle proves `runExport` reached its `finally`, which
+ * is what makes reading the settings straight afterwards sound rather than
+ * lucky.
+ */
+async function exportAttemptSettled(): Promise<HTMLElement[]> {
+  const said = await screen.findAllByText(/Nothing was saved/i, undefined, { timeout: 15_000 });
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Export everything' })).toBeEnabled(),
+  );
+  return said;
 }
 
 const renderWith = (platform: Platform) =>
@@ -85,10 +113,12 @@ describe('after a save the reader backed out of', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
 
     // Wait for the export attempt to finish, then check what the page claims.
-    await waitFor(async () => {
-      expect((await db.listEntries()).length).toBe(2);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const nothing = await exportAttemptSettled();
+
+    // An assertion, not a wait: the old code used this as its synchronisation,
+    // but the entries were written in beforeEach and an export never touches
+    // them, so it passed on its first check and settled nothing.
+    expect(await db.listEntries(), 'the export changed the journal').toHaveLength(2);
 
     expect(
       screen.queryByText('Last exported today.'),
@@ -107,9 +137,49 @@ describe('after a save the reader backed out of', () => {
     ).toBeNull();
     // Two nodes carry it: the visible line and the live region. Both are
     // wanted; what matters is that it is said and not dressed as a success.
-    const nothing = screen.getAllByText(/Nothing was saved/i);
     expect(nothing.length).toBeGreaterThan(0);
     const visible = nothing.find((n) => !n.className.includes('sr-only'))!;
+    expect(visible.className, 'the cancellation was styled as a success').not.toMatch(/green/);
+    expect(visible.textContent, 'the cancellation carried a success tick').not.toContain('✓');
+  }, 30_000);
+
+  /**
+   * The intermittent above, made deterministic.
+   *
+   * The failure was never about this scenario being rare — it was about the
+   * test asserting before the export had answered. A save that takes longer
+   * than any fixed sleep would allow reproduces it every single time, so this
+   * is the regression proof rather than a repetition count: reinstate a
+   * `setTimeout(50)` in place of `exportAttemptSettled()` and this fails on
+   * every run, not one in thirty.
+   *
+   * It is also a real case. A reader who sits looking at the file picker, or a
+   * phone building a large archive, takes longer than 50ms.
+   */
+  it('still refuses to claim a backup when the save takes its time', async () => {
+    // Comfortably longer than the sleep this test used to rely on.
+    renderWith(platformAnswering(false, 300));
+
+    expect(await screen.findByText(/Never exported/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
+
+    const nothing = await exportAttemptSettled();
+
+    // The same claims as the fast case. A slow cancellation is still a
+    // cancellation, and must not become a backup.
+    expect(
+      screen.queryByText('Last exported today.'),
+      'a slow cancelled save made the page claim a backup',
+    ).toBeNull();
+    expect(screen.getByText(/Never exported/i)).toBeInTheDocument();
+    expect((await db.getSettings()).lastExportAt).toBeUndefined();
+    expect(
+      screen.queryByText(/^Saved journey-export/),
+      'a slow cancelled save announced a saved file',
+    ).toBeNull();
+    expect(await db.listEntries(), 'the export changed the journal').toHaveLength(2);
+
+    const visible = nothing.find((node) => !node.className.includes('sr-only'))!;
     expect(visible.className, 'the cancellation was styled as a success').not.toMatch(/green/);
     expect(visible.textContent, 'the cancellation carried a success tick').not.toContain('✓');
   }, 30_000);
@@ -117,7 +187,7 @@ describe('after a save the reader backed out of', () => {
   it('leaves the warning that this device is not a backup exactly where it was', async () => {
     renderWith(platformAnswering(false));
     fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await exportAttemptSettled();
 
     expect(
       screen.getByText(/Warning: the copy on this device is not a backup/i),
