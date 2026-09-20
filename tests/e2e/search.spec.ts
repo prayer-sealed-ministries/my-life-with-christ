@@ -1,0 +1,128 @@
+/**
+ * Finding something you half remember, through the real app.
+ *
+ * The unit tests own ranking arithmetic. These are the user-level promises: a
+ * remembered phrase finds the right Sunday, a Scripture shorthand finds a
+ * passage the prose never names, a church handout is never passed off as the
+ * reader's own writing, and unfinished work stays out of finished history.
+ */
+
+import { expect, test, type Page } from '@playwright/test';
+
+import { dismissWelcome, seedEntries } from './seed';
+import type { Entry } from '../../src/types';
+
+const entry = (overrides: Partial<Entry> & { id: string }): Entry => ({
+  kind: 'sermon',
+  title: '',
+  date: '2026-03-01',
+  anchors: [],
+  scriptureRefs: [],
+  notes: '',
+  reflection: '',
+  links: [],
+  tags: [],
+  forDescendants: false,
+  visibility: 'private',
+  createdAt: '2026-03-01T10:00:00.000Z',
+  updatedAt: '2026-03-01T10:00:00.000Z',
+  ...overrides,
+});
+
+const CORPUS: Entry[] = [
+  entry({
+    id: 'old-anxiety',
+    date: '2019-11-03',
+    title: 'The week before the surgery',
+    notes: 'I kept worrying about what would happen after the operation.',
+  }),
+  entry({
+    id: 'recent-mentions-worry',
+    date: '2026-08-02',
+    title: 'A calm Sunday',
+    notes: 'Nothing much to worry about this week.',
+  }),
+  entry({
+    id: 'vine',
+    date: '2022-05-15',
+    title: 'The vine and the branches',
+    notes: 'Abiding is not striving.',
+    anchors: [{ kind: 'scripture', book: 'john', chapterStart: 15, verseStart: 1, chapterEnd: 15, verseEnd: 17 }],
+  }),
+  entry({
+    id: 'handout',
+    date: '2024-02-11',
+    title: 'Sunday with a handout',
+    notes: 'My own thoughts were elsewhere.',
+    sourceMaterial: {
+      body: 'Point two: peace in the middle of uncertainty.',
+      importedAt: '2024-02-11T00:00:00.000Z',
+      filename: 'handout.md',
+      format: 'markdown',
+      parserVersion: 1,
+    },
+  }),
+];
+
+async function searchFor(page: Page, query: string) {
+  await page.goto(`/#/search?q=${encodeURIComponent(query)}`);
+  await page.waitForLoadState('networkidle');
+}
+
+/** The journal results, located by their own heading rather than by markup shape. */
+const journalResults = (page: Page) =>
+  page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: /Your journal/ }) })
+    .getByRole('listitem');
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await dismissWelcome(page);
+  await seedEntries(page, CORPUS);
+});
+
+test('A — a half-remembered phrase finds the right Sunday, not the recent one', async ({ page }) => {
+  await searchFor(page, 'worrying about what would happen');
+
+  await expect(journalResults(page).first()).toContainText('The week before the surgery');
+});
+
+test('B — a Scripture shorthand finds an entry the prose never names', async ({ page }) => {
+  // "Jn 15" appears nowhere in this entry's words; it is anchored there.
+  await searchFor(page, 'Jn 15');
+
+  await expect(journalResults(page).first()).toContainText('The vine and the branches');
+});
+
+test('C — a word only the church handout used says so', async ({ page }) => {
+  await searchFor(page, 'uncertainty');
+
+  const result = journalResults(page).first();
+  await expect(result).toContainText('Sunday with a handout');
+  await expect(result).toContainText('Provided notes');
+  await expect(result).toContainText('not in your own writing');
+});
+
+test('E — an unfinished draft never reaches historical search', async ({ page }) => {
+  // Start writing, leave it unsaved; the autosave keeps it as a draft.
+  await page.goto('/#/entry/new?kind=sermon');
+  await page.getByRole('textbox', { name: 'Notes' }).fill('A unique marker: kestrel over the field.');
+  await page.waitForTimeout(1200); // past the settle window, so the draft is durable
+
+  await searchFor(page, 'kestrel');
+  await expect(page.getByText(/Nothing matches/)).toBeVisible();
+});
+
+test('D — editing an entry changes what it can be found by', async ({ page }) => {
+  await page.goto('/#/entry/old-anxiety');
+  await page.getByRole('textbox', { name: 'Notes' }).fill('Replaced entirely: a heron on the bank.');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Saved')).toBeVisible();
+
+  await searchFor(page, 'worrying');
+  await expect(page.getByText(/Nothing matches/)).toBeVisible();
+
+  await searchFor(page, 'heron');
+  await expect(journalResults(page).first()).toContainText('heron');
+});

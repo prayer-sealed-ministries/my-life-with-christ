@@ -19,7 +19,14 @@ import { useStorageQuery } from '../app/storage';
 import { EmptyState, Field, LiveRegion, Spinner } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { formatDay } from '../lib/dates';
-import { matchedOnlyInProvided } from '../lib/provided-notes';
+import {
+  FIELD_LABELS,
+  isOwnVoice,
+  searchJournal,
+  spellingSuggestions,
+  type FieldMatch,
+  type SearchHit,
+} from '../lib/journal-search';
 import { search } from '../lib/search';
 import type { Entry } from '../types';
 
@@ -33,6 +40,23 @@ const DEBOUNCE_MS = 200;
  * honest about the total; only the list is trimmed.
  */
 const OUTLINE_LIMIT = 50;
+/**
+ * How many journal results are rendered.
+ *
+ * The search itself covers the whole journal — this caps what is drawn, not
+ * what is looked at. A lifetime of entries must never become a lifetime of
+ * cards on one page.
+ */
+const ENTRY_LIMIT = 50;
+
+/** The canonical kinds, plus "All". Secondary to the box itself. */
+const KIND_FILTERS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'All' },
+  { value: 'sermon', label: 'Sermons' },
+  { value: 'reading', label: 'Bible reading' },
+  { value: 'prayer', label: 'Prayer' },
+  { value: 'reflection', label: 'Reflection' },
+];
 
 /** How much of the query to echo back in the empty state. */
 const ECHO_LIMIT = 60;
@@ -127,7 +151,30 @@ function searchOutlines(needle: string): OutlineMatch[] {
   return matches;
 }
 
-function EntryResult({ entry, providedOnly }: { entry: Entry; providedOnly: boolean }) {
+/**
+ * Why this result appeared, in the reader's language.
+ *
+ * A result list that cannot answer that is a list of guesses. The label names
+ * the field, and "Provided notes" is never softened into "Notes" — a church's
+ * handout is not the reader's writing, and this is exactly where the two could
+ * be confused.
+ */
+function MatchReason({ match }: { match: FieldMatch }) {
+  return (
+    <span className="mt-1 block text-sm">
+      <span className={isOwnVoice(match.field) ? 'font-medium text-ink-soft' : 'font-medium text-ink-muted'}>
+        {FIELD_LABELS[match.field]}
+      </span>
+      {match.snippet ? (
+        <span className={`ml-2 text-ink-soft ${WRAP}`}>{match.snippet}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function EntryResult({ hit }: { hit: SearchHit }) {
+  const { entry } = hit;
+  const providedOnly = hit.providedOnly;
   // An unknown kind falls back to the raw value rather than vanishing from the
   // line, the same way the timeline treats it.
   const meta = [
@@ -146,6 +193,13 @@ function EntryResult({ entry, providedOnly }: { entry: Entry; providedOnly: bool
         <span className={`mt-1 block text-sm text-ink-soft ${WRAP}`}>
           {meta.join(' · ')}
         </span>
+        {/* Said in words, not in a colour. This entry came back because a
+            church's handout matched, not because the reader wrote it — and a
+            result list is exactly where those two could be confused. */}
+        {/* At most two reasons: enough to recognise the entry, not a dump of it. */}
+        {hit.matches.slice(0, 2).map((match) => (
+          <MatchReason key={`${match.field}-${match.tier}`} match={match} />
+        ))}
         {/* Said in words, not in a colour. This entry came back because a
             church's handout matched, not because the reader wrote it — and a
             result list is exactly where those two could be confused. */}
@@ -224,6 +278,12 @@ export default function SearchView({ query }: { query: string }) {
   }, [value, navigate]);
 
   const needle = query.trim();
+  /**
+   * Secondary, always. The box has to work on its own; these only narrow what
+   * it already found, and the page is usable having never touched them.
+   */
+  const [kindFilter, setKindFilter] = useState<string[]>([]);
+  const [yearFilter, setYearFilter] = useState('');
 
   /**
    * Results carry the needle they were read for.
@@ -238,21 +298,48 @@ export default function SearchView({ query }: { query: string }) {
    * query for good and spin the "Searching" state forever. Storage trouble is
    * already reported where it happens, at open time.
    */
-  const { data: found, loading } = useStorageQuery<{ needle: string; entries: Entry[] }>(
-    async (storage) => {
-      if (!needle) return { needle, entries: [] };
-      try {
-        return { needle, entries: await storage.listEntries({ text: needle }) };
-      } catch {
-        return { needle, entries: [] };
-      }
-    },
-    [needle],
-    { needle: '', entries: [] },
+  /**
+   * The whole journal, read once, then ranked in memory.
+   *
+   * It used to ask storage for `{ text: needle }`, which is a raw substring
+   * match over a blob of every field — so "worry surgery" found nothing unless
+   * those two words appeared together in that order, and results came back in
+   * date order with no notion of relevance at all.
+   *
+   * Reading everything and ranking here costs one pass over the journal per
+   * query and buys real retrieval. It also means there is no derived index to
+   * fall out of step with the entries: nothing to invalidate on edit, delete,
+   * import or restore, because the entries ARE the index. Measured at 5,000
+   * entries before choosing it.
+   *
+   * Keyed on `revision` rather than the query, so typing does not re-read
+   * storage on every keystroke.
+   */
+  const { data: all, loading } = useStorageQuery<Entry[]>(
+    (storage) => storage.listEntries(),
+    [],
+    [],
   );
 
-  const settled = !loading && found.needle === needle;
-  const entries = settled ? found.entries : [];
+  const ranked = useMemo(
+    () => (needle ? searchJournal(needle, all, { kinds: kindFilter, year: yearFilter, limit: ENTRY_LIMIT }) : []),
+    [needle, all, kindFilter, yearFilter],
+  );
+
+  /** Only computed when nothing was found, so it costs nothing in the normal case. */
+  const suggestions = useMemo(
+    () => (needle && ranked.length === 0 ? spellingSuggestions(needle, all) : []),
+    [needle, ranked.length, all],
+  );
+
+  /** Years the journal actually has, so the facet never offers an empty one. */
+  const years = useMemo(
+    () => [...new Set(all.map((e) => e.date.slice(0, 4)))].sort().reverse(),
+    [all],
+  );
+
+  const settled = !loading;
+  const entries = ranked.map((hit) => hit.entry);
 
   const outlineMatches = useMemo(() => searchOutlines(needle.toLowerCase()), [needle]);
 
@@ -432,21 +519,84 @@ export default function SearchView({ query }: { query: string }) {
 
       {showResults ? (
         <section className="mt-8">
+          {/*
+            Secondary controls. The box above works without ever touching
+            these, which is the point: search should not become a query
+            builder.
+          */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="sr-only" id="search-filters-label">Narrow these results</span>
+            <div role="group" aria-labelledby="search-filters-label" className="flex flex-wrap gap-2">
+              {KIND_FILTERS.map(({ value: kindValue, label }) => {
+                const active = kindValue === '' ? kindFilter.length === 0 : kindFilter.includes(kindValue);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setKindFilter(kindValue === '' ? [] : [kindValue])}
+                    className={`min-h-11 rounded-control border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                      active ? 'border-line-strong bg-raised text-ink' : 'border-line text-ink-soft'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {years.length > 1 ? (
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink-soft">
+                Year
+                <select
+                  value={yearFilter}
+                  onChange={(event) => setYearFilter(event.target.value)}
+                  className="min-h-11 rounded-control border border-line bg-surface px-2 py-1 text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  <option value="">Any</option>
+                  {years.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
           <h2 className={SECTION_HEADING}>
             Your journal ({entries.length})
           </h2>
           {entries.length === 0 ? (
-            <p className="mt-3 text-sm text-ink-soft">
-              No entries of your own match this.
-            </p>
+            <div className="mt-3 text-sm text-ink-soft">
+              <p>No entries of your own match this.</p>
+              {/* Help, without blaming them for the spelling. */}
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Try fewer words.</li>
+                <li>Check another spelling.</li>
+                <li>Search by Scripture, speaker, or series.</li>
+              </ul>
+              {suggestions.length > 0 ? (
+                <p className="mt-2">
+                  {/* Offered as a question. "You meant" would be a claim this
+                      cannot support. */}
+                  Search for{' '}
+                  {suggestions.map((word, index) => (
+                    <span key={word}>
+                      {index > 0 ? ' or ' : ''}
+                      <button
+                        type="button"
+                        className="min-h-11 underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        onClick={() => setValue(word)}
+                      >
+                        &ldquo;{word}&rdquo;
+                      </button>
+                    </span>
+                  ))}{' '}
+                  instead?
+                </p>
+              ) : null}
+            </div>
           ) : (
             <ul className={RESULT_LIST}>
-              {entries.map((entry) => (
-                <EntryResult
-                  key={entry.id}
-                  entry={entry}
-                  providedOnly={matchedOnlyInProvided(entry, needle.toLowerCase())}
-                />
+              {ranked.map((hit) => (
+                <EntryResult key={hit.entry.id} hit={hit} />
               ))}
             </ul>
           )}

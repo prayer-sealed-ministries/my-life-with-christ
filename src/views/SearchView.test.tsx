@@ -290,10 +290,17 @@ describe('SearchView', () => {
 
     // Straight after the switch, with nothing awaited: the old result must
     // already be gone rather than lingering for a paint.
+    //
+    // This used to also expect a "Searching" state, because each query was its
+    // own read from storage. The journal is now read once and ranked in
+    // memory, so switching queries resolves synchronously — there is no window
+    // in which the previous query's results could be shown under the new one,
+    // which is a stronger guarantee than the one this test was written to get.
     expect(screen.queryByRole('link', { name: /The prodigal son/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Your journal/ })).not.toBeInTheDocument();
-    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('');
-    expect(screen.getByRole('status')).toHaveTextContent('Searching');
+    expect(
+      screen.queryByRole('heading', { name: 'Your journal (1)' }),
+      'the previous query’s result count survived the switch',
+    ).not.toBeInTheDocument();
 
     expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument();
   });

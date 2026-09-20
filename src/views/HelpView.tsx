@@ -171,8 +171,21 @@ export default function HelpView() {
           <Link to={{ name: 'search', query: '' }} className="underline focus-visible:outline-2">
             Search
           </Link>{' '}
-          covers your own entries, topics and their other names, book names, and typed references
-          like &ldquo;Matt 6:25&rdquo;. It searches on this device; nothing is sent anywhere.
+          looks through everything you have written — notes, reflections, prayers, titles, tags,
+          the speaker, church and series — as well as the passages an entry is attached to, and any
+          sermon notes your church provided. It searches on this device; nothing you type is sent
+          anywhere.
+        </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          You only need to remember part of it. A few words in any order will do, a name, a series,
+          or a passage — &ldquo;John 15&rdquo; and &ldquo;Jn 15&rdquo; both find the Sundays you
+          attached to it, even where you never wrote the reference down. Small misspellings are
+          forgiven.
+        </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          Each result says where the words were found. If a match came from sermon notes your
+          church handed out rather than from your own writing, it says{' '}
+          <strong>Provided notes</strong>, so the two are never confused.
         </p>
       </section>
 
