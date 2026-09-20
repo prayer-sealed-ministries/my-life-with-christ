@@ -62,10 +62,10 @@ export default function HelpView() {
           reference — &ldquo;sermon on the mount&rdquo;, or &ldquo;John 4&rdquo;.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
-          Your writing is saved locally as you type, so you can write for an hour without
-          thinking about it. If the phone locks, a call interrupts you, or the app closes, your
-          words are still here when you come back — look for <strong>Continue writing</strong>
-          on the home page.
+          Your writing is saved locally as you type, so an interruption does not erase your
+          draft. If the phone locks, a call comes in, or the app closes before you press
+          <strong>Save</strong>, your words are still here when you come back — look for
+          <strong> Continue writing</strong> on the home page.
         </p>
         {/*
           Three words that sound alike and mean different things. Worth ten

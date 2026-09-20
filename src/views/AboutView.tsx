@@ -52,6 +52,10 @@ export default function AboutView() {
         <ul className="measure space-y-2 text-sm leading-relaxed text-ink-soft">
           <li>No account. There is nothing to sign up for and nothing to sign in to.</li>
           <li>Nothing is uploaded. What you write stays on this device.</li>
+          <li>
+            Your writing is saved locally as you type, so an interruption does not erase your
+            draft.
+          </li>
           <li>No advertising, and no analytics or tracking of any kind.</li>
           <li>It works offline. Scripture, topics and your journal are all on the device.</li>
           <li>
