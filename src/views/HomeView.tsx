@@ -24,7 +24,9 @@ import {
   VolumeIcon,
 } from '../components/icons';
 import { Spinner } from '../components/ui';
-import type { Entry, EntryKind } from '../types';
+import type { Entry, EntryDraft, EntryKind } from '../types';
+import { isResumable } from '../lib/drafts';
+import { ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 
 /** How many recent entries the front page shows. A glance, not a list. */
 const RECENT_COUNT = 3;
@@ -206,12 +208,38 @@ function previewOf(entry: Entry): string {
   return clean.length > 96 ? `${clean.slice(0, 95)}\u2026` : clean;
 }
 
+/** "Started 11:04 AM", or the date if it was not today. */
+function startedAt(iso: string, now = new Date()): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+  const sameDay = when.toDateString() === now.toDateString();
+  return sameDay
+    ? `Started ${when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+    : `Started ${when.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`;
+}
+
 export default function HomeView() {
   const { data: entries, loading } = useStorageQuery<Entry[]>(
     (storage) => storage.listEntries(),
     [],
     [],
   );
+
+  /**
+   * Unfinished writing, offered back.
+   *
+   * Kept apart from "Recently written" on purpose. A draft is not a finished
+   * entry, and showing the two in one list would make a half-sentence look like
+   * something that had been decided on — this journal's whole promise is that
+   * the finished record means something.
+   */
+  const { data: drafts } = useStorageQuery<EntryDraft[]>(
+    (storage) => storage.listDrafts(),
+    [],
+    [],
+  );
+  const resumable = drafts.filter(isResumable);
+  const continueWith = resumable[0];
 
   const recent = entries.slice(0, RECENT_COUNT);
 
@@ -306,6 +334,49 @@ export default function HomeView() {
           </li>
         ))}
       </ul>
+
+      {/*
+        Picking up where they left off, before anything else on the page.
+
+        Above "Recently written" because unfinished work is the thing most
+        likely to be why someone opened the app, and starting a second copy of
+        the note they already began is the outcome this prevents. Restrained: a
+        card, not a dashboard — if there are more, they are reachable from the
+        timeline like everything else.
+      */}
+      {continueWith ? (
+        <section className="mt-8" aria-labelledby="continue-heading">
+          <h2 id="continue-heading" className="sr-only">
+            Unfinished writing
+          </h2>
+          <Link
+            to={{ name: 'newEntry', draft: continueWith.id }}
+            className={`flex w-full items-center gap-3.5 p-4 ${cardClasses({
+              interactive: true,
+            })} active:brightness-95`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {/* Labelled, so it can never be mistaken for a finished entry. */}
+                <span className="rounded-control bg-raised px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-ink-soft">
+                  Draft
+                </span>
+                <span className="font-serif text-base font-semibold text-ink">
+                  Continue {ENTRY_KIND_LABELS[continueWith.form.kind].toLowerCase()}
+                </span>
+              </span>
+              <span className="mt-1 block truncate text-sm text-ink-soft">
+                {continueWith.form.title.trim() || startedAt(continueWith.updatedAt)}
+              </span>
+              {resumable.length > 1 ? (
+                <span className="mt-0.5 block text-xs text-ink-muted">
+                  {resumable.length - 1} more unfinished
+                </span>
+              ) : null}
+            </span>
+          </Link>
+        </section>
+      ) : null}
 
       {loading ? <Spinner label="Loading your journal" /> : null}
 
