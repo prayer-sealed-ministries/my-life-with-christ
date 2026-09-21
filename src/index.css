@@ -78,6 +78,29 @@
   --accent-hover: #26405a;
   --accent-ink: #ffffff;
   --accent-soft: #e6edf4;
+
+  /*
+   * Chip tints for the home actions. NOT a second brand.
+   *
+   * The rule above still holds: one accent, and it belongs to interaction and
+   * selection. These are backgrounds for a decorative icon chip and nothing
+   * else — never a button, never a focus ring, never a link. They are
+   * deliberately low-saturation companions to the paper, so the row reads as
+   * one considered family rather than six competing colours, and the real
+   * accent still marks the primary action without being shouted down.
+   *
+   * Each pairs a tint with an ink dark enough to clear AA on it.
+   */
+  --chip-prayer: #e8eee7;
+  --chip-prayer-ink: #33502f;
+  --chip-reflect: #f0eae2;
+  --chip-reflect-ink: #5c4632;
+  --chip-scripture: #e7ecf2;
+  --chip-scripture-ink: #2f4763;
+  --chip-topics: #f1e9ec;
+  --chip-topics-ink: #5e3344;
+  --chip-search: #e6eeee;
+  --chip-search-ink: #2c4f4f;
 }
 
 /* Dark, by explicit choice. */
@@ -95,6 +118,18 @@
   --accent-hover: #c2d8ec;
   --accent-ink: #14161a;
   --accent-soft: #263749;
+
+  /* The same family, re-mixed for a dark ground: muted grounds, light ink. */
+  --chip-prayer: #26301f;
+  --chip-prayer-ink: #bcd6b4;
+  --chip-reflect: #332a21;
+  --chip-reflect-ink: #ddc6ab;
+  --chip-scripture: #22303f;
+  --chip-scripture-ink: #b6cde4;
+  --chip-topics: #33232b;
+  --chip-topics-ink: #e0bccb;
+  --chip-search: #1f2f2f;
+  --chip-search-ink: #a9cfcf;
 }
 
 /* Dark, by system preference, when no choice has been stamped. */
@@ -113,6 +148,16 @@
     --accent-hover: #c2d8ec;
     --accent-ink: #14161a;
     --accent-soft: #263749;
+    --chip-prayer: #26301f;
+    --chip-prayer-ink: #bcd6b4;
+    --chip-reflect: #332a21;
+    --chip-reflect-ink: #ddc6ab;
+    --chip-scripture: #22303f;
+    --chip-scripture-ink: #b6cde4;
+    --chip-topics: #33232b;
+    --chip-topics-ink: #e0bccb;
+    --chip-search: #1f2f2f;
+    --chip-search-ink: #a9cfcf;
   }
 }
 
@@ -133,6 +178,16 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-ink: var(--accent-ink);
+  --color-chip-prayer: var(--chip-prayer);
+  --color-chip-prayer-ink: var(--chip-prayer-ink);
+  --color-chip-reflect: var(--chip-reflect);
+  --color-chip-reflect-ink: var(--chip-reflect-ink);
+  --color-chip-scripture: var(--chip-scripture);
+  --color-chip-scripture-ink: var(--chip-scripture-ink);
+  --color-chip-topics: var(--chip-topics);
+  --color-chip-topics-ink: var(--chip-topics-ink);
+  --color-chip-search: var(--chip-search);
+  --color-chip-search-ink: var(--chip-search-ink);
   --color-accent-soft: var(--accent-soft);
 }
 

@@ -149,6 +149,16 @@ const ACTIONS: Array<{
   label: string;
   description: string;
   Icon: (props: { className?: string }) => ReactElement;
+  /**
+   * The icon chip's colour.
+   *
+   * A tint per action, so the row reads as a considered set rather than one
+   * bright tile among five grey ones. These are decoration and nothing else —
+   * the accent is still reserved for interaction and selection, and the
+   * primary action is the only thing wearing it. See the note beside the
+   * tokens in src/index.css.
+   */
+  tint?: string;
   primary?: boolean;
 }> = [
   {
@@ -162,17 +172,37 @@ const ACTIONS: Array<{
     route: { name: 'newEntry', kind: 'prayer' },
     label: 'Prayer',
     description: 'Record a prayer',
+    tint: 'bg-chip-prayer text-chip-prayer-ink',
     Icon: PrayIcon,
   },
   {
     route: { name: 'newEntry', kind: 'reflection' },
     label: 'Reflection',
     description: 'Write what this meant to you',
+    tint: 'bg-chip-reflect text-chip-reflect-ink',
     Icon: ReflectIcon,
   },
-  { route: { name: 'browse' }, label: 'Read Scripture', description: 'Open the Bible', Icon: BookIcon },
-  { route: { name: 'topics' }, label: 'Topics', description: 'What you are facing', Icon: TopicsIcon },
-  { route: { name: 'search', query: '' }, label: 'Search', description: 'Find anything you wrote', Icon: SearchIcon },
+  {
+    route: { name: 'browse' },
+    label: 'Read Scripture',
+    description: 'Open the Bible',
+    Icon: BookIcon,
+    tint: 'bg-chip-scripture text-chip-scripture-ink',
+  },
+  {
+    route: { name: 'topics' },
+    label: 'Topics',
+    description: 'What you are facing',
+    Icon: TopicsIcon,
+    tint: 'bg-chip-topics text-chip-topics-ink',
+  },
+  {
+    route: { name: 'search', query: '' },
+    label: 'Search',
+    description: 'Find anything you wrote',
+    Icon: SearchIcon,
+    tint: 'bg-chip-search text-chip-search-ink',
+  },
 ];
 
 /**
@@ -293,7 +323,7 @@ export default function HomeView() {
         took the whole page sideways with them.
       */}
       <ul className="mt-5 grid auto-rows-fr gap-3 min-[22.5rem]:grid-cols-2 min-[48rem]:grid-cols-3">
-        {ACTIONS.map(({ route, label, description, Icon, primary }) => (
+        {ACTIONS.map(({ route, label, description, Icon, primary, tint }) => (
           <li key={label} className="flex min-w-0">
             <Link
               to={route}
@@ -321,7 +351,7 @@ export default function HomeView() {
             >
               <span
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-control ${
-                  primary ? 'bg-accent text-accent-ink' : 'bg-raised text-ink-soft'
+                  primary ? 'bg-accent text-accent-ink' : (tint ?? 'bg-raised text-ink-soft')
                 }`}
               >
                 <Icon className="h-5 w-5" />
