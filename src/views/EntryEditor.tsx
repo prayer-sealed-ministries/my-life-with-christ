@@ -52,6 +52,13 @@ import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 import { formatDay } from '../lib/dates';
 import { describeProvenance } from '../lib/provided-notes';
 import { SermonNotesImport } from './SermonNotesImport';
+import {
+  hasIncomingDocument,
+  onIncomingDocument,
+  releaseIncomingDocument,
+  takeIncomingDocument,
+} from '../app/incoming-document';
+import type { IncomingDocument } from '../import/incoming';
 import { segmentRef } from '../lib/passages';
 import { todayIso } from '../storage/db';
 import type {
@@ -374,6 +381,62 @@ export default function EntryEditor({
   const discardRef = useRef<HTMLButtonElement>(null);
   /** Is the church-notes import panel open? Nothing is written while it is. */
   const [importingNotes, setImportingNotes] = useState(false);
+
+  /*
+   * A document the operating system shared into the app.
+   *
+   * Claimed in an effect, and never inside a state updater. That is the whole
+   * lesson of this one.
+   *
+   * The first version took it inside `setShared(current => …)`. A state
+   * updater must be PURE: React may call it more than once from the same base
+   * state, and when it did, the first call took the document and the second —
+   * starting from `null` again — found the slot already empty and settled on
+   * nothing. Every unit test passed. On a device the panel simply never
+   * opened, with no error anywhere, because a handout taken and dropped looks
+   * exactly like no handout at all.
+   *
+   * `takeIncomingDocument` clears the slot, which is what keeps a redelivered
+   * Android intent from becoming a second copy of the same handout. Only for a
+   * new entry: a share opens a fresh sermon, so an editor holding a saved one
+   * must not swallow it.
+   */
+  const [shared, setShared] = useState<IncomingDocument | null>(null);
+
+  /*
+   * A document can also arrive AFTER this editor is on screen, and the initial
+   * read above would miss it.
+   *
+   * Found on an emulator, not in a test. The web view restores the hash it was
+   * last on, so a cold share into an app that was last left on `#/entry/new`
+   * mounts the editor FIRST, with an empty slot, and the navigation that
+   * follows is to the address already showing — no hash change, no remount,
+   * and a handout sitting in the slot with nothing watching it. Every unit
+   * test passed because they all offered the document before mounting.
+   *
+   * Subscribing covers that and the warm case together: a share that arrives
+   * while the reader is on this page opens the panel where they are.
+   */
+  useEffect(() => {
+    if (entryId) return undefined;
+
+    const claim = () => {
+      // The registry refuses a second offer while one is in hand, so this can
+      // never displace a review already on screen.
+      if (!hasIncomingDocument()) return;
+      const document = takeIncomingDocument();
+      if (document) setShared(document);
+    };
+
+    // One that was already waiting, and one that arrives later.
+    claim();
+    return onIncomingDocument(claim);
+  }, [entryId]);
+
+  // Release the slot when this editor goes away however it goes away — applied,
+  // cancelled, navigated off. Until it is released, a second share is told to
+  // wait rather than replacing what is on screen.
+  useEffect(() => () => releaseIncomingDocument(), []);
   const [confirmingRemoveProvided, setConfirmingRemoveProvided] = useState(false);
   /**
    * The id this form created, once it has saved at least once.
@@ -1259,12 +1322,21 @@ export default function EntryEditor({
         {/* The way in. Restrained on purpose: most entries are typed from
             nothing, and a large permanent control for a file most people will
             never have would be the loudest thing on a blank form. */}
-        {importingNotes ? (
+        {importingNotes || shared ? (
           <SermonNotesImport
             replacing={form.sourceMaterial !== null}
-            onCancel={() => setImportingNotes(false)}
+            incoming={shared}
+            onCancel={() => {
+              setImportingNotes(false);
+              // Cancelling a shared document discards the candidate and frees
+              // the slot. Nothing was written, so there is nothing to undo.
+              setShared(null);
+              releaseIncomingDocument();
+            }}
             onUse={(proposal) => {
               setImportingNotes(false);
+              setShared(null);
+              releaseIncomingDocument();
               setForm((current) => {
                 if (!current) return current;
                 const next: FormState = { ...current, sourceMaterial: proposal.material };

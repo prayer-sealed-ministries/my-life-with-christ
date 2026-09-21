@@ -15,12 +15,13 @@
  * they were given, not what they wrote.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { FileChooser } from '../components/FileChooser';
 import { Button, LiveRegion, Spinner } from '../components/ui';
 import { Markdown } from '../components/Markdown';
 import { ImportError } from '../import/limits';
+import { acceptIncomingDocument, type IncomingDocument } from '../import/incoming';
 import {
   MAX_SERMON_NOTES_BYTES,
   SERMON_NOTES_ACCEPT,
@@ -43,10 +44,21 @@ function previewOf(body: string): { text: string; truncated: boolean } {
 export function SermonNotesImport({
   /** True when the entry already carries provided notes this would replace. */
   replacing,
+  /**
+   * A document the operating system handed over, rather than one picked here.
+   *
+   * The only difference a share makes: the bytes are already in hand, so the
+   * file chooser is skipped. Everything after this point — the gate, the
+   * parser, the preview, the explicit press — is the same code on both paths,
+   * because there is one importer and a second one would be a second set of
+   * rules about somebody else's words.
+   */
+  incoming,
   onUse,
   onCancel,
 }: {
   replacing: boolean;
+  incoming?: IncomingDocument | null;
   onUse: (proposal: SermonNotesProposal) => void;
   onCancel: () => void;
 }) {
@@ -76,6 +88,51 @@ export function SermonNotesImport({
       setBusy(false);
     }
   }
+
+  /*
+   * Read a shared document once.
+   *
+   * Guarded by a ref rather than by the effect's dependencies: React runs
+   * effects twice in development StrictMode, and a second parse must not
+   * happen. It is not merely wasted work for a PDF — pdfjs takes ownership of
+   * the buffer it is handed and DETACHES it, so a second read of the same
+   * bytes finds a zero-length array and reports "That file is empty" about a
+   * document that is nothing of the kind.
+   */
+  const read = useRef<IncomingDocument | null>(null);
+  useEffect(() => {
+    if (!incoming || read.current === incoming) return;
+    read.current = incoming;
+
+    let cancelled = false;
+    setError('');
+    setProposal(null);
+    setBusy(true);
+
+    void (async () => {
+      try {
+        // The gate first — a name and a media type chosen by the sender are
+        // hints, and the bytes settle any disagreement — then the same parser
+        // a picked file reaches.
+        const accepted = acceptIncomingDocument(incoming);
+        const result = await readSermonNotes(accepted.bytes, accepted.filename);
+        if (!cancelled) setProposal(result);
+      } catch (cause) {
+        if (cancelled) return;
+        setError(
+          cause instanceof ImportError
+            ? cause.message
+            : 'That file could not be read. It may be damaged, or in a format this app does not import.',
+        );
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [incoming]);
 
   const material = proposal?.material;
   const facts: Array<[string, string]> = [];

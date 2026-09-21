@@ -8,6 +8,32 @@
  * It is loaded through a dynamic import so it lands in its own chunk: a reader
  * who never imports a PDF never downloads a PDF engine.
  *
+ * THE LEGACY BUILD, EVERYWHERE, INCLUDING THE APP
+ *
+ * pdfjs 6 calls `Promise.try`, which arrived in Chrome 128. The Android System
+ * WebView on a device nobody has updated is older — the emulator this was
+ * found on reports Chrome 124 — and the modern build throws there inside a
+ * promise it never surfaces, so a PDF import did not fail: it sat on a loading
+ * spinner for ever. A hang is the worst of the outcomes, because it is the one
+ * that looks like patience.
+ *
+ * The legacy build exists for exactly this. It bundles
+ * `core-js/modules/es.promise.try.js` into both the main and worker bundles,
+ * so the engine brings what it needs rather than the app guessing which
+ * runtime it is on.
+ *
+ * A hand-written `Promise.try` was tried first and is instructive about why
+ * this is the right answer instead: patching the main thread left the WORKER
+ * — its own global scope, out of reach — still broken, and declining the
+ * worker to avoid that broke it differently, because in a browser pdfjs
+ * REQUIRES one and refuses with `No "GlobalWorkerOptions.workerSrc"
+ * specified`. Three failures, one cause, and a build that already solved it.
+ *
+ * This also removes a divergence the test host had papered over: vitest
+ * aliased `pdfjs-dist` to the legacy build so the suite would run under Node,
+ * while the app shipped the modern one. The tests were exercising a different
+ * engine from the product. Now both use the same.
+ *
  * NETWORK: pdfjs will, left alone, fetch standard font files and CMaps from a
  * URL when a document asks for them. That would be a document deciding to make
  * a network request, which this app does not do at all — so the flags below
@@ -69,7 +95,7 @@ function itemsToText(items: TextItem[]): string {
 export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
   let getDocument: (typeof import('pdfjs-dist'))['getDocument'];
   try {
-    const pdfjs = await import('pdfjs-dist');
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     getDocument = pdfjs.getDocument;
 
     // Left to itself, pdfjs resolves a worker from a CDN or a guessed path — a
@@ -86,7 +112,7 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
     // calling thread, which is the right answer for a few-page handout.
     const canSpawnWorker = typeof Worker !== 'undefined';
     if (canSpawnWorker && !pdfjs.GlobalWorkerOptions.workerSrc) {
-      const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+      const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
     }
   } catch {
