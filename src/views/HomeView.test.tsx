@@ -67,18 +67,21 @@ describe('HomeView', () => {
     expect(screen.getByText(/no account/i)).toBeInTheDocument();
   });
 
-  it('offers the four ways in', async () => {
+  it('offers each way in', async () => {
     const provider = freshProvider();
     await provider.open();
 
     renderHome(provider);
 
-    // Four actions, each to a route that already exists. Prayer and Reflection
-    // are deliberately absent: the editor supports those kinds but `newEntry`
-    // carries no kind parameter, so such a card could not honestly go anywhere
-    // different from this one.
+    // Each to a route that already exists.
+    //
+    // Sermon note names its kind rather than relying on the editor's default,
+    // because it is the same destination the Android launcher shortcut
+    // selects — one door, reachable two ways. See src/app/launch-actions.ts.
     const expected: Array<[RegExp, string]> = [
-      [/Sermon note/, '#/entry/new'],
+      [/Sermon note/, '#/entry/new?kind=sermon'],
+      [/^Prayer/, '#/entry/new?kind=prayer'],
+      [/^Reflection/, '#/entry/new?kind=reflection'],
       [/Read Scripture/, '#/browse'],
       [/^Topics/, '#/topics'],
       [/^Search/, '#/search'],

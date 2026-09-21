@@ -61,6 +61,12 @@ export default function HelpView() {
           links are all optional and can be filled in later. You can attach a passage by name or by
           reference — &ldquo;sermon on the mount&rdquo;, or &ldquo;John 4&rdquo;.
         </p>
+        {/* Deliberately not a set of platform instructions, which would be
+            wrong on half the devices and stale on the rest. */}
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          On supported devices, the <strong>Sermon note</strong> shortcut on the app icon starts
+          writing straight away.
+        </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           Your writing is saved locally as you type, so an interruption does not erase your
           draft. If the phone locks, a call comes in, or the app closes before you press

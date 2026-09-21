@@ -10,6 +10,7 @@ import { NoticeProvider } from './app/notice';
 import { ThemeProvider } from './app/theme';
 import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
+import { bindLaunchActions, locationHost } from './platform/native-launch';
 import { PlatformProvider } from './platform/provider';
 import './index.css';
 
@@ -44,6 +45,12 @@ if (import.meta.env.VITE_NATIVE_CONFORMANCE) {
     .then((harness) => harness.runNativeContract())
     .catch((error: unknown) => console.log('NATIVE_CONTRACT_RESULT_ERROR', String(error)));
 }
+
+// A launcher shortcut, widget or quick action naming a destination. Bound
+// before the first render so the hash is already the destination when the
+// router reads it, rather than showing home and moving afterwards. A no-op on
+// the web, and a failure here is simply a normal launch.
+void bindLaunchActions(locationHost()).catch(() => undefined);
 
 createRoot(root).render(
   <StrictMode>

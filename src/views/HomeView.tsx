@@ -27,6 +27,7 @@ import { Spinner } from '../components/ui';
 import type { Entry, EntryDraft, EntryKind } from '../types';
 import { isResumable } from '../lib/drafts';
 import { ENTRY_KIND_LABELS } from '../lib/entry-kinds';
+import { LAUNCH_ACTIONS } from '../app/launch-actions';
 
 /** How many recent entries the front page shows. A glance, not a list. */
 const RECENT_COUNT = 3;
@@ -162,7 +163,11 @@ const ACTIONS: Array<{
   primary?: boolean;
 }> = [
   {
-    route: { name: 'newEntry' },
+    // The same destination the Android launcher shortcut selects, read from
+    // the one table rather than written twice. Home and the shortcut are two
+    // doorways into one editor, and a second spelling here is how they would
+    // quietly stop being the same door.
+    route: LAUNCH_ACTIONS['sermon-fast-capture'],
     label: 'Sermon note',
     description: 'Start writing now',
     Icon: PenIcon,

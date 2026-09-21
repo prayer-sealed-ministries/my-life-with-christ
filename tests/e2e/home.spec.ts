@@ -15,7 +15,7 @@ import { dismissWelcome, seedEntries, SEED_ENTRIES } from './seed';
 
 /** In the order Home offers them: the three that write, then the three that find. */
 const ACTIONS = [
-  { name: 'Sermon note', href: '#/entry/new' },
+  { name: 'Sermon note', href: '#/entry/new?kind=sermon' },
   { name: 'Prayer', href: '#/entry/new?kind=prayer' },
   { name: 'Reflection', href: '#/entry/new?kind=reflection' },
   { name: 'Read Scripture', href: '#/browse' },
@@ -85,10 +85,25 @@ test.describe('the way in', () => {
     }
   });
 
-  test('leaves the plain sermon route exactly as it was', async ({ page }) => {
+  test('opens the same sermon destination the launcher shortcut does', async ({ page }) => {
+    // Sermon note used to link to the bare `#/entry/new` and lean on the
+    // editor's default kind. It now names the kind, because it is the same
+    // destination the Android shortcut selects — one door, two ways to it. A
+    // shortcut relying on that default would have quietly pointed elsewhere
+    // the day it changed, with nothing failing.
     await arrive(page, 390);
     await actionCard(page, 'Sermon note').click();
-    await expect(page).toHaveURL(/#\/entry\/new$/);
+    await expect(page).toHaveURL(/#\/entry\/new\?kind=sermon$/);
+    await expect(page.getByLabel('Kind', { exact: true })).toHaveValue('sermon');
+    // And the caret is already where the writing goes.
+    await expect(page.getByRole('textbox', { name: 'Notes' })).toBeFocused();
+  });
+
+  test('the bare new-entry route still works, for any link that predates this', async ({ page }) => {
+    // The route was not narrowed: `#/entry/new` remains a blank sermon, so an
+    // old bookmark or a saved link still opens what it always did.
+    await page.goto('/#/entry/new');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByLabel('Kind', { exact: true })).toHaveValue('sermon');
   });
 
@@ -114,7 +129,7 @@ test.describe('the way in', () => {
       const outline = el ? getComputedStyle(el, ':focus-visible').outlineStyle : 'none';
       return { href: el?.getAttribute('href'), outline };
     });
-    expect(focused.href, 'focus did not land on the first action').toBe('#/entry/new');
+    expect(focused.href, 'focus did not land on the first action').toBe('#/entry/new?kind=sermon');
     expect(focused.outline, 'the focused card shows no outline').not.toBe('none');
   });
 });
