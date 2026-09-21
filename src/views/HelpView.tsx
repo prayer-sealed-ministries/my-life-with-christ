@@ -187,6 +187,10 @@ export default function HelpView() {
           church handed out rather than from your own writing, it says{' '}
           <strong>Provided notes</strong>, so the two are never confused.
         </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          <strong>Advanced search</strong> can narrow results to one or more kinds of journal
+          entry — a prayer, a sermon, a reflection. Leave it closed and everything is searched.
+        </p>
       </section>
 
       <section aria-labelledby="backing-up" className="space-y-2">

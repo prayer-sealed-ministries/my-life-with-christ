@@ -110,3 +110,74 @@ describe('href round-trips parseHash', () => {
     }
   });
 });
+
+describe('advanced search filters in the hash', () => {
+  it('reads selected kinds alongside the query', () => {
+    expect(parseHash('#/search?q=grace&kinds=prayer')).toEqual({
+      name: 'search',
+      query: 'grace',
+      kinds: ['prayer'],
+    });
+    expect(parseHash('#/search?q=grace&kinds=sermon,reflection')).toEqual({
+      name: 'search',
+      query: 'grace',
+      kinds: ['sermon', 'reflection'],
+    });
+  });
+
+  it('leaves kinds off entirely when none are selected', () => {
+    // Absent, not an empty array: `#/search?q=x` and `#/search?q=x&kinds=`
+    // describe the same page and must parse to the same route.
+    expect(parseHash('#/search?q=grace')).toEqual({ name: 'search', query: 'grace' });
+    expect(parseHash('#/search?q=grace&kinds=')).toEqual({ name: 'search', query: 'grace' });
+  });
+
+  it('drops a kind this build does not have, rather than filtering to nothing', () => {
+    // A hash is the one input a person can type. A filter for a kind no entry
+    // can have is silently a filter for nothing, which on screen is
+    // indistinguishable from "you have written none of those".
+    expect(parseHash('#/search?q=grace&kinds=garbage')).toEqual({ name: 'search', query: 'grace' });
+    expect(parseHash('#/search?q=grace&kinds=prayer,garbage')).toEqual({
+      name: 'search',
+      query: 'grace',
+      kinds: ['prayer'],
+    });
+  });
+
+  /** Narrowed, because `Route` is a union and only one arm carries kinds. */
+  const kindsOf = (hash: string): string[] | undefined => {
+    const route = parseHash(hash);
+    return route.name === 'search' ? route.kinds : undefined;
+  };
+
+  it('normalises to canonical order, without duplicates', () => {
+    // Two links selecting the same kinds have to be the same link, or Back
+    // walks through pages that differ only in the order boxes were ticked.
+    expect(kindsOf('#/search?q=g&kinds=reflection,sermon')).toEqual(['sermon', 'reflection']);
+    expect(kindsOf('#/search?q=g&kinds=prayer,prayer')).toEqual(['prayer']);
+  });
+
+  it('round-trips every kind through the hash', () => {
+    // The floor: a loop over an empty list proves nothing, and a kind that
+    // cannot survive a link is a kind the reader cannot bookmark.
+    expect(ENTRY_KINDS.length).toBe(6);
+    for (const kind of ENTRY_KINDS) {
+      const route: Route = { name: 'search', query: 'x', kinds: [kind] };
+      expect(parseHash(href(route))).toEqual(route);
+    }
+    const every: Route = { name: 'search', query: 'x', kinds: [...ENTRY_KINDS] };
+    expect(parseHash(href(every))).toEqual(every);
+  });
+
+  it('keeps the query when only the filters change, and the reverse', () => {
+    const withBoth = href({ name: 'search', query: 'first baptist', kinds: ['prayer'] });
+    expect(parseHash(withBoth)).toEqual({
+      name: 'search',
+      query: 'first baptist',
+      kinds: ['prayer'],
+    });
+    // Clearing the filters must not touch the query.
+    const cleared = parseHash(href({ name: 'search', query: 'first baptist' }));
+    expect(cleared).toEqual({ name: 'search', query: 'first baptist' });
+  });
+});

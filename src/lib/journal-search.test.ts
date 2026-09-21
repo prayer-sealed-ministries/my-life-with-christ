@@ -13,6 +13,7 @@ import {
   FIELD_LABELS,
   type MatchField,
   allowedEdits,
+  hasActiveFilters,
   anchorOverlaps,
   entriesAnchoredTo,
   normalizeText,
@@ -385,6 +386,141 @@ describe('Scripture', () => {
     const earlier = entry({ id: 'earlier', date: '2020-01-01', anchors: anchored.anchors });
     const ref = parseReferenceQuery('John 15')!;
     expect(entriesAnchoredTo([later, earlier], ref).map((e) => e.id)).toEqual(['earlier', 'later']);
+  });
+});
+
+/**
+ * Narrowing by entry type.
+ *
+ * Every case here goes through the engine, because that is where the narrowing
+ * has to happen. Searching everything and then hiding the wrong rows in React
+ * would give a result count that disagrees with the list under it, a limit that
+ * silently trims the wrong set, and an empty state that cannot tell "nothing
+ * matches" from "nothing of that kind matches".
+ */
+describe('narrowing by entry kind', () => {
+  // One word in all six, so only the filter can distinguish them.
+  const corpus = [
+    entry({ id: 'k-sermon', kind: 'sermon', notes: 'A word about mercy.' }),
+    entry({ id: 'k-reading', kind: 'reading', notes: 'A word about mercy.' }),
+    entry({ id: 'k-service', kind: 'service', notes: 'A word about mercy.' }),
+    entry({ id: 'k-prayer', kind: 'prayer', notes: 'A word about mercy.' }),
+    entry({ id: 'k-reflection', kind: 'reflection', notes: 'A word about mercy.' }),
+    entry({ id: 'k-letter', kind: 'letter', notes: 'A word about mercy.' }),
+  ];
+
+  it('searches every kind when nothing is selected', () => {
+    expect(ids(searchJournal('mercy', corpus)).sort()).toEqual(
+      corpus.map((each) => each.id).sort(),
+    );
+    // Absent and empty must mean the same thing. The view sends an empty array
+    // when no box is ticked, and "no kinds selected" can never mean "no kinds".
+    expect(ids(searchJournal('mercy', corpus, { kinds: [] }))).toHaveLength(6);
+  });
+
+  it('narrows to one kind', () => {
+    expect(ids(searchJournal('mercy', corpus, { kinds: ['sermon'] }))).toEqual(['k-sermon']);
+    expect(ids(searchJournal('mercy', corpus, { kinds: ['prayer'] }))).toEqual(['k-prayer']);
+    expect(ids(searchJournal('mercy', corpus, { kinds: ['reflection'] }))).toEqual(['k-reflection']);
+    expect(ids(searchJournal('mercy', corpus, { kinds: ['letter'] }))).toEqual(['k-letter']);
+  });
+
+  it('narrows to several kinds at once', () => {
+    expect(ids(searchJournal('mercy', corpus, { kinds: ['prayer', 'reflection'] })).sort()).toEqual([
+      'k-prayer',
+      'k-reflection',
+    ]);
+  });
+
+  it('selecting every kind is the same as selecting none', () => {
+    const all = corpus.map((each) => each.kind);
+    expect(ids(searchJournal('mercy', corpus, { kinds: all })).sort()).toEqual(
+      ids(searchJournal('mercy', corpus)).sort(),
+    );
+  });
+
+  it('does not change the order of what it leaves behind', () => {
+    // Relevance is computed from the query, never from the filter. Removing
+    // rows must not promote or demote the survivors relative to each other.
+    const ranked = [
+      entry({ id: 'weak', kind: 'sermon', place: 'Mercy Chapel' }),
+      entry({ id: 'strong', kind: 'sermon', title: 'Mercy' }),
+      entry({ id: 'middle', kind: 'prayer', notes: 'Mercy again.' }),
+    ];
+    const everything = ids(searchJournal('mercy', ranked));
+    expect(everything).toEqual(['strong', 'middle', 'weak']);
+
+    const sermonsOnly = ids(searchJournal('mercy', ranked, { kinds: ['sermon'] }));
+    expect(sermonsOnly).toEqual(everything.filter((id) => id !== 'middle'));
+  });
+
+  it('scores a filtered entry exactly as it scores an unfiltered one', () => {
+    const [unfiltered] = searchJournal('mercy', corpus);
+    const [filtered] = searchJournal('mercy', corpus, { kinds: [unfiltered.entry.kind] });
+    expect(filtered.score).toBe(unfiltered.score);
+    expect(filtered.matches).toEqual(unfiltered.matches);
+  });
+
+  it('composes with a Scripture query rather than taking a second path', () => {
+    const anchored = [
+      entry({
+        id: 'vine-sermon',
+        kind: 'sermon',
+        title: 'The vine',
+        anchors: [{ kind: 'scripture', book: 'john', chapterStart: 15, verseStart: 1, chapterEnd: 15, verseEnd: 17 }],
+      }),
+      entry({
+        id: 'vine-reflection',
+        kind: 'reflection',
+        title: 'Abiding',
+        anchors: [{ kind: 'scripture', book: 'john', chapterStart: 15, verseStart: 4, chapterEnd: 15, verseEnd: 5 }],
+      }),
+    ];
+
+    expect(ids(searchJournal('Jn 15', anchored)).sort()).toEqual(['vine-reflection', 'vine-sermon']);
+    expect(ids(searchJournal('Jn 15', anchored, { kinds: ['reflection'] }))).toEqual(['vine-reflection']);
+    expect(ids(searchJournal('Jn 15', anchored, { kinds: ['sermon'] }))).toEqual(['vine-sermon']);
+  });
+
+  it('keeps provenance intact — a kind is not a matched field', () => {
+    // "Sermon" is what the entry IS; "Provided notes" is where the words came
+    // from. Filtering by the first must not touch the second.
+    const handout = entry({
+      id: 'handout',
+      kind: 'sermon',
+      notes: 'My own thoughts were elsewhere.',
+      sourceMaterial: {
+        body: 'Point two: peace in the middle of uncertainty.',
+        importedAt: '2026-03-01T00:00:00.000Z',
+        filename: 'h.md',
+        format: 'markdown',
+        parserVersion: 1,
+      },
+    });
+
+    const [hit] = searchJournal('uncertainty', [handout], { kinds: ['sermon'] });
+    expect(hit.entry.kind).toBe('sermon');
+    expect(hit.matches[0].field).toBe('provided');
+    expect(FIELD_LABELS[hit.matches[0].field]).toBe('Provided notes');
+    expect(hit.providedOnly).toBe(true);
+  });
+
+  it('still reaches the oldest entry in the journal when its kind is selected', () => {
+    const history = [
+      ...Array.from({ length: 300 }, (_, i) =>
+        entry({ id: `f${i}`, kind: 'sermon', date: '2030-01-01', notes: 'ordinary notes' }),
+      ),
+      entry({ id: 'ancient', kind: 'letter', date: '2004-06-01', notes: 'The lighthouse letter.' }),
+    ];
+    expect(ids(searchJournal('lighthouse', history, { kinds: ['letter'] }))).toEqual(['ancient']);
+  });
+
+  it('knows when something is narrowing and when nothing is', () => {
+    expect(hasActiveFilters({})).toBe(false);
+    expect(hasActiveFilters({ kinds: [] })).toBe(false);
+    expect(hasActiveFilters({ kinds: [], year: '' })).toBe(false);
+    expect(hasActiveFilters({ kinds: ['prayer'] })).toBe(true);
+    expect(hasActiveFilters({ year: '2024' })).toBe(true);
   });
 });
 

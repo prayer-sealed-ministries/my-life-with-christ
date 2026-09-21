@@ -17,7 +17,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { isEntryKind } from '../lib/entry-kinds';
+import { ENTRY_KINDS, isEntryKind } from '../lib/entry-kinds';
 import type { EntryKind } from '../types';
 
 export type Route =
@@ -28,7 +28,15 @@ export type Route =
   | { name: 'topics' }
   | { name: 'topic'; topicId: string }
   | { name: 'timeline' }
-  | { name: 'search'; query: string }
+  /**
+   * A search, and anything narrowing it.
+   *
+   * `kinds` rides in the URL beside `q` because it is part of what the reader
+   * is looking at: open a result, press Back, and the filtered list has to be
+   * the thing they come back to. Held in component state instead, it would
+   * survive typing and nothing else.
+   */
+  | { name: 'search'; query: string; kinds?: EntryKind[] }
   | { name: 'entry'; id: string }
   /**
    * A blank entry, optionally opened as a particular kind.
@@ -75,8 +83,20 @@ export function parseHash(hash: string): Route {
       return parts[1] ? { name: 'topic', topicId: parts[1] } : { name: 'topics' };
     case 'timeline':
       return { name: 'timeline' };
-    case 'search':
-      return { name: 'search', query: params.get('q') ?? '' };
+    case 'search': {
+      const route: Route = { name: 'search', query: params.get('q') ?? '' };
+      // Anything this build does not recognise is dropped, exactly as
+      // `?kind=` is for a new entry: a hash is the one input a person can
+      // type, and `?kinds=sermon,garbage` must narrow to sermons rather than
+      // to a kind no entry can have — which would look identical to "you have
+      // written none of those".
+      const asked = new Set((params.get('kinds') ?? '').split(',').map((part) => part.trim()));
+      // Rebuilt in canonical order, which also removes duplicates: two links
+      // selecting the same kinds must be the same link.
+      const kinds = ENTRY_KINDS.filter((kind) => asked.has(kind));
+      if (kinds.length > 0) route.kinds = [...kinds];
+      return route;
+    }
     case 'entry':
       if (parts[1] === 'new') {
         const anchor = params.get('anchor');
@@ -131,8 +151,16 @@ export function href(route: Route): string {
       return `#/topic/${encodeURIComponent(route.topicId)}`;
     case 'timeline':
       return '#/timeline';
-    case 'search':
-      return route.query ? `#/search?q=${encodeURIComponent(route.query)}` : '#/search';
+    case 'search': {
+      // Built rather than concatenated, for the same reason `newEntry` is:
+      // two optional parameters is where a hand-rolled `?a=` + `&b=` gets the
+      // first separator wrong.
+      const params = new URLSearchParams();
+      if (route.query) params.set('q', route.query);
+      if (route.kinds?.length) params.set('kinds', route.kinds.join(','));
+      const query = params.toString();
+      return query ? `#/search?${query}` : '#/search';
+    }
     case 'entry':
       return `#/entry/${encodeURIComponent(route.id)}`;
     case 'newEntry': {

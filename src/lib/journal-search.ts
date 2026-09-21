@@ -20,7 +20,7 @@
  * mistaken for canonical data.
  */
 
-import type { Entry, EntryAnchor, ScriptureRef } from '../types';
+import type { Entry, EntryAnchor, EntryKind, ScriptureRef } from '../types';
 import { parseReferenceQuery, refLabel } from './search';
 
 // ---------------------------------------------------------------------------
@@ -273,13 +273,47 @@ export interface SearchHit {
   providedOnly: boolean;
 }
 
-export interface JournalSearchOptions {
-  /** Narrow to these kinds. Secondary to the query itself. */
-  kinds?: string[];
+/**
+ * What a search is narrowed BY, as one growable object.
+ *
+ * One object rather than a widening argument list, and rather than a boolean
+ * per kind. Advanced search is expected to grow — a date range, a passage, a
+ * speaker, a church, a series, a particular matched field — and each of those
+ * should be a key here, answered in the loop below, without any caller
+ * changing shape. Six independent booleans would have to be replaced wholesale
+ * the first time a filter was not a kind.
+ *
+ * Kept separate from `limit` on purpose. These decide which entries are
+ * ELIGIBLE; `limit` decides how many of the eligible ones are handed back.
+ * Conflating them is how "narrow by kind" quietly starts meaning "show fewer".
+ *
+ * Every filter here narrows and nothing here scores. Relevance is computed
+ * from the query against the entries that survive, so ticking a box can never
+ * reorder the results it leaves behind — it only removes rows.
+ */
+export interface SearchFilters {
+  /**
+   * Narrow to these kinds. Absent or empty means every kind.
+   *
+   * `EntryKind[]`, not `string[]`: the canonical list lives in
+   * src/lib/entry-kinds.ts and a kind that does not exist must not be
+   * expressible here. A filter for a kind no entry can have is silently a
+   * filter for nothing, which looks exactly like "you have written none of
+   * those".
+   */
+  kinds?: EntryKind[];
   /** Four-digit year, as a facet. */
   year?: string;
+}
+
+export interface JournalSearchOptions extends SearchFilters {
   /** How many hits to return. The view never renders them all at once. */
   limit?: number;
+}
+
+/** True when anything is actually narrowing the search. */
+export function hasActiveFilters(filters: SearchFilters): boolean {
+  return Boolean(filters.kinds?.length) || Boolean(filters.year);
 }
 
 const SNIPPET_RADIUS = 60;

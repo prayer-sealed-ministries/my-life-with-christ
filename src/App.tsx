@@ -109,7 +109,7 @@ function CurrentView() {
     case 'timeline':
       return <TimelineView />;
     case 'search':
-      return <SearchView query={route.query} />;
+      return <SearchView query={route.query} kinds={route.kinds} />;
     // Keyed by target so React remounts rather than reusing the instance.
     // The editor holds transient state — a primed delete confirmation, a save
     // error — that must never survive a move to a different entry.

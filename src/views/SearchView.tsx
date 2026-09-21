@@ -19,16 +19,19 @@ import { useStorageQuery } from '../app/storage';
 import { EmptyState, Field, LiveRegion, Spinner } from '../components/ui';
 import { KIND_LABELS } from '../export/context';
 import { formatDay } from '../lib/dates';
+import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 import {
   FIELD_LABELS,
+  hasActiveFilters,
   isOwnVoice,
   searchJournal,
   spellingSuggestions,
   type FieldMatch,
+  type SearchFilters,
   type SearchHit,
 } from '../lib/journal-search';
 import { search } from '../lib/search';
-import type { Entry } from '../types';
+import type { Entry, EntryKind } from '../types';
 
 /** How long to wait after the last keystroke before touching the URL. */
 const DEBOUNCE_MS = 200;
@@ -49,14 +52,29 @@ const OUTLINE_LIMIT = 50;
  */
 const ENTRY_LIMIT = 50;
 
-/** The canonical kinds, plus "All". Secondary to the box itself. */
-const KIND_FILTERS: Array<{ value: string; label: string }> = [
-  { value: '', label: 'All' },
-  { value: 'sermon', label: 'Sermons' },
-  { value: 'reading', label: 'Bible reading' },
-  { value: 'prayer', label: 'Prayer' },
-  { value: 'reflection', label: 'Reflection' },
-];
+/**
+ * The default for "no kinds selected".
+ *
+ * A module constant rather than a `[]` default in the signature: a fresh array
+ * every render is a new dependency every render, and the memo below that ranks
+ * the whole journal would re-run on each one.
+ */
+const EMPTY_KINDS: EntryKind[] = [];
+
+/*
+ * There is deliberately no list of kinds here.
+ *
+ * There used to be, and it had drifted: it offered four of the six, called
+ * `sermon` "Sermons" where every other surface says "Sermon", and carried an
+ * "All" pseudo-kind that is not a kind at all. A reader who had written a
+ * Service or a Letter could not narrow to it, and nothing failed — a filter
+ * list missing an option looks exactly like a filter list.
+ *
+ * ENTRY_KINDS and ENTRY_KIND_LABELS in src/lib/entry-kinds.ts are the one
+ * definition, shared with the editor, Home and the route parser. Adding a
+ * seventh kind is a type error there until it is listed, and it then appears
+ * here for free.
+ */
 
 /** How much of the query to echo back in the empty state. */
 const ECHO_LIMIT = 60;
@@ -239,6 +257,184 @@ const SECTION_HEADING =
   'border-b border-line pb-1 font-serif text-xl font-semibold';
 
 /**
+ * How the closed row describes what is narrowing the results.
+ *
+ * The reader must be able to tell, without opening anything, that they are not
+ * looking at everything. A filter that hides results while looking identical to
+ * no filter is how someone concludes an entry was lost.
+ *
+ * Named rather than counted up to three, because "Prayer, Reflection" answers
+ * the question and "2 types selected" only tells them to go and look. Past
+ * three it becomes a queue of words in a summary line, so it counts instead.
+ */
+function filterSummary(kinds: EntryKind[], year: string): string {
+  const parts: string[] = [];
+  if (kinds.length > 0 && kinds.length <= 3) {
+    parts.push(kinds.map((kind) => ENTRY_KIND_LABELS[kind]).join(', '));
+  } else if (kinds.length > 3) {
+    parts.push(`${kinds.length} types`);
+  }
+  if (year) parts.push(year);
+  return parts.join(' · ');
+}
+
+/** "Prayer or Reflection" — for a sentence, where a comma list reads wrong. */
+function orList(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}`;
+}
+
+/**
+ * Advanced search: a power feature, kept subordinate.
+ *
+ * A real `<details>`, so the expanded state is the browser's and is announced
+ * without an `aria-expanded` this code would have to keep honest. Real
+ * checkboxes in a real `<fieldset>`, so "selected" is communicated by the
+ * control itself rather than by a colour — a toggle chip with `aria-pressed`
+ * was what this replaced, and it could express only one kind at a time.
+ *
+ * No live region on the boxes. The result count already announces politely
+ * when the results change, and a second announcement per tick would talk over
+ * it.
+ */
+function AdvancedSearch({
+  kinds,
+  years,
+  year,
+  onToggleKind,
+  onYear,
+  onClear,
+}: {
+  kinds: EntryKind[];
+  years: string[];
+  year: string;
+  onToggleKind: (kind: EntryKind) => void;
+  onYear: (year: string) => void;
+  onClear: () => void;
+}) {
+  const summary = filterSummary(kinds, year);
+  // Open on arrival when something is already narrowing — a reader following a
+  // filtered link should see why, not a closed row they have to go looking in.
+  // Uncontrolled after that: the browser owns the state it is good at.
+  const [open, setOpen] = useState(() => summary.length > 0);
+
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="mt-3 rounded-card border border-line bg-surface"
+    >
+      {/* No `flex`: a summary is display:list-item, and overriding that removes
+          the browser's own disclosure triangle, leaving a row with no sign it
+          opens. py-3 on text-sm already clears the 44px target. */}
+      <summary className="min-h-11 cursor-pointer rounded-card px-4 py-3 text-sm font-medium text-ink-soft">
+        Advanced search
+        {summary ? <span className="font-normal text-ink-muted"> · {summary}</span> : null}
+      </summary>
+
+      <div className="space-y-4 border-t border-line p-4">
+        <fieldset className="border-0 p-0">
+          <legend className="text-sm font-medium text-ink-soft">Entry type</legend>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Tick none to search every kind.
+          </p>
+          <div className="mt-1 grid gap-x-4 sm:grid-cols-2">
+            {ENTRY_KINDS.map((kind) => (
+              <label
+                key={kind}
+                className="flex min-h-11 items-center gap-3 text-sm text-ink-soft"
+              >
+                <input
+                  type="checkbox"
+                  checked={kinds.includes(kind)}
+                  onChange={() => onToggleKind(kind)}
+                  className="h-5 w-5 rounded border-line-strong"
+                />
+                {ENTRY_KIND_LABELS[kind]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {years.length > 1 ? (
+          <label className="flex min-h-11 items-center gap-2 text-sm text-ink-soft">
+            Year
+            <select
+              value={year}
+              onChange={(event) => onYear(event.target.value)}
+              className="min-h-11 rounded-control border border-line bg-surface px-2 py-1 text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <option value="">Any</option>
+              {years.map((each) => (
+                <option key={each} value={each}>{each}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {summary ? (
+          <ClearFilters onClear={onClear} />
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Why this list is empty, when a filter is the reason.
+ *
+ * Rendered in both empty states, because there are two and the reader can land
+ * in either. The whole-page one is the dangerous half: with a filter on and no
+ * topic or book matching either, the page said "Nothing matches" and nothing
+ * else — a sentence about the journal, when the truth was about the filter.
+ */
+function FilterNotice({
+  kinds,
+  year,
+  elsewhere,
+  onClear,
+}: {
+  kinds: EntryKind[];
+  year: string;
+  elsewhere: number;
+  onClear: () => void;
+}) {
+  return (
+    <div className="text-left">
+      <p>
+        {kinds.length > 0
+          ? `No matches in ${orList(kinds.map((kind) => ENTRY_KIND_LABELS[kind]))}.`
+          : `No matches in ${year}.`}
+      </p>
+      {/* The honest distinction: the words ARE in the journal, just not in what
+          is being shown. Saying only "no matches" is true of the filtered set
+          and misleading about the journal. */}
+      {elsewhere > 0 ? (
+        <p className="mt-1">
+          {elsewhere === 1
+            ? '1 entry of another kind matches.'
+            : `${elsewhere} entries of other kinds match.`}
+        </p>
+      ) : null}
+      <ClearFilters onClear={onClear} className="mt-2" />
+    </div>
+  );
+}
+
+/** One button, one wording, wherever clearing is offered. */
+function ClearFilters({ onClear, className = '' }: { onClear: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      className={`min-h-11 rounded-control border border-line px-3 py-1 text-sm text-ink-soft hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
+    >
+      Clear filters
+    </button>
+  );
+}
+
+/**
  * Where a typed reference should land.
  *
  * The segment holding it, when one exists — under `refs-only` that is the whole
@@ -251,7 +447,13 @@ function passageRouteFor(ref: { book: string; chapterStart: number; verseStart: 
     : ({ name: 'book', bookId: ref.book } as const);
 }
 
-export default function SearchView({ query }: { query: string }) {
+export default function SearchView({
+  query,
+  kinds = EMPTY_KINDS,
+}: {
+  query: string;
+  kinds?: EntryKind[];
+}) {
   const { navigate } = useRouter();
   const [value, setValue] = useState(query);
 
@@ -272,18 +474,64 @@ export default function SearchView({ query }: { query: string }) {
       routed.current = value;
       // replace, not push: a search box that pushes per keystroke buries the
       // page the user came from under forty history entries.
-      navigate({ name: 'search', query: value }, { replace: true });
+      //
+      // `kinds` is carried through rather than dropped. Typing must never
+      // clear the filters, and this navigate rewrites the whole route — the
+      // one place where forgetting a field silently discards it.
+      navigate({ name: 'search', query: value, kinds }, { replace: true });
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [value, navigate]);
+  }, [value, kinds, navigate]);
 
   const needle = query.trim();
+
   /**
    * Secondary, always. The box has to work on its own; these only narrow what
    * it already found, and the page is usable having never touched them.
+   *
+   * Kinds live in the route, not in state, so that opening a result and
+   * pressing Back returns to the list the reader was actually looking at.
+   * The year facet stays local: it is a transient sort-through, not something
+   * anyone links to, and widening the route for it was not asked for.
    */
-  const [kindFilter, setKindFilter] = useState<string[]>([]);
   const [yearFilter, setYearFilter] = useState('');
+
+  /**
+   * Write the route from what the reader can see.
+   *
+   * `value` rather than `query`, because during the debounce the box is ahead
+   * of the URL. Ticking a filter mid-word would otherwise rewrite the route
+   * with the last committed query and visibly undo the letters just typed.
+   *
+   * `routed` moves with it so the debounce effect, which re-runs when `kinds`
+   * changes, sees no work left to do and does not navigate a second time.
+   */
+  const commit = (nextValue: string, nextKinds: EntryKind[]) => {
+    routed.current = nextValue;
+    // replace, not push: ticking three boxes is one decision, not three pages
+    // of history to press Back through.
+    navigate({ name: 'search', query: nextValue, kinds: nextKinds }, { replace: true });
+  };
+
+  const setKinds = (next: EntryKind[]) => commit(value, next);
+
+  const toggleKind = (kind: EntryKind) =>
+    setKinds(
+      kinds.includes(kind)
+        ? kinds.filter((each) => each !== kind)
+        : // Canonical order, so the URL for a given selection is always the
+          // same string whatever order the boxes were ticked in.
+          ENTRY_KINDS.filter((each) => each === kind || kinds.includes(each)),
+    );
+
+  const filters: SearchFilters = { kinds, year: yearFilter };
+  const filtered = hasActiveFilters(filters);
+
+  const clearFilters = () => {
+    // The query is not a filter. Clearing must never empty the box.
+    setYearFilter('');
+    setKinds([]);
+  };
 
   /**
    * Results carry the needle they were read for.
@@ -322,8 +570,25 @@ export default function SearchView({ query }: { query: string }) {
   );
 
   const ranked = useMemo(
-    () => (needle ? searchJournal(needle, all, { kinds: kindFilter, year: yearFilter, limit: ENTRY_LIMIT }) : []),
-    [needle, all, kindFilter, yearFilter],
+    () => (needle ? searchJournal(needle, all, { kinds, year: yearFilter, limit: ENTRY_LIMIT }) : []),
+    [needle, all, kinds, yearFilter],
+  );
+
+  /**
+   * What the same query finds with nothing narrowing it.
+   *
+   * Only computed when the filtered set is empty and a filter is on, which is
+   * the one moment it matters: "nothing matches" and "nothing of that kind
+   * matches, though three other entries do" are different answers, and showing
+   * the first when the second is true tells the reader their words are not in
+   * the journal when they are.
+   */
+  const unfilteredCount = useMemo(
+    () =>
+      needle && filtered && ranked.length === 0
+        ? searchJournal(needle, all, { limit: ENTRY_LIMIT }).length
+        : 0,
+    [needle, all, filtered, ranked.length],
   );
 
   /** Only computed when nothing was found, so it costs nothing in the normal case. */
@@ -405,6 +670,20 @@ export default function SearchView({ query }: { query: string }) {
         onChange={(event) => setValue(event.target.value)}
       />
 
+      {/* Directly under the box, above everything it narrows — and only once
+          there is something to narrow. The hierarchy stays: box, then this,
+          then results. */}
+      {searching ? (
+        <AdvancedSearch
+          kinds={kinds}
+          years={years}
+          year={yearFilter}
+          onToggleKind={toggleKind}
+          onYear={setYearFilter}
+          onClear={clearFilters}
+        />
+      ) : null}
+
       <LiveRegion message={announcement} />
 
       {!searching ? (
@@ -428,6 +707,20 @@ export default function SearchView({ query }: { query: string }) {
       {nothingFound ? (
         <div className="mt-6">
           <EmptyState title={`Nothing matches “${echo}”`}>
+            {/* Said before the list of sources, because it is the likelier
+                explanation and the one the reader can undo. Without it the
+                page reports that their words are nowhere in the journal while
+                a filter is quietly holding the answer back. */}
+            {filtered ? (
+              <div className="mb-3">
+                <FilterNotice
+                  kinds={kinds}
+                  year={yearFilter}
+                  elsewhere={unfilteredCount}
+                  onClear={clearFilters}
+                />
+              </div>
+            ) : null}
             <p className="text-left">Searched:</p>
             <ul className="mt-2 space-y-1 text-left">
               {catalogue.searched.map((source) => (
@@ -519,53 +812,21 @@ export default function SearchView({ query }: { query: string }) {
 
       {showResults ? (
         <section className="mt-8">
-          {/*
-            Secondary controls. The box above works without ever touching
-            these, which is the point: search should not become a query
-            builder.
-          */}
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="sr-only" id="search-filters-label">Narrow these results</span>
-            <div role="group" aria-labelledby="search-filters-label" className="flex flex-wrap gap-2">
-              {KIND_FILTERS.map(({ value: kindValue, label }) => {
-                const active = kindValue === '' ? kindFilter.length === 0 : kindFilter.includes(kindValue);
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setKindFilter(kindValue === '' ? [] : [kindValue])}
-                    className={`min-h-11 rounded-control border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                      active ? 'border-line-strong bg-raised text-ink' : 'border-line text-ink-soft'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            {years.length > 1 ? (
-              <label className="flex min-h-11 items-center gap-2 text-sm text-ink-soft">
-                Year
-                <select
-                  value={yearFilter}
-                  onChange={(event) => setYearFilter(event.target.value)}
-                  className="min-h-11 rounded-control border border-line bg-surface px-2 py-1 text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  <option value="">Any</option>
-                  {years.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
           <h2 className={SECTION_HEADING}>
             Your journal ({entries.length})
           </h2>
           {entries.length === 0 ? (
             <div className="mt-3 text-sm text-ink-soft">
-              <p>No entries of your own match this.</p>
+              {filtered ? (
+                <FilterNotice
+                  kinds={kinds}
+                  year={yearFilter}
+                  elsewhere={unfilteredCount}
+                  onClear={clearFilters}
+                />
+              ) : (
+                <p>No entries of your own match this.</p>
+              )}
               {/* Help, without blaming them for the spelling. */}
               <ul className="mt-2 list-disc space-y-1 pl-5">
                 <li>Try fewer words.</li>
