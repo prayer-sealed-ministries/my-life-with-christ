@@ -38,7 +38,7 @@ import { useNotice } from '../app/notice-context';
 import { shouldRestoreFocus } from '../lib/focus-restore';
 import { resolveFocusIntent } from '../lib/focus-intent';
 import { Autosaver, type AutosaveResult } from '../lib/autosave';
-import { hasDraftContent } from '../lib/drafts';
+import { draftFormsEqual, hasRecoverableChanges } from '../lib/drafts';
 import { newId } from '../storage/semantics';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
@@ -341,6 +341,20 @@ export default function EntryEditor({
   /** When the draft was first written, so "started at" means something. */
   const draftCreatedAt = useRef<string | null>(null);
   /**
+   * The saved entry as this editor would show it, and the thing "changed" means
+   * changed FROM.
+   *
+   * `null` while there is no saved entry behind the form — a new entry, or one
+   * still loading. Set from the entry every time one is loaded, and again after
+   * a save, because a save is precisely the moment the journal catches up with
+   * the screen and there stops being anything to recover.
+   *
+   * A ref rather than state: it is read inside the snapshot effect to decide
+   * whether to write at all, and holding it in state would run that effect a
+   * second time on every load just to tell it what it already knew.
+   */
+  const canonicalForm = useRef<FormState | null>(null);
+  /**
    * Whether there is unfinished work to offer discarding.
    *
    * State rather than reading the ref while rendering: the ref is the
@@ -561,15 +575,55 @@ export default function EntryEditor({
   }, [entryId, onAutosaveResult, storage]);
 
   /**
+   * Throw away a draft whose reason to exist has gone.
+   *
+   * The editor has come back to exactly what the journal holds — by an undo, by
+   * a discard, or by never having been touched at all. Leaving the record
+   * behind would offer somebody "continue writing" for work that no longer
+   * differs from what they can already read.
+   *
+   * The ordering is the same one the save path uses, and for the same reason:
+   * fence the writer, wait for anything already past the fence to land, and
+   * only then delete. Deleting first leaves the in-flight write to recreate the
+   * draft a moment later, which is worse than never having retired it — nothing
+   * on screen would say so.
+   */
+  const retireDraft = useCallback(async () => {
+    const id = draftId.current;
+    const writer = autosaver.current;
+    // Cleared synchronously: the effect below runs again before any of this
+    // resolves, and it must not find a draft id still standing and re-enter.
+    draftId.current = null;
+    draftCreatedAt.current = null;
+    writer?.retire();
+    autosaver.current = null;
+    setHasDraft(false);
+    setDraftRestored(false);
+    await writer?.settled();
+    if (id) await storage.deleteDraft(id).catch(() => {});
+  }, [storage]);
+
+  /**
    * Snapshot the editor whenever it changes.
    *
    * Change-driven rather than timer-driven: the autosaver coalesces a burst of
    * keystrokes into one write and refuses any write carrying stale content, so
    * nothing here depends on a timer winning a race.
+   *
+   * The gate is "does this differ from what the journal already holds", not
+   * "is there anything here". Those are the same question on a blank page and
+   * different questions on a saved entry: hydrating the editor with an entry
+   * somebody opened to READ used to satisfy the second one and mint a draft for
+   * a note nobody had touched.
    */
   useEffect(() => {
     if (!form) return;
-    if (!hasDraftContent(form)) return;
+    if (!hasRecoverableChanges(form, canonicalForm.current)) {
+      // Nothing to lose: the words on screen are the words in the journal.
+      queueMicrotask(() => setNotYetDurable(false));
+      if (draftId.current) void retireDraft();
+      return;
+    }
 
     // First meaningful keystroke on a new entry: the work becomes recoverable
     // from this moment, without anyone having pressed Save.
@@ -587,7 +641,7 @@ export default function EntryEditor({
     // render pass before paint, and this runs on every keystroke.
     queueMicrotask(() => setNotYetDurable(true));
     getAutosaver().queue(form);
-  }, [form, getAutosaver]);
+  }, [form, getAutosaver, retireDraft]);
 
   /** What a save writes to: the entry being edited, or the one just created. */
   const targetId = entryId ?? createdId;
@@ -630,6 +684,11 @@ export default function EntryEditor({
         if (resuming) {
           draftId.current = resuming.id;
           draftCreatedAt.current = resuming.createdAt;
+          // Nothing has ever been saved under this id, so there is no canonical
+          // state to be the same as. Set with the form, never apart from it: a
+          // baseline describing a different entry than the one on screen would
+          // call every field changed.
+          canonicalForm.current = null;
           setHasDraft(true);
           setForm(resuming.form);
           setDetailsOpen(hasDetails(resuming.form));
@@ -639,6 +698,7 @@ export default function EntryEditor({
 
         const anchor = anchorParam ? anchorFromParam(anchorParam) : null;
         const initial: FormState = { ...blankForm(kindParam), anchors: anchor ? [anchor] : [] };
+        canonicalForm.current = null;
         setForm(initial);
         setDetailsOpen(false);
       })();
@@ -655,12 +715,14 @@ export default function EntryEditor({
           return;
         }
         const saved = formFromEntry(entry);
+        // What "unchanged" means for the rest of this editor's life.
+        canonicalForm.current = saved;
 
         // Unsaved edits to this entry outrank the saved copy on screen, because
         // they are the newer thing the reader wrote. The saved entry is not
         // touched — it stays exactly as it was until Save says otherwise, so
         // discarding the draft still gets them back to it.
-        if (draft) {
+        if (draft && !draftFormsEqual(draft.form, saved)) {
           draftId.current = draft.id;
           draftCreatedAt.current = draft.createdAt;
           setHasDraft(true);
@@ -670,6 +732,17 @@ export default function EntryEditor({
           return;
         }
 
+        // A draft holding exactly what the journal holds has nothing to give
+        // back, and saying "we brought your work back" about it would be a
+        // small lie. Adopting the id — without announcing anything — is what
+        // lets the snapshot effect retire the record instead of leaving it to
+        // go on offering itself. Versions before this one wrote such a draft
+        // every time an entry was merely opened, so there are real ones out
+        // there to clean up.
+        if (draft) {
+          draftId.current = draft.id;
+          draftCreatedAt.current = draft.createdAt;
+        }
         setForm(saved);
         setDetailsOpen(hasDetails(saved));
       })
@@ -993,6 +1066,11 @@ export default function EntryEditor({
         });
       }
 
+      // The journal now holds what the screen holds, so "unchanged" means this
+      // from here on. Taken from the saved entry rather than from `form`,
+      // because a save trims and drops empty rows: the baseline has to be what
+      // reopening this entry would actually show.
+      canonicalForm.current = formFromEntry(saved);
       // Claimed before anything else, so a second submit lands on an update.
       setCreatedId(saved.id);
       touch();
@@ -1044,6 +1122,7 @@ export default function EntryEditor({
       const entry = await storage.getEntry(entryId).catch(() => undefined);
       if (entry) {
         const saved = formFromEntry(entry);
+        canonicalForm.current = saved;
         setForm(saved);
       }
       return;

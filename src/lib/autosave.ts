@@ -108,6 +108,22 @@ export class Autosaver<T> {
     return this.pending !== null;
   }
 
+  /**
+   * Resolves once nothing this writer started is still in flight.
+   *
+   * `retire()` fences everything that has not begun, but a write already
+   * awaiting storage is past every fence and will land. A caller about to
+   * DELETE the draft has to wait for that one, or the delete runs first and the
+   * write puts the record straight back — a draft nobody can account for,
+   * holding text the reader has already taken back.
+   *
+   * Swallows the failure on purpose: a write that threw persisted nothing,
+   * which is exactly the state the caller wanted anyway.
+   */
+  async settled(): Promise<void> {
+    await this.inFlight.catch(() => {});
+  }
+
   private async run(): Promise<void> {
     const queued = this.pending;
     if (!queued) return;

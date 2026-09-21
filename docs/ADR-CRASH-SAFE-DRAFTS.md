@@ -98,10 +98,44 @@ half-typed state the reader actually had.
 
 ### Meaningful content
 
-A blank editor must not litter the store. A draft exists once any user-authored
-field carries something: title, notes, reflection, prayer, place, speaker,
-series, tags, an anchor, a link with a URL, the descendants flag, or imported
-source material. Date and kind alone do not count — every blank editor has them.
+A blank editor must not litter the store. On a page nothing has ever been saved
+under, a draft exists once any user-authored field carries something: title,
+notes, reflection, prayer, place, speaker, series, tags, an anchor, a link with
+a URL, the descendants flag, or imported source material. Date and kind alone do
+not count — every blank editor has them.
+
+### Recoverable change, not merely content
+
+That rule is the right one for a blank page and the wrong one for a saved entry,
+and applying it to both was a shipped defect: opening an entry hydrates the
+editor with everything the entry holds, which satisfies "is there content" for
+every entry ever written. So *reading* a note minted a recovery draft, and the
+home page then offered to "continue writing" something nobody had touched.
+
+A draft holds what the journal does not have yet. Where there is a saved entry
+behind the form, the question is therefore whether the editor differs from it —
+`hasRecoverableChanges(form, canonical)`, where `canonical` is that entry
+expressed as editor state, which is exactly what reopening the editor would
+show. When they are the same, a process death costs nothing.
+
+Three consequences, all of them load-bearing:
+
+- The baseline moves when the journal does. A successful Save makes what was
+  just written the new canonical state, so an edit-and-undo after a save leaves
+  nothing behind either.
+- A difference that goes away takes the draft with it. Undo the edit and the
+  record is retired, because a recovery offer for work that no longer differs
+  from the record is a meaningless thing to put in front of someone.
+- Retiring is fence, *wait*, delete. A write already awaiting storage is past
+  the fence; deleting without waiting for it lets it land afterwards and
+  recreate the record. `Autosaver.settled()` is that wait.
+
+Comparison is exact and field by field — no trimming, no normalisation. A
+snapshot exists to give back what was on the screen, and deciding that a
+paragraph someone deliberately ended with a blank line is "the same as" one they
+did not would defeat that. `SAME_FIELD` in `src/lib/drafts.ts` carries one
+comparator per field and is typed `Record<keyof DraftForm, …>`, so a new field
+added to the form fails to compile until somebody decides how it compares.
 
 ### Write policy
 

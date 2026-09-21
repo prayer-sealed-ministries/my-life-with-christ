@@ -17,8 +17,14 @@ import EntryEditor from './EntryEditor';
 import { RouterProvider } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
 import { DexieStorageProvider } from '../storage/db';
-import { DRAFT_DEBOUNCE_MS, hasDraftContent } from '../lib/drafts';
-import type { DraftForm } from '../types';
+import HomeView from './HomeView';
+import {
+  DRAFT_DEBOUNCE_MS,
+  draftFormsEqual,
+  hasDraftContent,
+  hasRecoverableChanges,
+} from '../lib/drafts';
+import type { DraftForm, Entry } from '../types';
 
 let counter = 0;
 let db: DexieStorageProvider;
@@ -277,3 +283,503 @@ describe('meaningful content', () => {
     expect(hasDraftContent(form({ kind: 'prayer', date: '2026-12-25' }))).toBe(false);
   });
 });
+
+/**
+ * Reading is not writing.
+ *
+ * Opening a saved entry hydrates the editor with everything that entry holds,
+ * and the snapshot gate used to ask "is there anything here" — which is yes for
+ * every entry ever written. So merely LOOKING at a note minted a recovery
+ * draft, and the home page then offered to "continue writing" something nobody
+ * had touched. A draft is for what the journal does not have yet.
+ *
+ * These drive the real editor over a real store, and the only thing waited on
+ * is the debounce, several times over, so a write that was coming would have
+ * arrived.
+ */
+describe('an entry somebody only opened', () => {
+  /** Long enough that a snapshot would have been written if one were coming. */
+  const pastTheWindow = () => new Promise((resolve) => setTimeout(resolve, DRAFT_DEBOUNCE_MS * 4));
+
+  const openSaved = async (entry: Entry, provider: DexieStorageProvider = db) => {
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(provider, { entryId: entry.id });
+    await notes();
+  };
+
+  it('writes no draft for an entry that is only read', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    await openSaved(entry);
+    await pastTheWindow();
+
+    expect(
+      await db.listDrafts(),
+      'opening an entry to read it is not unfinished work',
+    ).toHaveLength(0);
+  });
+
+  it('writes no draft for one carrying a reflection and a prayer', async () => {
+    const entry = await db.createEntry({
+      title: 'Sunday',
+      notes: 'What was taught.',
+      reflection: 'What it meant to me.',
+      prayer: 'Keep me in it this week.',
+    });
+
+    await openSaved(entry);
+    await pastTheWindow();
+
+    expect(await db.listDrafts()).toHaveLength(0);
+  });
+
+  it('writes no draft for one carrying details, tags, links and anchors', async () => {
+    const entry = await db.createEntry({
+      title: 'The narrow gate',
+      notes: 'Notes.',
+      place: 'St Mary the Virgin',
+      speaker: 'Revd Hall',
+      sermonSeries: 'Sermon on the Mount',
+      tags: ['grace', 'obedience'],
+      links: [{ url: 'https://example.org/handout', label: 'Handout' }],
+      anchors: [
+        {
+          kind: 'scripture',
+          book: 'Matthew',
+          chapterStart: 7,
+          verseStart: 13,
+          chapterEnd: 7,
+          verseEnd: 14,
+        },
+      ],
+      scriptureRefs: ['Matthew 7:13-14'],
+      forDescendants: true,
+    });
+
+    await openSaved(entry);
+    await pastTheWindow();
+
+    expect(
+      await db.listDrafts(),
+      'every field must hydrate back to exactly what was saved',
+    ).toHaveLength(0);
+  });
+
+  it('still writes a draft the moment the notes actually change', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    await openSaved(entry);
+    type('Notes', 'The original notes. And a sentence nobody saved.');
+    await settle(db);
+
+    const [draft] = await db.listDrafts();
+    expect(draft.entryId, 'the draft must belong to the entry being edited').toBe(entry.id);
+    expect(draft.form.notes).toBe('The original notes. And a sentence nobody saved.');
+  });
+
+  it('writes nothing when a change is undone inside the settle window', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    await openSaved(entry);
+    // Typed and taken straight back out, faster than the window elapses.
+    type('Notes', 'The original notes. Mistake.');
+    type('Notes', 'The original notes.');
+    await pastTheWindow();
+
+    expect(
+      await db.listDrafts(),
+      'a change that was undone before it settled was never a change',
+    ).toHaveLength(0);
+  });
+
+  it('retires a draft that has already been written once the text comes back', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    await openSaved(entry);
+    type('Notes', 'The original notes. Second thoughts.');
+    await settle(db);
+    expect(await db.listDrafts(), 'the edit is protected while it stands').toHaveLength(1);
+
+    // Taken back out again — now the editor holds what the journal holds.
+    type('Notes', 'The original notes.');
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0), { timeout: 5_000 });
+    await pastTheWindow();
+    expect(
+      await db.listDrafts(),
+      'a retired draft must not be recreated by a write still in flight',
+    ).toHaveLength(0);
+  });
+
+  it('treats what a save just wrote as the new unchanged state', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    await openSaved(entry);
+    type('Notes', 'The original notes. Finished on the way home.');
+    await settle(db);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () =>
+      expect((await db.getEntry(entry.id))?.notes).toBe(
+        'The original notes. Finished on the way home.',
+      ),
+    );
+
+    // Touched and untouched again. The journal already holds this, so there is
+    // nothing left to recover — and that is only true if the save moved what
+    // "unchanged" means.
+    type('Notes', 'The original notes. Finished on the way home. x');
+    type('Notes', 'The original notes. Finished on the way home.');
+    await pastTheWindow();
+
+    expect(
+      await db.listDrafts(),
+      'a save makes the screen and the journal agree; a draft would say otherwise',
+    ).toHaveLength(0);
+  });
+
+  /**
+   * The one ordering that cannot be reached by typing quickly.
+   *
+   * Retiring a draft is fence-then-delete, and a write already awaiting storage
+   * is past the fence. If the delete does not wait for it, the delete runs
+   * first, the write lands second, and the record the reader just took back is
+   * put straight back — with nothing on screen to say so.
+   *
+   * Driven rather than hoped for: `putDraft` is held open, the revert happens
+   * while it hangs, and only then is it released. Both orderings are decided
+   * here instead of by whichever promise happens to settle first.
+   */
+  it('cannot be resurrected by a write that was already past the fence', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const writeStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let holdNext = true;
+
+    const gated = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'putDraft') {
+          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+            if (holdNext) {
+              holdNext = false;
+              started();
+              await held;
+            }
+            return target.putDraft(draft);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as DexieStorageProvider;
+
+    await openSaved(entry, gated);
+    type('Notes', 'The original notes. Second thoughts.');
+    await writeStarted;
+
+    // The revert happens while that write hangs, so the retirement has to
+    // decide what to do about a write it can no longer stop.
+    type('Notes', 'The original notes.');
+    await Promise.resolve();
+    release();
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0), { timeout: 5_000 });
+    await pastTheWindow();
+    expect(
+      await db.listDrafts(),
+      'the held write landed after the delete and recreated the draft',
+    ).toHaveLength(0);
+  });
+
+  it(
+    'leaves nothing behind after being opened and closed over and over',
+    async () => {
+      const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+
+      for (let visit = 0; visit < 4; visit += 1) {
+        await openSaved(entry);
+        await pastTheWindow();
+        cleanup();
+      }
+
+      expect(await db.listDrafts(), 'four visits, four chances to litter').toHaveLength(0);
+    },
+    // Four full settle windows, waited out for real. The point is the count of
+    // visits, so the time is spent rather than faked.
+    20_000,
+  );
+
+  it('retires a false draft an older version left behind, without claiming a recovery', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    // Exactly what the previous implementation wrote on a read-only open: a
+    // snapshot identical to the entry itself.
+    await db.putDraft({
+      id: 'stale-false-draft',
+      entryId: entry.id,
+      form: {
+        kind: entry.kind,
+        title: entry.title,
+        date: entry.date,
+        place: '',
+        speaker: '',
+        sermonSeries: '',
+        notes: entry.notes,
+        reflection: entry.reflection,
+        prayer: '',
+        tagsText: '',
+        links: [],
+        anchors: [],
+        forDescendants: false,
+        scriptureRefs: [],
+        sourceMaterial: null,
+      },
+      createdAt: '2026-03-01T09:00:00.000Z',
+      updatedAt: '2026-03-01T09:00:00.000Z',
+    });
+
+    await openSaved(entry);
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0), { timeout: 5_000 });
+    expect(
+      screen.queryByText(/brought back|restored/i),
+      'nothing was recovered, so nothing may say it was',
+    ).toBeNull();
+  });
+});
+
+/**
+ * The same defect, seen from where it actually bothered somebody.
+ *
+ * The home page is where a false draft did its damage: it offered to continue
+ * writing an entry that had been read and put down. Asserting it there as well
+ * as in the store is deliberate — this is the surface the complaint was about.
+ */
+describe('the home page after an entry was only read', () => {
+  it('does not offer to continue writing it', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(db, { entryId: entry.id });
+    await notes();
+    await new Promise((resolve) => setTimeout(resolve, DRAFT_DEBOUNCE_MS * 4));
+    cleanup();
+
+    window.location.hash = '#/';
+    render(
+      <RouterProvider>
+        <StorageContextProvider provider={db}>
+          <HomeView />
+        </StorageContextProvider>
+      </RouterProvider>,
+    );
+
+    await screen.findByText('Recently written');
+    expect(
+      screen.queryByRole('link', { name: /Continue sermon/i }),
+      'an entry that was read is not work in progress',
+    ).toBeNull();
+  });
+
+  it('still offers it when there really are unsaved edits', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(db, { entryId: entry.id });
+    await notes();
+    type('Notes', 'The original notes. Written on the train and never saved.');
+    await settle(db);
+    cleanup();
+
+    window.location.hash = '#/';
+    render(
+      <RouterProvider>
+        <StorageContextProvider provider={db}>
+          <HomeView />
+        </StorageContextProvider>
+      </RouterProvider>,
+    );
+
+    expect(
+      await screen.findByRole('link', { name: /Continue sermon/i }),
+      'suppressing false drafts must not suppress real ones',
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * What "changed" means, as a predicate.
+ *
+ * The editor asks this question on every keystroke, and the answer decides
+ * whether an hour of writing survives a process death. Driven directly, because
+ * the fields that go wrong are the ones nobody thinks to type into during a
+ * render test.
+ */
+describe('recoverable changes', () => {
+  const canonical = (overrides: Partial<DraftForm> = {}): DraftForm => ({
+    kind: 'sermon',
+    title: 'Sunday',
+    date: '2026-03-01',
+    place: 'St Mary the Virgin',
+    speaker: 'Revd Hall',
+    sermonSeries: 'Sermon on the Mount',
+    notes: 'What was taught.',
+    reflection: 'What it meant to me.',
+    prayer: 'Keep me in it.',
+    tagsText: 'grace, obedience',
+    links: [{ url: 'https://example.org', label: 'Handout', capturedTitle: '' }],
+    anchors: [
+      {
+        kind: 'scripture',
+        book: 'Matthew',
+        chapterStart: 7,
+        verseStart: 13,
+        chapterEnd: 7,
+        verseEnd: 14,
+      },
+    ],
+    forDescendants: false,
+    scriptureRefs: ['Matthew 7:13-14'],
+    sourceMaterial: null,
+    ...overrides,
+  });
+
+  it('says no when the editor holds exactly what was saved', () => {
+    expect(hasRecoverableChanges(canonical(), canonical())).toBe(false);
+  });
+
+  it('falls back to "has anybody begun" when nothing has ever been saved', () => {
+    const blank = canonical({
+      title: '',
+      place: '',
+      speaker: '',
+      sermonSeries: '',
+      notes: '',
+      reflection: '',
+      prayer: '',
+      tagsText: '',
+      links: [],
+      anchors: [],
+      scriptureRefs: [],
+    });
+    expect(hasRecoverableChanges(blank, null), 'a blank new entry leaves nothing behind').toBe(
+      false,
+    );
+    expect(hasRecoverableChanges(canonical({ notes: 'The first sentence.' }), null)).toBe(true);
+  });
+
+  it.each([
+    ['title', { title: 'Sunday evening' }],
+    ['kind', { kind: 'prayer' as const }],
+    ['date', { date: '2026-03-08' }],
+    ['notes', { notes: 'What was taught, plus a line more.' }],
+    ['reflection', { reflection: 'Something else entirely.' }],
+    ['prayer', { prayer: 'And for my daughter.' }],
+    ['place', { place: 'All Saints' }],
+    ['speaker', { speaker: 'Revd Okafor' }],
+    ['series', { sermonSeries: 'Advent' }],
+    ['tags', { tagsText: 'grace, obedience, fear' }],
+    ['a link', { links: [{ url: 'https://example.org/other', label: '', capturedTitle: '' }] }],
+    ['a link label only', { links: [{ url: 'https://example.org', label: 'Order of service', capturedTitle: '' }] }],
+    ['a removed link', { links: [] }],
+    ['for descendants', { forDescendants: true }],
+    ['a scripture ref', { scriptureRefs: ['Matthew 7:13-14', 'Luke 13:24'] }],
+    ['an anchor verse', {
+      anchors: [
+        {
+          kind: 'scripture' as const,
+          book: 'Matthew',
+          chapterStart: 7,
+          verseStart: 13,
+          chapterEnd: 7,
+          verseEnd: 20,
+        },
+      ],
+    }],
+    ['an anchor kind', { anchors: [{ kind: 'book' as const, book: 'Matthew' }] }],
+    ['a topic anchor', { anchors: [{ kind: 'topic' as const, topicId: 'fear' }] }],
+    ['an outline id on an anchor', {
+      anchors: [
+        {
+          kind: 'scripture' as const,
+          book: 'Matthew',
+          chapterStart: 7,
+          verseStart: 13,
+          chapterEnd: 7,
+          verseEnd: 14,
+          outlineEntryId: 'mt-7-narrow',
+        },
+      ],
+    }],
+  ])('says yes when the reader changes %s', (_field, change) => {
+    expect(hasRecoverableChanges(canonical(change), canonical())).toBe(true);
+  });
+
+  it('notices a single trailing space, because a snapshot restores what was typed', () => {
+    expect(hasRecoverableChanges(canonical({ notes: 'What was taught. ' }), canonical())).toBe(
+      true,
+    );
+  });
+
+  it('says no again once a change is taken back exactly', () => {
+    const changed = canonical({ notes: 'A second thought.' });
+    expect(hasRecoverableChanges(changed, canonical())).toBe(true);
+    expect(hasRecoverableChanges(canonical(), canonical())).toBe(false);
+  });
+
+  it('does not make an unchanged editor dirty over provided material', () => {
+    const material = {
+      format: 'pdf' as const,
+      filename: 'sermon.pdf',
+      importedAt: '2026-03-01T09:00:00.000Z',
+      body: "Somebody else's words.",
+      parserVersion: 2,
+      scripture: ['Matthew 7:13-14'],
+    };
+    const saved = canonical({ sourceMaterial: material });
+    // A restored snapshot carries a structurally identical handout that is a
+    // different object; reference equality would call it changed forever.
+    const restored = canonical({ sourceMaterial: { ...material, scripture: [...material.scripture] } });
+    expect(hasRecoverableChanges(restored, saved)).toBe(false);
+
+    expect(
+      hasRecoverableChanges(canonical({ sourceMaterial: null }), saved),
+      'removing the handout is a real change',
+    ).toBe(true);
+  });
+
+  it('compares every field the form has, so a new one cannot be forgotten', () => {
+    const a = canonical();
+    const b = canonical();
+    for (const key of Object.keys(a) as (keyof DraftForm)[]) {
+      expect(draftFormsEqual(a, b), 'the baseline pair must be equal').toBe(true);
+      const mutated = { ...a, [key]: mutate(a[key]) } as DraftForm;
+      expect(draftFormsEqual(mutated, b), `${key} is not compared`).toBe(false);
+    }
+  });
+});
+
+/**
+ * Change one field to something a reader could plausibly have put there.
+ *
+ * Used to prove the comparison actually reads every field: a value that differs
+ * must make the forms unequal, whatever the field's type.
+ */
+function mutate(value: unknown): unknown {
+  if (typeof value === 'string') return `${value}!`;
+  if (typeof value === 'boolean') return !value;
+  if (Array.isArray(value)) return [];
+  if (value === null) {
+    return {
+      format: 'txt' as const,
+      filename: 'handout.txt',
+      importedAt: '2026-03-01T09:00:00.000Z',
+      body: 'Provided.',
+      parserVersion: 1,
+    };
+  }
+  return null;
+}
