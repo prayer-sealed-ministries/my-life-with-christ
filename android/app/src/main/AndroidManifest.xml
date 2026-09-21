@@ -22,6 +22,28 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+              The launcher shortcut's destination.
+
+              Narrow on purpose: one scheme this application owns, and the only
+              thing it can carry is an action name that must appear in the
+              allow-list in src/app/launch-actions.ts. Anything else — another
+              scheme, an unknown action, a route smuggled into the path — is a
+              normal launch. No new permission, and nothing here reaches the
+              network.
+            -->
+            <intent-filter android:label="@string/shortcut_sermon_note_long">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="@string/launch_action_scheme" android:host="action" />
+            </intent-filter>
+
+            <!-- Long-press the app icon. See res/xml/shortcuts.xml. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
         </activity>
 
         <provider

@@ -1,0 +1,17 @@
+<!--
+  Shortcut glyph: a page with a pen. Drawn as a vector so it costs nothing at
+  every density and needs no new asset pipeline.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6,2C4.9,2 4,2.9 4,4v16c0,1.1 0.9,2 2,2h7v-2H6V4h6v5h5v1.5h2V8l-6,-6H6z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M20.7,12.6c-0.2,-0.2 -0.5,-0.2 -0.7,0l-1,1l2.1,2.1l1,-1c0.2,-0.2 0.2,-0.5 0,-0.7L20.7,12.6zM14.5,18.6v2.1h2.1l5.1,-5.1l-2.1,-2.1L14.5,18.6z" />
+</vector>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Long-press the app icon to start writing.
+
+  The intent carries an ACTION NAME, never a route. `mylifewithchrist://action/
+  sermon-fast-capture` is looked up in a short allow-list in
+  src/app/launch-actions.ts; anything not on that list is a normal launch. The
+  activity is exported, so an intent that could name a route would let any
+  application on the device drop the reader into any screen it liked.
+
+  `singleTask` plus this shortcut means a second tap while the app is running
+  arrives as appUrlOpen rather than a new process, which the same binding
+  handles.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="sermon-fast-capture"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_sermon_note"
+        android:shortcutShortLabel="@string/shortcut_sermon_note_short"
+        android:shortcutLongLabel="@string/shortcut_sermon_note_long"
+        android:shortcutDisabledMessage="@string/shortcut_sermon_note_disabled">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.myjourneywithchrist.lifewithchrist"
+            android:targetClass="com.myjourneywithchrist.lifewithchrist.MainActivity"
+            android:data="mylifewithchrist://action/sermon-fast-capture" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

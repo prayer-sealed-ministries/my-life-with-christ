@@ -4,4 +4,10 @@
     <string name="title_activity_main">My Life With Christ</string>
     <string name="package_name">com.myjourneywithchrist.lifewithchrist</string>
     <string name="custom_url_scheme">com.myjourneywithchrist.lifewithchrist</string>
+    <string name="shortcut_sermon_note_short">Sermon note</string>
+    <string name="shortcut_sermon_note_long">Start a sermon note</string>
+    <string name="shortcut_sermon_note_disabled">Sermon notes are unavailable</string>
+    <!-- Owned by this application. It reaches nothing else, and carries an
+         action name rather than a route. See src/app/launch-actions.ts. -->
+    <string name="launch_action_scheme">mylifewithchrist</string>
 </resources>
