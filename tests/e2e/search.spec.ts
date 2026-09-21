@@ -10,6 +10,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { dismissWelcome, seedEntries } from './seed';
+import { saveExistingEntry } from './save';
+import { expectSearchState, formatReport } from './search-report';
 import type { Entry } from '../../src/types';
 
 const entry = (overrides: Partial<Entry> & { id: string }): Entry => ({
@@ -34,7 +36,14 @@ const CORPUS: Entry[] = [
     id: 'old-anxiety',
     date: '2019-11-03',
     title: 'The week before the surgery',
-    notes: 'I kept worrying about what would happen after the operation.',
+    // `anaesthetist` is scenario D's marker, and it is a real word from a real
+    // sentence rather than a token bolted on for a test. It is here rather
+    // than reusing "worrying" because that word has a near neighbour in this
+    // same corpus — `recent-mentions-worry` says "worry" — and the ranker's
+    // fuzzy tier allows two edits on a token this long. The distance happens
+    // to be three, so it does not match today; a marker whose correctness
+    // rests on an off-by-one in an unrelated constant is not a marker.
+    notes: 'I kept worrying about what would happen after the operation. The anaesthetist was kind about it.',
   }),
   entry({
     id: 'recent-mentions-worry',
@@ -67,6 +76,10 @@ const CORPUS: Entry[] = [
 async function searchFor(page: Page, query: string) {
   await page.goto(`/#/search?q=${encodeURIComponent(query)}`);
   await page.waitForLoadState('networkidle');
+  // A hash route can be taken back off this page by work the app had already
+  // queued, and every assertion after that point describes the wrong screen.
+  // Cheap to check, and it names the address it actually ended up on.
+  await expect(page, 'the app navigated away from the search page').toHaveURL(/#\/search/);
 }
 
 /** The journal results, located by their own heading rather than by markup shape. */
@@ -144,15 +157,57 @@ test('E — an unfinished draft never reaches historical search', async ({ page 
   await expect(page.getByText(/Nothing matches/)).toBeVisible();
 });
 
+/** What the entry can be found by before the edit, and after it. */
+const BEFORE = 'anaesthetist';
+const AFTER = 'kingfisher';
+
 test('D — editing an entry changes what it can be found by', async ({ page }) => {
-  await page.goto('/#/entry/old-anxiety');
-  await page.getByRole('textbox', { name: 'Notes' }).fill('Replaced entirely: a heron on the bank.');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Saved')).toBeVisible();
+  /*
+   * The markers are only markers while they are unique, so that is asserted
+   * rather than assumed.
+   *
+   * Without this the interesting half of the test can pass vacuously: if
+   * `BEFORE` were in no entry at all, "nothing matches it afterwards" would be
+   * true before anything was edited, and the case would be measuring nothing.
+   * The other direction matters just as much — a second entry carrying the
+   * same word would make the same assertion fail for a reason that has nothing
+   * to do with editing.
+   */
+  const carrying = (term: string) =>
+    CORPUS.filter((candidate) => JSON.stringify(candidate).toLowerCase().includes(term));
+  expect(carrying(BEFORE).map((e) => e.id), `${BEFORE} must belong to exactly one entry`).toEqual([
+    'old-anxiety',
+  ]);
+  expect(carrying(AFTER), `${AFTER} must be new to the journal`).toHaveLength(0);
 
-  await searchFor(page, 'worrying');
-  await expect(page.getByText(/Nothing matches/)).toBeVisible();
+  // The floor: the entry really is findable by the old word. Everything below
+  // is about that stopping, and it can only mean something if it started.
+  await searchFor(page, BEFORE);
+  await expect(journalResults(page).first()).toContainText('The week before the surgery');
 
-  await searchFor(page, 'heron');
-  await expect(journalResults(page).first()).toContainText('heron');
+  await page.goto(`/#/entry/old-anxiety`);
+  await page.getByRole('textbox', { name: 'Notes' }).fill(`Replaced entirely: a ${AFTER} on the bank.`);
+  /*
+   * Not just "the pill appeared".
+   *
+   * Saving an entry that already exists ends in a queued navigation to the
+   * address the browser is already on — invisible, and still able to fire
+   * after this test has navigated somewhere else. It did, twice in thirty
+   * runs, and took the browser back to the entry; the search assertion below
+   * then failed against the editor. See tests/e2e/save.ts.
+   */
+  await saveExistingEntry(page, 'old-anxiety', AFTER);
+
+  // Nothing matches the old word — and the report proves the reason, by
+  // naming any entry or draft whose fields still hold it.
+  await searchFor(page, BEFORE);
+  const gone = await expectSearchState(page, BEFORE, 'nothing-matches');
+  expect(
+    gone.entriesHoldingTerm,
+    `${BEFORE} survives somewhere the edit did not reach:\n${formatReport(gone)}`,
+  ).toEqual([]);
+  expect(gone.draftsHoldingTerm, `a draft still holds ${BEFORE}`).toEqual([]);
+
+  await searchFor(page, AFTER);
+  await expect(journalResults(page).first()).toContainText(AFTER);
 });
