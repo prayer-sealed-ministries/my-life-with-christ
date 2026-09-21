@@ -10,6 +10,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FIELD_LABELS,
+  type MatchField,
   allowedEdits,
   anchorOverlaps,
   entriesAnchoredTo,
@@ -124,6 +126,135 @@ describe('provenance', () => {
   it('puts the reader’s own words above a handout that used the same word', () => {
     // The whole point: an imported outline must not bury what they wrote.
     expect(ids(searchJournal('peace', [handout, own]))[0]).toBe('own');
+  });
+});
+
+/**
+ * The label names the field that actually matched — every field, one at a time.
+ *
+ * This block exists because of a reporting failure, not a product one, and the
+ * distinction is the point. A hardware smoke test claimed an entry had been
+ * found "with a Reflection label". The entry's reflection was the empty string;
+ * it could not have matched anything. The probe was
+ *
+ *     body.innerText.match(/Notes|Reflection|Title/)
+ *
+ * over the WHOLE page, and the search view renders a row of entry-kind filter
+ * chips above the results — one of which reads "Reflection". The regex found
+ * that chip at character 321, forty-one characters before the result's real
+ * "Notes" label at 452. The product had been right all along and the
+ * measurement was reading the furniture.
+ *
+ * Re-measured on the device, scoped to the result row, it read
+ * "Notes … | Title …" — correct, in weight order. So nothing was fixed here.
+ * What was missing was a check that could have contradicted the claim in a
+ * second, which is what these are: every field asserted under its own name,
+ * including the one that started it.
+ */
+describe('every field answers under its own name', () => {
+  // One row per field, each written so ONLY that field can match. A shared
+  // term would prove nothing about which field was selected.
+  const CASES: Array<{ field: MatchField; label: string; query: string; make: Partial<Entry> }> = [
+    { field: 'title', label: 'Title', query: 'lantern', make: { title: 'The lantern' } },
+    { field: 'notes', label: 'Notes', query: 'scaffold', make: { notes: 'He built the scaffold of the argument first.' } },
+    { field: 'reflection', label: 'Reflection', query: 'unhurried', make: { reflection: 'I want to be unhurried about this.' } },
+    { field: 'prayer', label: 'Prayer', query: 'steadfast', make: { prayer: 'Make me steadfast this week.' } },
+    { field: 'tags', label: 'Tags', query: 'patience', make: { tags: ['patience'] } },
+    { field: 'speaker', label: 'Speaker', query: 'okonkwo', make: { speaker: 'Ada Okonkwo' } },
+    { field: 'place', label: 'Church', query: 'riverside', make: { place: 'Riverside Chapel' } },
+    { field: 'series', label: 'Series', query: 'wilderness', make: { sermonSeries: 'Wilderness' } },
+    { field: 'scripture', label: 'Scripture', query: 'habakkuk', make: { scriptureRefs: ['Habakkuk 3:17'] } },
+    {
+      field: 'provided',
+      label: 'Provided notes',
+      query: 'photocopier',
+      make: {
+        sourceMaterial: {
+          body: 'Handout printed on the photocopier.',
+          importedAt: '2026-03-01T00:00:00.000Z',
+          filename: 'h.md',
+          format: 'markdown',
+          parserVersion: 1,
+        },
+      },
+    },
+  ];
+
+  // The floor. Every assertion below is inside a loop, and a loop over an
+  // empty list passes while examining nothing.
+  it('covers every field the engine can match in', () => {
+    expect(CASES.length).toBe(Object.keys(FIELD_LABELS).length);
+    expect([...CASES].map((c) => c.field).sort()).toEqual(Object.keys(FIELD_LABELS).sort());
+  });
+
+  for (const { field, label, query, make } of CASES) {
+    it(`reports a ${field} match as "${label}"`, () => {
+      const [hit] = searchJournal(query, [entry(make)]);
+      expect(hit, `"${query}" found nothing, so the label was never tested`).toBeTruthy();
+      expect(hit.matches[0].field).toBe(field);
+      expect(FIELD_LABELS[hit.matches[0].field]).toBe(label);
+    });
+  }
+
+  it('never reports a field the entry left empty', () => {
+    // The shape of the entry the smoke test was looking at: a title and notes
+    // that both match, and an empty reflection. "Reflection" must be
+    // unreachable, whatever else the page happens to say.
+    const shaped = entry({
+      id: 'beacon',
+      title: 'Second beacon',
+      notes: 'Second distinct proof entry.',
+      reflection: '',
+      prayer: '',
+    });
+
+    const [hit] = searchJournal('second distinct proof', [shaped]);
+    const fields = hit.matches.map((m) => m.field);
+
+    expect(fields).toContain('notes');
+    expect(fields).not.toContain('reflection');
+    expect(fields).not.toContain('prayer');
+    // And the strongest reason wins: the phrase is in the notes, so that is
+    // what the reader is shown first.
+    expect(hit.matches[0].field).toBe('notes');
+  });
+
+  it('shows the snippet from the field it named, not from another one', () => {
+    const both = entry({
+      title: 'Cornerstone',
+      notes: 'The cornerstone the builders rejected.',
+      reflection: 'Cornerstone is a strange word to live under.',
+    });
+
+    const [hit] = searchJournal('cornerstone', [both]);
+    for (const match of hit.matches) {
+      const source = { title: both.title, notes: both.notes, reflection: both.reflection }[
+        match.field as 'title' | 'notes' | 'reflection'
+      ];
+      expect(source, `no source text for ${match.field}`).toBeTruthy();
+      expect(source).toContain(match.snippet.replace(/^…|…$/g, '').trim().slice(0, 20));
+    }
+  });
+
+  it('names the highest-ranked field first when several match', () => {
+    const everywhere = entry({
+      title: 'Mercy',
+      notes: 'Mercy was the whole sermon.',
+      sourceMaterial: {
+        body: 'Mercy, point three.',
+        importedAt: '2026-03-01T00:00:00.000Z',
+        filename: 'h.md',
+        format: 'markdown',
+        parserVersion: 1,
+      },
+    });
+
+    const [hit] = searchJournal('mercy', [everywhere]);
+    // Title (10) over notes (8) over a handout (1.5) — the displayed
+    // provenance is the winner of the same ordering the score uses, not
+    // whichever field happened to be looked at first.
+    expect(hit.matches.map((m) => m.field)).toEqual(['title', 'notes', 'provided']);
+    expect(hit.providedOnly).toBe(false);
   });
 });
 
