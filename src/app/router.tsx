@@ -182,6 +182,22 @@ export function RouterProvider({ children }: { children: ReactNode }) {
     const target = href(route);
     if (options?.replace) window.location.replace(target);
     else window.location.hash = target;
+
+    /*
+     * Adopt the new hash now, rather than waiting to be told about it.
+     *
+     * `hashchange` is dispatched asynchronously, so until it arrives the tree
+     * still renders the previous route. For a navigation that is invisible —
+     * the page is being left anyway. For a control that reads the route,
+     * changes it, and can be used again immediately, it is a lost input: two
+     * search filters ticked in quick succession would both compute from the
+     * pre-click set, and the second would silently undo the first.
+     *
+     * Read back from `window.location` rather than trusting `target`, so this
+     * holds whatever normalisation the browser applied. The `hashchange` that
+     * follows sets the same value and React drops the redundant render.
+     */
+    setHash(window.location.hash);
   }, []);
 
   const value = useMemo(() => ({ route: parseHash(hash), navigate }), [hash, navigate]);
