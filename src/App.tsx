@@ -18,6 +18,7 @@ const HomeView = lazy(() => import('./views/HomeView'));
 const BrowseView = lazy(() => import('./views/BrowseView'));
 const BookView = lazy(() => import('./views/BookView'));
 const PassageView = lazy(() => import('./views/PassageView'));
+const PassageHistoryView = lazy(() => import('./views/PassageHistoryView'));
 const TopicsView = lazy(() => import('./views/TopicsView'));
 const TopicView = lazy(() => import('./views/TopicView'));
 const TimelineView = lazy(() => import('./views/TimelineView'));
@@ -102,6 +103,13 @@ function CurrentView() {
       return <BookView bookId={route.bookId} />;
     case 'passage':
       return <PassageView bookId={route.bookId} segmentId={route.segmentId} />;
+    case 'passageHistory':
+      // Keyed by the reference so moving between two passages remounts rather
+      // than reusing an instance whose canonicalisation effect has already run
+      // for a different one.
+      return (
+        <PassageHistoryView key={`history:${route.reference}`} reference={route.reference} />
+      );
     case 'topics':
       return <TopicsView />;
     case 'topic':

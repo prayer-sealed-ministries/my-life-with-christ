@@ -451,6 +451,19 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
         <h2 id="entries-heading" className="font-serif text-xl font-semibold">
           Your entries on this passage
         </h2>
+        {/* This list is what is anchored to THIS span. The history page answers
+            the wider question — everything overlapping the passage, oldest
+            first — so it is offered rather than duplicated here. */}
+        {reference ? (
+          <p className="mt-1 text-sm">
+            <Link
+              to={{ name: 'passageHistory', reference }}
+              className={`text-ink-soft underline decoration-line-strong underline-offset-4 ${FOCUS}`}
+            >
+              My history with {reference}
+            </Link>
+          </p>
+        ) : null}
         <LiveRegion message={entriesStatus} />
 
         {!entriesReady ? (

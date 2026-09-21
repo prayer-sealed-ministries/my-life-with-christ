@@ -181,3 +181,46 @@ describe('advanced search filters in the hash', () => {
     expect(cleared).toEqual({ name: 'search', query: 'first baptist' });
   });
 });
+
+describe('the passage-history route', () => {
+  it('carries the reference as a person would write it', () => {
+    expect(parseHash('#/history/John%2015')).toEqual({
+      name: 'passageHistory',
+      reference: 'John 15',
+    });
+    expect(parseHash('#/history/Jn%2015')).toEqual({ name: 'passageHistory', reference: 'Jn 15' });
+    expect(parseHash('#/history/John%2015%3A5')).toEqual({
+      name: 'passageHistory',
+      reference: 'John 15:5',
+    });
+  });
+
+  it('round-trips a reference through href and back', () => {
+    for (const reference of ['John 15', 'John 15:5', 'John 15:1-8', '1 John 1:9', 'Song of Solomon 2']) {
+      const route: Route = { name: 'passageHistory', reference };
+      expect(parseHash(href(route)), reference).toEqual(route);
+    }
+  });
+
+  it('does not collide with the Bible passage route', () => {
+    // `#/passage/...` is the Scripture text; `#/history/...` is the journal.
+    // One route parsing as the other would send a reader to the wrong page.
+    expect(parseHash('#/passage/matthew/matthew-5-1-12').name).toBe('passage');
+    expect(parseHash('#/history/Matthew%205').name).toBe('passageHistory');
+  });
+
+  it('treats a history URL with no reference as unknown, not as a blank passage', () => {
+    expect(parseHash('#/history').name).toBe('notFound');
+    expect(parseHash('#/history/').name).toBe('notFound');
+  });
+
+  it('does not itself judge whether the reference is real', () => {
+    // Deliberate: parseHash runs in the main bundle and resolving a reference
+    // needs versification and the book aliases. The view refuses what does not
+    // resolve, exactly as the book and passage routes do with their ids.
+    expect(parseHash('#/history/Nowhere%203')).toEqual({
+      name: 'passageHistory',
+      reference: 'Nowhere 3',
+    });
+  });
+});

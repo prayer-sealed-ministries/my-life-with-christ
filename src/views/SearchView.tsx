@@ -747,15 +747,25 @@ export default function SearchView({
           <h2 className={SECTION_HEADING}>Go to a passage</h2>
           <ul className={RESULT_LIST}>
             {catalogue.references.map((hit) => (
-              <li key={hit.label}>
+              <li key={hit.label} className="rounded-control border border-line">
                 <Link
                   to={passageRouteFor(hit.ref)}
-                  className="block rounded-control border border-line p-3 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
+                  className="block rounded-control p-3 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   <span className="font-serif text-lg font-semibold">{hit.label}</span>
                   <span className="mt-0.5 block text-sm text-ink-soft">
                     Read it in the King James Version
                   </span>
+                </Link>
+                {/* A second, quieter door. Someone who typed a reference may
+                    want the passage or may want their own history with it, and
+                    this must not compete with the results above — hence a
+                    plain link inside the same card rather than a second card. */}
+                <Link
+                  to={{ name: 'passageHistory', reference: hit.label }}
+                  className="block border-t border-line px-3 py-2 text-sm text-ink-soft underline decoration-line-strong underline-offset-4 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  My history with {hit.label}
                 </Link>
               </li>
             ))}

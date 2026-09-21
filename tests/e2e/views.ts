@@ -108,6 +108,10 @@ export async function resolveViews(page: Page): Promise<ViewTarget[]> {
     { key: 'topic', hash: '#/topic/anxiety' },
     { key: 'timeline', hash: '#/timeline' },
     { key: 'search', hash: '#/search?q=whitfield' },
+    // The seed journal has entries anchored to Matthew 5, so this sweeps a
+    // history with moments in it rather than an empty state — the empty one is
+    // covered by its own spec, and a page with no cards proves little here.
+    { key: 'passage-history', hash: '#/history/Matthew%205' },
     { key: 'entry-edit', hash: '#/entry/seed-01' },
     { key: 'entry-new', hash: '#/entry/new' },
     { key: 'data', hash: '#/data' },

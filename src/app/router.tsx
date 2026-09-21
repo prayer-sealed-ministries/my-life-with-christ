@@ -25,6 +25,22 @@ export type Route =
   | { name: 'browse' }
   | { name: 'book'; bookId: string }
   | { name: 'passage'; bookId: string; segmentId: string }
+  /**
+   * A reader's own history with a Scripture passage.
+   *
+   * The reference travels as the text a person would write — "John 15",
+   * "John 15:5", "Jn 15" — and is parsed by the view with the one Scripture
+   * parser the rest of the app uses. It is NOT pre-parsed here: `parseHash`
+   * runs in the main bundle, and resolving a reference needs versification and
+   * the book aliases, which are the lazy chunks this route exists to avoid
+   * loading until someone asks for a passage.
+   *
+   * So the route carries an unvalidated string, exactly as `book` and
+   * `passage` carry unvalidated ids, and the view is responsible for refusing
+   * what does not resolve. A separate name from `passage` because that route
+   * is the Bible text itself; this one is the journal.
+   */
+  | { name: 'passageHistory'; reference: string }
   | { name: 'topics' }
   | { name: 'topic'; topicId: string }
   | { name: 'timeline' }
@@ -77,6 +93,12 @@ export function parseHash(hash: string): Route {
       return parts[1] && parts[2]
         ? { name: 'passage', bookId: parts[1], segmentId: parts[2] }
         : { name: 'browse' };
+    case 'history':
+      // Everything after /history/ is the reference, already decoded above.
+      // An empty one is not a passage, so it goes where an unknown path goes.
+      return parts[1]
+        ? { name: 'passageHistory', reference: parts.slice(1).join('/') }
+        : { name: 'notFound', path };
     case 'topics':
       return { name: 'topics' };
     case 'topic':
@@ -145,6 +167,8 @@ export function href(route: Route): string {
       return `#/book/${encodeURIComponent(route.bookId)}`;
     case 'passage':
       return `#/passage/${encodeURIComponent(route.bookId)}/${encodeURIComponent(route.segmentId)}`;
+    case 'passageHistory':
+      return `#/history/${encodeURIComponent(route.reference)}`;
     case 'topics':
       return '#/topics';
     case 'topic':

@@ -191,6 +191,11 @@ export default function HelpView() {
           <strong>Advanced search</strong> can narrow results to one or more kinds of journal
           entry — a prayer, a sermon, a reflection. Leave it closed and everything is searched.
         </p>
+        <p className="measure text-sm leading-relaxed text-ink-soft">
+          <strong>My history with a passage</strong> gathers the saved moments in your journal
+          attached to one place in Scripture, oldest first. You can open it from a passage, or
+          from a reference you have searched for.
+        </p>
       </section>
 
       <section aria-labelledby="backing-up" className="space-y-2">
