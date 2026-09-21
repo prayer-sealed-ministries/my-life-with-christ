@@ -7,6 +7,7 @@
     <string name="shortcut_sermon_note_short">Sermon note</string>
     <string name="shortcut_sermon_note_long">Start a sermon note</string>
     <string name="shortcut_sermon_note_disabled">Sermon notes are unavailable</string>
+    <string name="share_sermon_notes_label">Review sermon notes</string>
     <!-- Owned by this application. It reaches nothing else, and carries an
          action name rather than a route. See src/app/launch-actions.ts. -->
     <string name="launch_action_scheme">mylifewithchrist</string>

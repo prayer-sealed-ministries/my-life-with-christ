@@ -177,7 +177,10 @@ public class JourneyDocumentsPlugin extends Plugin {
      * importer should have to know that Android content providers exist.
      */
     private String displayName(Uri uri) {
-        String fallback = "archive.zip";
+        return displayNameOf(uri, "archive.zip");
+    }
+
+    private String displayNameOf(Uri uri, String fallback) {
         try (android.database.Cursor cursor =
                 getContext().getContentResolver().query(uri, null, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {
@@ -193,6 +196,86 @@ public class JourneyDocumentsPlugin extends Plugin {
             // Falls through to the default below.
         }
         return fallback;
+    }
+
+    /**
+     * The largest shared document this will read into memory.
+     *
+     * Mirrors MAX_SERMON_NOTES_BYTES in src/import/sermon-notes.ts. Checked
+     * HERE as well as there, because the shared gate runs after the bytes have
+     * crossed the bridge: refusing a 2GB file in TypeScript would mean having
+     * base64'd 2GB into the webview first. The shared code remains the one that
+     * decides what is importable; this only declines to carry the impossible.
+     */
+    private static final long MAX_SHARED_BYTES = 8L * 1024L * 1024L;
+
+    /**
+     * Collect a document the system shared with this app, if one is waiting.
+     *
+     * Take-once: the slot is cleared as it is read, so a redelivered intent
+     * cannot become a second copy of the same handout.
+     *
+     * The content URI does not cross the bridge. It is read here, while the
+     * grant is still valid, and what goes back is a name, a media type and
+     * bytes — nothing that expires, and nothing that would put an Android
+     * lifetime rule inside code that also runs in a browser.
+     */
+    @PluginMethod
+    public void takeSharedDocument(PluginCall call) {
+        Uri source = SharedDocument.take();
+        String declaredType = SharedDocument.takeDeclaredType();
+
+        if (source == null) {
+            call.resolve(new JSObject().put("present", false));
+            return;
+        }
+
+        JSObject response = new JSObject();
+        response.put("present", true);
+        response.put("name", displayNameOf(source, "shared document"));
+
+        String type = declaredType;
+        if (type == null || type.isEmpty() || type.equals("*/*")) {
+            // The sender said nothing useful. Ask the content resolver, which
+            // asks the provider that owns the document.
+            type = getContext().getContentResolver().getType(source);
+        }
+        response.put("mimeType", type == null ? "" : type);
+
+        try (InputStream in = getContext().getContentResolver().openInputStream(source)) {
+            if (in == null) {
+                response.put("error", "That document could not be opened.");
+                call.resolve(response);
+                return;
+            }
+
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            long total = 0;
+            while ((read = in.read(chunk)) != -1) {
+                total += read;
+                if (total > MAX_SHARED_BYTES) {
+                    // Stop reading rather than finish and then complain: the
+                    // point of a limit is not to hold the thing it refuses.
+                    response.put("error", "That document is larger than the 8MB limit for sermon notes.");
+                    call.resolve(response);
+                    return;
+                }
+                buffer.write(chunk, 0, read);
+            }
+
+            response.put("base64", Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP));
+            call.resolve(response);
+        } catch (SecurityException denied) {
+            // The grant was revoked, or never covered this process. An honest
+            // message, and nothing imported.
+            response.put("error", "This app no longer has permission to read that document.");
+            call.resolve(response);
+        } catch (Exception error) {
+            response.put("error", "That document could not be read.");
+            call.resolve(response);
+        }
     }
 
     /** Extensions are a web-picker idiom; Android filters on media types. */

@@ -7,6 +7,7 @@ import { RouterProvider } from './app/router';
 import { StorageContextProvider } from './app/storage';
 import { FocusProvider } from './app/focus';
 import { NoticeProvider } from './app/notice';
+import { SharedDocuments } from './app/SharedDocuments';
 import { ThemeProvider } from './app/theme';
 import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
@@ -66,6 +67,9 @@ createRoot(root).render(
             <NoticeProvider>
               {/* Also above the routed view: a successful save remounts the
                   editor, and focus mode has to survive it. */}
+              {/* Renders nothing. Listens for a document the system shared
+                  into the app and routes it to the one importer. */}
+              <SharedDocuments />
               <FocusProvider>
                 <App />
               </FocusProvider>

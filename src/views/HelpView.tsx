@@ -65,7 +65,9 @@ export default function HelpView() {
             wrong on half the devices and stale on the rest. */}
         <p className="measure text-sm leading-relaxed text-ink-soft">
           On supported devices, the <strong>Sermon note</strong> shortcut on the app icon starts
-          writing straight away.
+          writing straight away. You can also share a sermon document to My Life With Christ from
+          another app and review it here first — nothing is added to your journal until you
+          confirm it.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           Your writing is saved locally as you type, so an interruption does not erase your

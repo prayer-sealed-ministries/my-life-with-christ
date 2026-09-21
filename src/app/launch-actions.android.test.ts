@@ -105,16 +105,42 @@ describe('what an outside intent may reach', () => {
     expect(attr(meta, 'resource')).toBe('@xml/shortcuts');
   });
 
-  it('accepts exactly one scheme, and it is the one the app owns', () => {
-    const schemes = [...activity!.querySelectorAll('intent-filter data')].map((node) =>
-      androidString(attr(node, 'scheme')),
+  it('reaches the action allow-list through exactly one scheme, the app’s own', () => {
+    /*
+     * Scoped to the ACTION filter rather than to every filter on the activity.
+     *
+     * The activity also receives shared documents, whose filters carry the
+     * `content` scheme and the importer's media types. Asserting over all of
+     * them — which this did when the shortcut was the only thing here — would
+     * fail the moment a second doorway was added, and would say nothing about
+     * the one that matters.
+     */
+    const actionFilters = [...activity!.querySelectorAll('intent-filter')].filter((filter) =>
+      [...filter.querySelectorAll('data')].some((data) => attr(data, 'host') === 'action'),
     );
-    expect(schemes).toEqual([LAUNCH_SCHEME]);
+    expect(actionFilters, 'no filter carries the action host').toHaveLength(1);
 
-    const hosts = [...activity!.querySelectorAll('intent-filter data')].map((node) =>
-      attr(node, 'host'),
+    const data = [...actionFilters[0].querySelectorAll('data')];
+    expect(data.map((node) => androidString(attr(node, 'scheme')))).toEqual([LAUNCH_SCHEME]);
+    expect(data.map((node) => attr(node, 'host'))).toEqual(['action']);
+    // And it carries no media type, so it can never be selected for a document.
+    expect(data.map((node) => attr(node, 'mimeType'))).toEqual([null]);
+  });
+
+  it('keeps the document doorways off the action scheme', () => {
+    // The converse: nothing that accepts a document may arrive on the app's
+    // own scheme, or a shortcut tap could be mistaken for a shared file.
+    const documentFilters = [...activity!.querySelectorAll('intent-filter')].filter((filter) =>
+      [...filter.querySelectorAll('data')].some((data) => attr(data, 'mimeType')),
     );
-    expect(hosts).toEqual(['action']);
+    expect(documentFilters.length).toBeGreaterThanOrEqual(2);
+
+    for (const filter of documentFilters) {
+      const schemes = [...filter.querySelectorAll('data')]
+        .map((node) => androidString(attr(node, 'scheme')))
+        .filter((scheme): scheme is string => scheme !== null);
+      expect(schemes).not.toContain(LAUNCH_SCHEME);
+    }
   });
 
   it('never accepts http or https, which any site could send', () => {

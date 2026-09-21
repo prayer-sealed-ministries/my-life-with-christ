@@ -61,6 +61,28 @@ export interface JourneyDocumentsPlugin {
   pickDocument(options: {
     mimeTypes?: string[];
   }): Promise<{ cancelled: boolean; name?: string; base64?: string }>;
+
+  /**
+   * Collect a document the operating system shared with this app, if any.
+   *
+   * TAKE-ONCE. The native side clears what it hands over, so asking twice
+   * across a lifecycle transition returns `{ present: false }` rather than a
+   * second copy of the same handout. Android redelivers intents more readily
+   * than one would like, and this is where that is made harmless.
+   *
+   * The content URI never crosses: it is read natively while the grant is
+   * still valid, and what arrives here is a name, a media type and bytes.
+   * Nothing in the shared importer should have to know that Android content
+   * providers exist, or that a URI can expire.
+   */
+  takeSharedDocument(): Promise<{
+    present: boolean;
+    name?: string;
+    mimeType?: string;
+    base64?: string;
+    /** Set when something arrived that could not be read or was too large. */
+    error?: string;
+  }>;
 }
 
 export const JourneyDocuments = registerPlugin<JourneyDocumentsPlugin>('JourneyDocuments');

@@ -39,6 +39,42 @@
                 <data android:scheme="@string/launch_action_scheme" android:host="action" />
             </intent-filter>
 
+            <!--
+              Receiving a sermon handout from Mail, Files, Messages or a church
+              app: "Share with" and "Open in".
+
+              The media types are exactly the four the sermon-note importer can
+              read (src/import/incoming.ts, asserted against this file by
+              src/platform/android-share.test.ts). DOCX is absent because the
+              sermon importer does not read it — that is the document importer,
+              a different feature. Registering for a type this app cannot open
+              would put it in the share sheet and break the promise the moment
+              somebody took it up.
+
+              No storage permission is involved. A share grants read access to
+              one document for the life of this activity, which is all the
+              plugin needs and all it takes.
+            -->
+            <intent-filter android:label="@string/share_sermon_notes_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
+            <!-- "Open in", from a file manager or a mail attachment. -->
+            <intent-filter android:label="@string/share_sermon_notes_label">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="application/json" />
+                <data android:scheme="content" android:mimeType="application/pdf" />
+            </intent-filter>
+
             <!-- Long-press the app icon. See res/xml/shortcuts.xml. -->
             <meta-data
                 android:name="android.app.shortcuts"
