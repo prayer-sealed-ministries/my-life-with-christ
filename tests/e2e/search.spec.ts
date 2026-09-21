@@ -88,11 +88,41 @@ test('A — a half-remembered phrase finds the right Sunday, not the recent one'
   await expect(journalResults(page).first()).toContainText('The week before the surgery');
 });
 
+/**
+ * B, and the suite's freshness sentinel.
+ *
+ * This case is the one that distinguishes this engine from the one it
+ * replaced: the old search read a blob of an entry's own words and never
+ * looked at its anchors, so a purely anchored passage was unfindable. That
+ * makes it the behaviour a stale bundle gets wrong first, and it is exactly
+ * how the stale-preview incident presented — ordinary text search working,
+ * every Scripture query returning nothing, looking for all the world like a
+ * defect in the new code.
+ *
+ * Build identity (tests/e2e/global-setup.ts) is what actually prevents that
+ * now. This is the behavioural backstop underneath it: if the digest check
+ * were ever removed or weakened, this test would still go red against old
+ * bytes rather than passing quietly.
+ */
 test('B — a Scripture shorthand finds an entry the prose never names', async ({ page }) => {
-  // "Jn 15" appears nowhere in this entry's words; it is anchored there.
+  // The sentinel is only a sentinel while the entry's own words really do not
+  // name the passage. Asserted rather than assumed: an innocent edit to the
+  // corpus above could turn this into an ordinary text match, and it would
+  // still pass while having stopped testing anchors altogether.
+  const vine = CORPUS.find((candidate) => candidate.id === 'vine');
+  const ownWords = [vine?.title, vine?.notes, vine?.reflection, ...(vine?.scriptureRefs ?? [])]
+    .join(' ')
+    .toLowerCase();
+  expect(ownWords, 'the vine entry now names the passage in prose').not.toMatch(/john|jn|15/);
+  expect(vine?.anchors.length, 'the vine entry is no longer anchored').toBeGreaterThan(0);
+
   await searchFor(page, 'Jn 15');
 
-  await expect(journalResults(page).first()).toContainText('The vine and the branches');
+  const result = journalResults(page).first();
+  await expect(result).toContainText('The vine and the branches');
+  // Found BY the anchor, and said so. Without this the test would pass on any
+  // accidental match and stop distinguishing the two engines.
+  await expect(result).toContainText('Scripture');
 });
 
 test('C — a word only the church handout used says so', async ({ page }) => {

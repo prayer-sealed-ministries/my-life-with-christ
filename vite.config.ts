@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // Plain ESM plugin, shared with the CI bundle verifier.
 import dataProfile from './scripts/vite-plugin-data-profile.mjs';
+import buildId from './scripts/vite-plugin-build-id.mjs';
 import guardPublicDir from './scripts/vite-plugin-guard-public.mjs';
 import pkg from './package.json' with { type: 'json' };
 
@@ -11,7 +12,9 @@ export default defineConfig({
   // GitHub Pages serves a project site from /<repo>/, so assets need that
   // prefix. Set BASE_PATH in CI; local dev and file:// builds stay at '/'.
   base: process.env.BASE_PATH ?? '/',
-  plugins: [guardPublicDir(), react(), tailwindcss(), dataProfile()],
+  // buildId is last: it digests the finished output directory, so every other
+  // plugin's contribution has to be on disk before it runs.
+  plugins: [guardPublicDir(), react(), tailwindcss(), dataProfile(), buildId()],
   // The version comes from package.json and nowhere else. Writing it in a
   // second place is how a version string starts lying.
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },

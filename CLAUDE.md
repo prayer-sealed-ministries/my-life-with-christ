@@ -261,8 +261,10 @@ outside the one that should have caught it, never by the layer itself:
 
 | 5 | the flake hunt | 40 iterations run with `--reporter=basic`, which does not exist in vitest 5. Every run failed to start; the loop recorded 40 identical "failures" and would have hidden the real one underneath |
 | 6 | the fix for #5's target | the DataView focus race was declared fixed after the detached-node case was handled. A **second** race remained — the effect can run before React detaches the node — and it kept failing about 1 run in 20. The first fix made it rarer, which is worse than not fixing it: eight clean runs then looked like proof |
+| 7 | the e2e suite, again | Playwright's `reuseExistingServer` was true off CI, so it probed port 4173, found a preview server left running from an earlier session, and adopted it. A whole suite ran against hours-old bytes and reported **124 passed**. When the new feature's specs later failed against that same stale server, the symptom — plain text search working, every Scripture query returning nothing — was indistinguishable from a real defect in the code under development |
+| 8 | a hardware smoke probe | it read the matched-field label with `body.innerText.match(/Notes\|Reflection\|Title/)` over the **whole page**, and the search view renders an entry-kind filter chip reading "Reflection" above the results. The probe reported "Reflection" for an entry whose reflection was the empty string. The product was correct; the measurement was reading the furniture |
 
-A seventh was caught before shipping, by the revert-and-confirm rule: the focus
+Another was caught before shipping, by the revert-and-confirm rule: the focus
 regression test above, which passed against the broken code.
 
 The common shape is not carelessness. Every one of those checks was written
@@ -306,6 +308,33 @@ references as well as `assets/...` ones — Vite splits per book, and a crawl
 that only follows the latter finds 16 of 86 files. `BUNDLE_WAS_READ` is what
 caught that; without the floor it would have reported a clean pass over a
 near-empty read.
+
+### The server under test must prove which build it is serving
+
+A 200 on a health probe means something is listening. It does not say what.
+
+The e2e suite once ran a full pass against a `vite preview` server left over
+from an earlier session, because `reuseExistingServer` was true off CI and
+"something answered on 4173" was the entire readiness condition. The build had
+run first — that is not evidence either, since a build writes `dist/` and says
+nothing about what an already-running process has open.
+
+So every build stamps `dist/build-id.json` with a content digest over the files
+it emitted, and `tests/e2e/global-setup.ts` refuses to run a single spec until
+the server hands back the same digest and the same profile. Playwright also
+owns the server's lifecycle everywhere now: a process already on the port is a
+hard error, never an adoption.
+
+Two things this deliberately does not do. It does not `pkill` — a harness that
+kills by pattern match will one day kill a developer's own work in another
+checkout, and it did not solve the problem anyway. And it does not stamp a
+commit SHA: a dirty tree, a half-finished rebuild and a stale `dist/` all carry
+the same SHA, while a digest over the built bytes answers the actual question.
+
+`scripts/__tests__/build-identity.test.mjs` proves both directions against real
+HTTP servers — a correct build passes, a different build is rejected — and
+asserts the guard is still wired into both configs, because every one of those
+tests would pass with the plugin unregistered.
 
 ### Floors: no check may pass while examining nothing
 
