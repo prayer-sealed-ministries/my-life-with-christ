@@ -31,7 +31,7 @@ const brokenStorage = (): StorageProvider => {
     createEntry: fail,
     updateEntry: fail,
     deleteEntry: fail,
-    findEntriesForAnchor: fail,
+    findEntriesForExactAnchor: fail,
     putEntries: fail,
     replaceEntries: fail,
     clearEntries: fail,

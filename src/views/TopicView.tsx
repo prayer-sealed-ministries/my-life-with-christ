@@ -111,7 +111,7 @@ export default function TopicView({ topicId }: { topicId: string }) {
 
   const { data: entries, loading } = useStorageQuery<Entry[]>(
     (storage) =>
-      topic ? storage.findEntriesForAnchor({ kind: 'topic', topicId }) : Promise.resolve([]),
+      topic ? storage.findEntriesForExactAnchor({ kind: 'topic', topicId }) : Promise.resolve([]),
     [topicId],
     [],
   );

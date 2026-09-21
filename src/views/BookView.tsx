@@ -32,28 +32,14 @@ import { BookTopicList } from '../components/TopicChips';
 import { topicsForBook } from '../lib/topic-index';
 import { BOOK_NAMES } from '../lib/canon';
 import { segmentRef } from '../lib/passages';
-import type { Entry, PassageSegment, ScriptureRef } from '../types';
+import { entriesAnchoredTo } from '../lib/journal-search';
+import type { Entry, PassageSegment } from '../types';
 
 /** Stable identity for the page's initial (empty) read. */
 const NO_ENTRIES: Entry[] = [];
 
 function countLabel(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
-}
-
-/**
- * The verse range of a scripture anchor, as a comparable key.
- *
- * `findEntriesForAnchor({kind:'scripture', ...})` matches an anchor whose range
- * is exactly the segment's range. This reproduces that rule locally so the whole
- * book can be answered from one read instead of one query per segment — a long
- * book has 80+ segments, and 80 round trips for an already-indexed read is the
- * kind of thing that makes a phone feel broken in a pew.
- */
-type VerseRange = Pick<ScriptureRef, 'chapterStart' | 'verseStart' | 'chapterEnd' | 'verseEnd'>;
-
-function rangeKey(ref: VerseRange): string {
-  return `${ref.chapterStart}:${ref.verseStart}:${ref.chapterEnd}:${ref.verseEnd}`;
 }
 
 function SegmentItem({
@@ -185,21 +171,33 @@ export default function BookView({ bookId }: { bookId: string }) {
     NO_ENTRIES,
   );
 
-  const countsByRange = useMemo(() => {
+  /*
+   * How many entries each segment's page will actually list.
+   *
+   * This used to key entries by their exact verse range, mirroring the storage
+   * primitive the passage view then used. Both were wrong in the same way: a
+   * note anchored to John 15:5 counted for no segment unless a segment
+   * happened to be exactly John 15:5, so the book page could say "no entries"
+   * about a passage the reader had written on.
+   *
+   * Now it asks the same question the passage page answers — does any anchor
+   * OVERLAP this segment — through the one shared predicate. The two surfaces
+   * cannot disagree, because they are the same function.
+   *
+   * Still one read for the whole book. This is segments × entries-in-this-book
+   * of pure arithmetic, which is nothing next to the round trips it replaces:
+   * a long book has 80+ segments, and 80 queries for an already-indexed read is
+   * what makes a phone feel broken in a pew.
+   */
+  const countsBySegment = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const entry of entries) {
-      // An entry that anchors twice to the same passage is still one entry.
-      const seen = new Set<string>();
-      for (const anchor of entry.anchors) {
-        if (anchor.kind !== 'scripture' || anchor.book !== bookId) continue;
-        const key = rangeKey(anchor);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
+    for (const segment of segments) {
+      // entriesAnchoredTo counts an entry once however many of its anchors
+      // overlap, which is what a reader means by "how many entries".
+      counts.set(segment.id, entriesAnchoredTo(entries, segmentRef(segment, bookId)).length);
     }
     return counts;
-  }, [entries, bookId]);
+  }, [entries, segments, bookId]);
 
   if (!name || segments.length === 0) return <NotFound bookId={bookId} />;
 
@@ -267,7 +265,7 @@ export default function BookView({ bookId }: { bookId: string }) {
             key={segment.id}
             segment={segment}
             bookId={bookId}
-            journalCount={countsByRange.get(rangeKey(segmentRef(segment, bookId))) ?? 0}
+            journalCount={countsBySegment.get(segment.id) ?? 0}
           />
         ))}
       </ul>

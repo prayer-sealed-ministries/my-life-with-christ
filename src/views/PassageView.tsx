@@ -34,6 +34,7 @@ import { topicsForSpan } from '../lib/topic-index';
 import { KIND_LABELS } from '../export/context';
 import { loadPassage, refToString, type PassageVerse } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
+import { entriesAnchoredTo } from '../lib/journal-search';
 import { segmentRef } from '../lib/passages';
 import type { Entry, PassageSegment, ScriptureRef } from '../types';
 
@@ -243,16 +244,35 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
     };
   }, [ref]);
 
-  // One indexed read for the whole passage, stamped with the passage it answers
-  // for. Moving to the next passage re-renders this same component instance, and
-  // the read in hand is still the last one until the new one lands — an answer
-  // that does not carry this passage's key would put the previous passage's
-  // notes under this passage's heading, which is worse than a spinner.
+  /*
+   * One indexed read for the whole book, then overlap in memory.
+   *
+   * This used to ask `findEntriesForExactAnchor({kind:'scripture', ...ref})`,
+   * which matches an anchor whose range is byte-for-byte the segment's range.
+   * A note anchored to John 15:5 therefore did not appear under John 15:1-17 —
+   * the reader's own writing, missing from the passage they wrote it about,
+   * while the passage-history page listed it perfectly well.
+   *
+   * `entriesAnchoredTo` is the one overlap implementation, already tested
+   * against the cross-chapter and cross-book cases, and now shared by both
+   * surfaces so they cannot drift apart again.
+   *
+   * Scoped to the book rather than the whole journal, which costs nothing in
+   * correctness: overlap requires the same book, so entries from elsewhere
+   * could never have matched. `books:` is an indexed read, and a scripture
+   * anchor emits its book key, so this reaches exactly the candidates.
+   *
+   * Stamped with the passage it answers for. Moving to the next passage
+   * re-renders this same component instance, and the read in hand is still the
+   * last one until the new one lands — an answer that does not carry this
+   * passage's key would put the previous passage's notes under this passage's
+   * heading, which is worse than a spinner.
+   */
   const passageKey = ref ? refKey(ref) : '';
   const { data: journal, loading } = useStorageQuery<{ key: string; entries: Entry[] }>(
     async (storage) => ({
       key: passageKey,
-      entries: ref ? await storage.findEntriesForAnchor({ kind: 'scripture', ...ref }) : [],
+      entries: ref ? entriesAnchoredTo(await storage.listEntries({ books: [ref.book] }), ref) : [],
     }),
     [ref],
     NO_JOURNAL,

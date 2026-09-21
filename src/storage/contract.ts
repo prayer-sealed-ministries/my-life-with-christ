@@ -373,7 +373,7 @@ export const CONTRACT_CASES: ContractCase[] = [
       const storage = await env.fresh();
       await storage.putEntries([scriptureEntry, topicalEntry]);
 
-      const found = await storage.findEntriesForAnchor({
+      const found = await storage.findEntriesForExactAnchor({
         kind: 'scripture',
         book: 'romans',
         chapterStart: 8,
@@ -392,17 +392,17 @@ export const CONTRACT_CASES: ContractCase[] = [
       await storage.putEntries([scriptureEntry, topicalEntry, bookwideEntry]);
 
       assert.equal(
-        (await storage.findEntriesForAnchor({ kind: 'outline', outlineEntryId: 'romans-8-28' })).map((e) => e.id),
+        (await storage.findEntriesForExactAnchor({ kind: 'outline', outlineEntryId: 'romans-8-28' })).map((e) => e.id),
         ['a1'],
         'lookup by outline id',
       );
       assert.equal(
-        (await storage.findEntriesForAnchor({ kind: 'topic', topicId: 'grief' })).map((e) => e.id),
+        (await storage.findEntriesForExactAnchor({ kind: 'topic', topicId: 'grief' })).map((e) => e.id),
         ['a2'],
         'lookup by topic',
       );
       assert.equal(
-        (await storage.findEntriesForAnchor({ kind: 'book', book: 'john' })).map((e) => e.id),
+        (await storage.findEntriesForExactAnchor({ kind: 'book', book: 'john' })).map((e) => e.id),
         ['a3'],
         'lookup by book',
       );
@@ -417,7 +417,7 @@ export const CONTRACT_CASES: ContractCase[] = [
       const storage = await env.fresh();
       await storage.putEntries([scriptureEntry]);
       assert.equal(
-        (await storage.findEntriesForAnchor({ kind: 'book', book: 'romans' })).map((e) => e.id),
+        (await storage.findEntriesForExactAnchor({ kind: 'book', book: 'romans' })).map((e) => e.id),
         ['a1'],
         'a scripture anchor is found by its book',
       );
@@ -430,7 +430,7 @@ export const CONTRACT_CASES: ContractCase[] = [
       const storage = await env.fresh();
       await storage.putEntries([scriptureEntry]);
       assert.equal(
-        await storage.findEntriesForAnchor({ kind: 'topic', topicId: 'nobody' }),
+        await storage.findEntriesForExactAnchor({ kind: 'topic', topicId: 'nobody' }),
         [],
         'lookup for an unused anchor',
       );

@@ -70,7 +70,7 @@ function brokenSqlite(): StorageProvider & { calls: string[] } {
     createEntry: record('createEntry'),
     updateEntry: record('updateEntry'),
     deleteEntry: record('deleteEntry'),
-    findEntriesForAnchor: record('findEntriesForAnchor'),
+    findEntriesForExactAnchor: record('findEntriesForExactAnchor'),
     putEntries: record('putEntries'),
     replaceEntries: record('replaceEntries'),
     clearEntries: record('clearEntries'),

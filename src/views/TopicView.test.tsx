@@ -175,7 +175,7 @@ describe('TopicView', () => {
 
     let saved: Entry[] = [];
     await waitFor(async () => {
-      saved = await storage.findEntriesForAnchor({ kind: 'topic', topicId: topic.id });
+      saved = await storage.findEntriesForExactAnchor({ kind: 'topic', topicId: topic.id });
       expect(saved).toHaveLength(1);
     });
     // A topic anchor, stored whole — not a bare id the topic page cannot query.

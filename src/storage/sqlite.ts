@@ -138,7 +138,7 @@ export const MIGRATIONS: Migration[] = [
        );`,
       `CREATE INDEX IF NOT EXISTS entries_order ON entries (date, created_at);`,
       `CREATE INDEX IF NOT EXISTS entries_updated_at ON entries (updated_at);`,
-      // The multi-valued index behind findEntriesForAnchor. Dexie expresses this
+      // The multi-valued index behind findEntriesForExactAnchor. Dexie expresses this
       // as a multi-entry index; in SQL it is the row-per-key child table, which
       // is the same idea and the reason anchors are not searched by scanning.
       `CREATE TABLE IF NOT EXISTS entry_anchor_keys (
@@ -603,7 +603,7 @@ export class SqliteStorageProvider implements StorageProvider {
     await this.inTransaction(() => this.write(`DELETE FROM entries WHERE id = ?;`, [id]));
   }
 
-  async findEntriesForAnchor(anchor: AnchorLookup): Promise<Entry[]> {
+  async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
     const rows = await this.select<{ data: string }>(
       `SELECT e.data FROM entries e
          JOIN entry_anchor_keys k ON k.entry_id = e.id

@@ -128,7 +128,7 @@ export class DexieStorageProvider implements StorageProvider {
     await this.db.entries.delete(id);
   }
 
-  async findEntriesForAnchor(anchor: AnchorLookup): Promise<Entry[]> {
+  async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
     const key = anchorLookupKey(anchor);
     const rows = (await this.db.entries.where('anchorKeys').equals(key).toArray()) as EntryRow[];
     return rows.map(fromRow).sort(byDateDescending);

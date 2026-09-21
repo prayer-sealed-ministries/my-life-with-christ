@@ -164,3 +164,45 @@ test('G — a shorthand reference settles on one canonical address', async ({ pa
   // One passage, one address, so a kept link says what it means.
   await expect(page).toHaveURL(/#\/history\/John%2015$/);
 });
+
+/**
+ * The two surfaces, in one run.
+ *
+ * "Your entries on this passage" and "My history with …" answer the same
+ * question and must include the same entries. They did not: the passage page
+ * matched an anchor whose range was byte-for-byte the segment's, so a note on
+ * John 15:5 was missing from the passage holding it while the history page
+ * listed it. Both now use the one overlap predicate.
+ */
+test('H — a verse-anchored note appears on the passage AND in its history', async ({ page }) => {
+  // Reach the passage holding John 15:5 the way a reader does, so the segment
+  // is whichever one this profile divides it into rather than a hardcoded id.
+  await page.goto('/#/search?q=John%2015%3A5');
+  await page.waitForLoadState('networkidle');
+  await page.getByRole('link', { name: /Read it in the King James Version/ }).click();
+  await page.waitForLoadState('networkidle');
+
+  const section = page.locator('section').filter({
+    has: page.getByRole('heading', { name: 'Your entries on this passage' }),
+  });
+
+  // ph-sermon is anchored to John 15:5 alone. Before this fix it was absent
+  // here unless a segment happened to be exactly John 15:5.
+  await expect(section.getByText('Abiding in Christ')).toBeVisible();
+  // The whole-chapter reading overlaps the segment too.
+  await expect(section.getByText('Reading the vine')).toBeVisible();
+  // And the same chapter number in another book never leaks in.
+  await expect(section.getByText('Mark fifteen, Good Friday')).toHaveCount(0);
+
+  const onPassage = (await section.locator('article').allInnerTexts()).length;
+  expect(onPassage).toBeGreaterThanOrEqual(2);
+
+  // The other surface, same passage, same entries.
+  await page.getByRole('link', { name: /^My history with / }).click();
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('My history with');
+  await expect(moments(page)).toHaveCount(onPassage);
+  await expect(page.getByText('Abiding in Christ')).toBeVisible();
+  await expect(page.getByText('Reading the vine')).toBeVisible();
+  await expect(page.getByText('Mark fifteen, Good Friday')).toHaveCount(0);
+});

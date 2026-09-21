@@ -40,9 +40,9 @@ class CountingProvider extends DexieStorageProvider {
     return super.listEntries(query);
   }
 
-  override async findEntriesForAnchor(anchor: AnchorLookup): Promise<Entry[]> {
+  override async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
     this.anchorCalls += 1;
-    return super.findEntriesForAnchor(anchor);
+    return super.findEntriesForExactAnchor(anchor);
   }
 }
 
@@ -246,7 +246,7 @@ describe('BookView', () => {
     const link = document.querySelector(`a[href="#/passage/genesis/${target.id}"]`);
     await waitFor(() => expect(link).toHaveTextContent('2 journal entries'));
 
-    // The neighbour is untouched: the match is the exact range, not an overlap.
+    // The neighbour is untouched: it does not overlap the anchored range.
     const neighbour = document.querySelector(
       `a[href="#/passage/genesis/${GENESIS_SEGMENTS[4].id}"]`,
     );
@@ -256,6 +256,42 @@ describe('BookView', () => {
     // Dozens of segments, and the whole book answered without a per-segment query.
     expect(provider.anchorCalls).toBe(0);
     expect(provider.listEntriesCalls).toBeLessThan(3);
+  });
+
+  it('counts an entry anchored to a single verse inside the passage', async () => {
+    // The defect this replaced: counting matched only an anchor whose range was
+    // byte-for-byte the segment's, so a note on one verse counted for nothing
+    // and the book page said "no entries" about a passage that had one. The
+    // passage page then listed it, and the two disagreed on screen.
+    const provider = newProvider();
+    await provider.open();
+
+    const target = GENESIS_SEGMENTS.find((segment) => {
+      const ref = segmentRef(segment, 'genesis');
+      return ref.chapterStart === ref.chapterEnd && ref.verseEnd - ref.verseStart >= 2;
+    });
+    expect(target, 'no multi-verse segment in Genesis under this profile').toBeTruthy();
+    const ref = segmentRef(target!, 'genesis');
+
+    await provider.createEntry({
+      title: 'One verse of it',
+      anchors: [
+        {
+          kind: 'scripture',
+          book: 'genesis',
+          chapterStart: ref.chapterStart,
+          verseStart: ref.verseStart + 1,
+          chapterEnd: ref.chapterStart,
+          verseEnd: ref.verseStart + 1,
+        },
+      ],
+    });
+
+    renderBook('genesis', provider);
+    await screen.findByRole('heading', { level: 1, name: 'Genesis' });
+
+    const link = document.querySelector(`a[href="#/passage/genesis/${target!.id}"]`);
+    await waitFor(() => expect(link).toHaveTextContent('1 journal entry'));
   });
 
   it('counts an entry once even when it anchors to the same passage twice', async () => {

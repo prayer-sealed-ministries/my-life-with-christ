@@ -44,8 +44,32 @@ export interface StorageProvider {
   updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
   deleteEntry(id: string): Promise<void>;
 
-  /** Entries anchored to a scripture range, an outline entry, a topic, or a book. */
-  findEntriesForAnchor(anchor: AnchorLookup): Promise<Entry[]>;
+  /**
+   * Entries carrying EXACTLY this anchor. Not a passage search.
+   *
+   * The name says `Exact` because the previous one did not, and that cost a
+   * real defect: the passage view asked this for `{kind:'scripture', ...ref}`
+   * and rendered the answer under "Your entries on this passage". An entry
+   * anchored to John 15:5 was then missing from John 15:1-17, because the two
+   * ranges are different keys — a reader's own note simply did not appear on
+   * the passage they wrote it about.
+   *
+   * It is exact because it is a key lookup: `anchorKeys` on Dexie and the
+   * `entry_anchor_keys` table on SQLite both index one string per anchor, and
+   * range overlap is not something an equality index can answer. Making this
+   * overlap would mean a scan, which is a different operation and belongs
+   * where the caller can see it.
+   *
+   * For "what have I written about this passage", use
+   * `entriesAnchoredTo(entries, ref)` in src/lib/journal-search.ts, which is
+   * the one overlap implementation and is tested against the cross-chapter and
+   * cross-book cases.
+   *
+   * Exact lookup stays because three of its four anchor kinds have no range at
+   * all — a topic, a book and an outline id are identities, not spans — and
+   * because the shared conformance contract holds providers to it.
+   */
+  findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]>;
 
   /** Bulk write, used by import. Replaces on id collision. */
   putEntries(entries: Entry[]): Promise<void>;

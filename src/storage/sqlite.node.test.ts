@@ -335,7 +335,7 @@ describe('destructive operations are transactional', () => {
       },
     ]);
 
-    expect(await provider.findEntriesForAnchor({ kind: 'topic', topicId: 'grief' })).toHaveLength(1);
+    expect(await provider.findEntriesForExactAnchor({ kind: 'topic', topicId: 'grief' })).toHaveLength(1);
     await provider.deleteEntry('anchored');
 
     const orphans = await plugin.query({
@@ -343,7 +343,7 @@ describe('destructive operations are transactional', () => {
       statement: `SELECT count(*) AS n FROM entry_anchor_keys;`,
     });
     expect((orphans.values as { n: number }[])[0].n, 'anchor rows outlived their entry').toBe(0);
-    expect(await provider.findEntriesForAnchor({ kind: 'topic', topicId: 'grief' })).toEqual([]);
+    expect(await provider.findEntriesForExactAnchor({ kind: 'topic', topicId: 'grief' })).toEqual([]);
   });
 
   it('clearing entries leaves the settings table alone', async () => {
