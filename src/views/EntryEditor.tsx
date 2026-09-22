@@ -40,6 +40,12 @@ import { shouldRestoreFocus } from '../lib/focus-restore';
 import { resolveFocusIntent } from '../lib/focus-intent';
 import { Autosaver, type AutosaveResult } from '../lib/autosave';
 import { draftFormsEqual, hasRecoverableChanges } from '../lib/drafts';
+import {
+  NO_DETAILS,
+  recentDetails,
+  type DetailField,
+  type RecentDetails,
+} from '../lib/recent-details';
 import { newId } from '../storage/semantics';
 import { refToString } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
@@ -265,6 +271,74 @@ function anchorLabel(anchor: EntryAnchor): string {
   return title === reference ? reference : `${reference} — ${title}`;
 }
 
+/**
+ * Details this reader has saved before, offered back as one tap each.
+ *
+ * Buttons, not an autocomplete and not a default: the field above stays
+ * exactly as empty as it was until somebody presses one of these. Tapping puts
+ * the value in the field and nothing else happens — no flag on the entry, no
+ * record that it was suggested rather than typed. It is the reader's value
+ * from that moment, theirs to edit or clear like any other.
+ *
+ * The accessible name says what pressing it will do and where: "Use speaker
+ * Pastor James". The field's own label is still what identifies the
+ * destination, so a screen reader user who has just heard "Speaker, edit text"
+ * is not left guessing what these belong to.
+ */
+function RecentDetailChips({
+  field,
+  spoken,
+  values,
+  onChoose,
+}: {
+  field: DetailField;
+  /** How the field is named out loud, inside the button's name. */
+  spoken: string;
+  values: string[];
+  onChoose: (field: DetailField, value: string) => void;
+}) {
+  const headingId = useId();
+  if (values.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      {/* Quiet on purpose: the box above is the field, and this is a
+          convenience under it. Not a live region — announcing a list of
+          historical values every time a panel opens would be noise. */}
+      <p id={headingId} className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+        Recent
+      </p>
+      <ul aria-labelledby={headingId} className="mt-1 flex flex-wrap gap-2">
+        {values.map((value) => (
+          /*
+             `min-w-0` is load-bearing, not tidiness. A flex item's minimum is
+             its content's intrinsic width, so without it a chip holding "First
+             Baptist, Tallahassee, FL" refuses to shrink and takes the page
+             sideways with it — 459px of content in a 320px viewport at 200%
+             text, which is the reflow criterion failing rather than a cosmetic
+             nicety. It has to be on the item AND the button for the truncation
+             inside to have anything to truncate against.
+          */
+          <li key={value} className="min-w-0 max-w-full">
+            <button
+              type="button"
+              onClick={() => onChoose(field, value)}
+              aria-label={`Use ${spoken} ${value}`}
+              className={`inline-flex min-h-11 min-w-0 max-w-full items-center rounded-pill border border-line-strong bg-surface px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-raised ${FOCUS}`}
+            >
+              {/* Wraps rather than truncates. An ellipsis is lost content,
+                  which is the 1.4.4 criterion failing at 200% text — a church
+                  called "First Baptist, Tallahassee, FL" needs 336px in a
+                  124px box and must become two lines, not three dots. */}
+              <span className="break-words text-left">{value}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const CONTROL_CLASS =
   'mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
 
@@ -376,6 +450,17 @@ export default function EntryEditor({
    */
   const [missingId, setMissingId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  /**
+   * Details this reader has saved before, for the fields inside Details.
+   *
+   * Empty until the panel is actually opened. That is the whole performance
+   * story of this feature: fast capture opens the editor straight into the
+   * notes box, and reading the journal to work out who preached last week has
+   * no business happening on that path. See the effect below.
+   */
+  const [saved, setSaved] = useState<RecentDetails>(NO_DETAILS);
+  /** Read once per editor, and only after somebody asks for Details. */
+  const detailsRead = useRef(false);
   const [saving, setSaving] = useState(false);
   const { showNotice } = useNotice();
   const { focused, enterFocus, exitFocus } = useFocusMode();
@@ -745,6 +830,40 @@ export default function EntryEditor({
     };
   }, [ready, storage, entryId, anchorParam, kindParam, draftParam]);
 
+  /**
+   * Read the journal for previously saved details — but only once Details is open.
+   *
+   * Keyed on `detailsOpen` rather than run on mount, and guarded by a ref so
+   * reopening the panel does not read again. Two things follow, and both are
+   * deliberate:
+   *
+   * Fast capture never pays for it. The route that exists to get somebody
+   * writing during a sermon reaches a focused notes box without this having
+   * been considered, let alone awaited.
+   *
+   * And what it reads is the SAVED journal. `listEntries` sees entries;
+   * unfinished recovery drafts live in their own collection and are not
+   * consulted here, which is why something half-typed in another editor can
+   * never be offered back as though it had been decided on.
+   */
+  useEffect(() => {
+    if (!ready || !detailsOpen || detailsRead.current) return;
+    detailsRead.current = true;
+    let cancelled = false;
+    void storage
+      .listEntries()
+      .then((entries) => {
+        if (!cancelled) setSaved(recentDetails(entries));
+      })
+      .catch(() => {
+        // Nothing to offer is a fine outcome: the fields still work, and the
+        // reader types as they did before.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, detailsOpen, storage]);
+
   // Fast capture: the cursor belongs in the notes box the moment the form opens.
   //
   // The shell moves focus to the page heading after every navigation and its
@@ -915,6 +1034,16 @@ export default function EntryEditor({
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((current) => (current ? { ...current, [key]: value } : current));
+
+  /**
+   * Put a previously saved detail into its field.
+   *
+   * Exactly `update`, and deliberately nothing more. It goes through the same
+   * form state every keystroke goes through, so the crash-safe draft, the
+   * dirty check, Save, search and the archive all see a value the reader
+   * chose — indistinguishable from one they typed, because that is what it is.
+   */
+  const chooseDetail = (field: DetailField, value: string) => update(field, value);
 
   const updateLink = (index: number, patch: Partial<LinkRow>) =>
     setForm((current) => {
@@ -1735,16 +1864,40 @@ export default function EntryEditor({
                   hint="A church, or a back porch."
                   value={form.place}
                   onChange={(event) => update('place', event.target.value)}
+                  below={
+                    <RecentDetailChips
+                      field="place"
+                      spoken="place"
+                      values={saved.place}
+                      onChoose={chooseDetail}
+                    />
+                  }
                 />
                 <Field
                   label="Speaker"
                   value={form.speaker}
                   onChange={(event) => update('speaker', event.target.value)}
+                  below={
+                    <RecentDetailChips
+                      field="speaker"
+                      spoken="speaker"
+                      values={saved.speaker}
+                      onChoose={chooseDetail}
+                    />
+                  }
                 />
                 <Field
                   label="Series"
                   value={form.sermonSeries}
                   onChange={(event) => update('sermonSeries', event.target.value)}
+                  below={
+                    <RecentDetailChips
+                      field="sermonSeries"
+                      spoken="series"
+                      values={saved.sermonSeries}
+                      onChoose={chooseDetail}
+                    />
+                  }
                 />
                 <Field
                   className="sm:col-span-2"

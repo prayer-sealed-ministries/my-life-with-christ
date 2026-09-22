@@ -81,6 +81,7 @@ export function FieldShell({
   htmlFor,
   hintId,
   children,
+  below,
   className = '',
 }: {
   label: string;
@@ -88,6 +89,14 @@ export function FieldShell({
   htmlFor: string;
   hintId?: string;
   children: ReactNode;
+  /**
+   * Anything that belongs to this field but is not the control itself.
+   *
+   * Rendered inside the control's own cell rather than after the shell, so the
+   * three-row subgrid below stays three rows — a fourth would break the
+   * alignment every field in the row depends on.
+   */
+  below?: ReactNode;
   className?: string;
 }) {
   return (
@@ -115,7 +124,10 @@ export function FieldShell({
       ) : (
         <div aria-hidden="true" />
       )}
-      <div>{children}</div>
+      <div>
+        {children}
+        {below}
+      </div>
     </div>
   );
 }
@@ -140,14 +152,22 @@ export function FieldRow({ children, className = '' }: { children: ReactNode; cl
 export function Field({
   label,
   hint,
+  below,
   className = '',
   ...rest
-}: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; hint?: string; below?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
   const hintId = `${id}-hint`;
 
   return (
-    <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
+    <FieldShell
+      label={label}
+      hint={hint}
+      htmlFor={id}
+      hintId={hintId}
+      below={below}
+      className={className}
+    >
       <input id={id} aria-describedby={hint ? hintId : undefined} className={`${CONTROL} ${FOCUS}`} {...rest} />
     </FieldShell>
   );
