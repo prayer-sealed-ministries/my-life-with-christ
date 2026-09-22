@@ -1104,14 +1104,17 @@ export default function EntryEditor({
    */
   async function handleDiscardDraft() {
     setConfirmingDiscard(false);
-    const id = draftId.current;
-    getAutosaver().retire();
-    autosaver.current = null;
-    draftId.current = null;
-    draftCreatedAt.current = null;
-    setHasDraft(false);
-    setDraftRestored(false);
-    if (id) await storage.deleteDraft(id).catch(() => {});
+    /*
+     * The same retirement every other path uses, rather than a second one.
+     *
+     * This used to fence the writer and delete in the next breath, which
+     * leaves a write already awaiting storage free to land afterwards and put
+     * the discarded draft back — the reader having been told, on screen, that
+     * it was thrown away. `retireDraft` waits for that write. Two
+     * implementations of one ordering is how the weaker of them survives:
+     * there is now only the one.
+     */
+    await retireDraft();
 
     if (entryId) {
       // Back to the entry as the journal has it. The saved copy was never

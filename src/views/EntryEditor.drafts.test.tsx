@@ -783,3 +783,173 @@ function mutate(value: unknown): unknown {
   }
   return null;
 }
+
+/**
+ * Throwing unfinished work away on purpose.
+ *
+ * Discarding is the one place in the editor that destroys writing at the
+ * reader's request, so what it promises has to be exactly true: after they
+ * confirm it, the draft is gone and stays gone. It used to fence the writer
+ * and delete in the next breath, which left a write already awaiting storage
+ * free to land afterwards and put the record straight back — with the screen
+ * saying it had been thrown away.
+ *
+ * That ordering cannot be reached by clicking quickly, so the last case here
+ * does not try: it holds `putDraft` open and decides the interleaving.
+ */
+describe('discarding a draft', () => {
+  const pastTheWindow = () => new Promise((resolve) => setTimeout(resolve, DRAFT_DEBOUNCE_MS * 4));
+
+  const discard = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes, discard it' }));
+  };
+
+  it('A — removes the draft', async () => {
+    mount(db);
+    await notes();
+    type('Notes', 'Started and thought better of.');
+    await settle(db);
+
+    await discard();
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0));
+  });
+
+  it('B — keeps it when the reader changes their mind at the confirmation', async () => {
+    mount(db);
+    await notes();
+    type('Notes', 'Worth keeping after all.');
+    await settle(db);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep writing' }));
+    await pastTheWindow();
+
+    const [draft] = await db.listDrafts();
+    expect(draft?.form.notes, 'backing out of the confirmation destroyed the work').toBe(
+      'Worth keeping after all.',
+    );
+  });
+
+  it('C — cannot be undone by a write that was already past the fence', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const writeStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    // Only the SECOND write is held. The first has to land, or there is no
+    // draft on screen to offer discarding and the case tests nothing.
+    let writes = 0;
+    let holdNext = false;
+
+    const gated = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'putDraft') {
+          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+            writes += 1;
+            if (holdNext) {
+              holdNext = false;
+              started();
+              await held;
+            }
+            return target.putDraft(draft);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(gated);
+    await notes();
+    type('Notes', 'A first sentence.');
+    await settle(db);
+    expect(writes, 'the first snapshot never reached storage').toBeGreaterThan(0);
+
+    // A second sentence, whose write is caught mid-flight.
+    holdNext = true;
+    type('Notes', 'A first sentence. And a second.');
+    await writeStarted;
+
+    // Discarded while that write hangs, then it is let go.
+    await discard();
+    await Promise.resolve();
+    release();
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0), { timeout: 5_000 });
+    await pastTheWindow();
+    expect(
+      await db.listDrafts(),
+      'the held write landed after the delete and brought the draft back',
+    ).toHaveLength(0);
+  });
+
+  it('D — stays gone once the settle window has passed', async () => {
+    mount(db);
+    await notes();
+    type('Notes', 'Started and thought better of.');
+    await settle(db);
+
+    await discard();
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0));
+    await pastTheWindow();
+
+    expect(await db.listDrafts(), 'a queued snapshot recreated it afterwards').toHaveLength(0);
+  });
+
+  it('E — is still gone when the editor is opened again over the same store', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(db, { entryId: entry.id });
+    await notes();
+    type('Notes', 'The original notes. An edit nobody kept.');
+    await settle(db);
+
+    await discard();
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(0));
+    cleanup();
+
+    const reopened = await open(storeName);
+    mount(reopened, { entryId: entry.id });
+    await notes();
+
+    // The saved copy, not the discarded edit.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+        'The original notes.',
+      ),
+    );
+    await pastTheWindow();
+    expect(await reopened.listDrafts(), 'the discarded draft came back on reopen').toHaveLength(0);
+  });
+
+  it('F — leaves somebody else’s unfinished work alone', async () => {
+    // One draft belonging to a saved entry, and one belonging to nothing.
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(db, { entryId: entry.id });
+    await notes();
+    type('Notes', 'The original notes. An edit nobody kept.');
+    await settle(db);
+    cleanup();
+
+    window.location.hash = '#/entry/new';
+    mount(db);
+    await notes();
+    type('Notes', 'A different thing entirely.');
+    await settle(db, 2);
+
+    await discard();
+
+    await waitFor(async () => expect(await db.listDrafts()).toHaveLength(1));
+    const [survivor] = await db.listDrafts();
+    expect(survivor.entryId, 'the wrong draft was thrown away').toBe(entry.id);
+    expect(survivor.form.notes).toBe('The original notes. An edit nobody kept.');
+  });
+});
