@@ -13,6 +13,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { dismissWelcome } from './seed';
+import { SAVE_CONFIRMATION } from './save';
 
 /** The one destination. Written once here; the app reads it from its own table. */
 const CAPTURE = '#/entry/new?kind=sermon';
@@ -183,9 +184,35 @@ test('E — explicit Save still works from the fast route', async ({ page }) => 
   await page.keyboard.type('Saved properly.');
 
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Saved')).toBeVisible();
-  // Saving a new entry moves to its own address.
+
+  // Saving a new entry moves to its own address, and the editor remounts
+  // there with the saved words in it.
   await expect(page).toHaveURL(/#\/entry\/(?!new)/);
+
+  /*
+   * The confirmation, and only the confirmation.
+   *
+   * This asserted `getByText('Saved')`, which is a case-insensitive SUBSTRING
+   * match — so once the editor had remounted it also matched the Notes box,
+   * whose value is the sentence typed above. Two elements, strict-mode
+   * ambiguity, and a red run that had nothing to do with saving.
+   *
+   * Asserted AFTER the route change on purpose. Before it the Notes box has
+   * no text content to match, so the ambiguity does not exist yet and the
+   * loose locator looks fine — which is exactly how this survived to fail
+   * later, in a suite, against a machine busy enough to reorder the two.
+   *
+   * The count comes before the visibility: `toBeVisible` on an ambiguous
+   * locator reports the ambiguity rather than the absence, which is a
+   * confusing way to learn a confirmation never appeared.
+   */
+  const confirmation = page.getByText(SAVE_CONFIRMATION);
+  await expect(confirmation).toHaveCount(1);
+  await expect(confirmation).toBeVisible();
+  // The sentinel underneath all of that: the reader's own words really do
+  // carry the confirmation's word, and are really on the page by now. Change
+  // the typed sentence and this case stops standing where the ambiguity was.
+  await expect(notes(page)).toHaveValue(/Saved/);
 
   // And the draft retires: nothing unfinished is left behind.
   await page.goto('/#/');

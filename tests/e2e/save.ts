@@ -22,12 +22,19 @@ import { expect, type Page } from '@playwright/test';
 /**
  * The confirmation the reader actually gets.
  *
- * Anchored on purpose. `getByText('Saved')` is a case-insensitive SUBSTRING
- * match, so it is also satisfied by "Your entry could not be saved: …" — the
- * loose form passes on precisely the failure it is there to rule out. The
- * leading `\W*` covers the tick the pill renders before the word.
+ * Anchored on purpose, and exported so there is one definition of it. The
+ * loose `getByText('Saved')` is a case-insensitive SUBSTRING match, which has
+ * now been satisfied by two different things that are not a confirmation:
+ * "Your entry could not be saved: …", the very failure it exists to rule out,
+ * and — in `fast-capture.spec.ts` — the reader's own typed sentence "Saved
+ * properly.", which matched the Notes box alongside the pill and failed the
+ * run on strict-mode ambiguity.
+ *
+ * The pill has no role of its own to select by; its live region is an
+ * `aria-live` div, which carries no implicit ARIA role. So the anchor is the
+ * text itself. The leading `\W*` covers the tick rendered before the word.
  */
-const CONFIRMATION = /^\W*Saved$/;
+export const SAVE_CONFIRMATION = /^\W*Saved$/;
 
 /**
  * Let the frame the app queued actually run.
@@ -61,7 +68,7 @@ export async function saveExistingEntry(
   expectStored: string,
 ): Promise<void> {
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText(CONFIRMATION)).toBeVisible();
+  await expect(page.getByText(SAVE_CONFIRMATION)).toBeVisible();
 
   await expect
     .poll(async () => storedEntryText(page, entryId), {
