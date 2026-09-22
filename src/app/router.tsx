@@ -18,6 +18,7 @@ import {
 } from 'react';
 
 import { ENTRY_KINDS, isEntryKind } from '../lib/entry-kinds';
+import { nextFrame, resolveDeferredNavigation } from './deferred-navigation';
 import type { EntryKind } from '../types';
 
 export type Route =
@@ -217,6 +218,17 @@ export function href(route: Route): string {
 interface RouterValue {
   route: Route;
   navigate: (route: Route, options?: { replace?: boolean }) => void;
+  /**
+   * Navigate on the next frame, unless the app has moved on by then.
+   *
+   * For when a view must stay on screen a moment longer than the navigation
+   * that leaves it — an announcement that has to be read before the thing
+   * announcing it is replaced. The router honours it only if the address is
+   * still the one the navigation was scheduled from, so a newer navigation
+   * cannot be undone by an older one arriving late. See
+   * src/app/deferred-navigation.ts for what that cost before it was checked.
+   */
+  navigateNextFrame: (route: Route, options?: { replace?: boolean }) => void;
 }
 
 const RouterContext = createContext<RouterValue | null>(null);
@@ -252,7 +264,36 @@ export function RouterProvider({ children }: { children: ReactNode }) {
     setHash(window.location.hash);
   }, []);
 
-  const value = useMemo(() => ({ route: parseHash(hash), navigate }), [hash, navigate]);
+  /*
+   * Scheduled against the address, not against `hash` above.
+   *
+   * `hash` is this provider's render state, and during the frame between a
+   * navigation and the render that follows it the two disagree — which is
+   * exactly the frame this guard exists for. `window.location` is the thing
+   * every navigation writes synchronously, so it is the only reading that is
+   * correct at both ends of the wait.
+   */
+  const navigateNextFrame = useCallback(
+    (route: Route, options?: { replace?: boolean }) => {
+      const scheduledFrom = window.location.hash;
+      nextFrame(() => {
+        const outcome = resolveDeferredNavigation({
+          scheduledFrom,
+          current: window.location.hash,
+        });
+        // Superseded: something navigated while this was waiting for its
+        // frame, and dragging the reader back would undo a move they made.
+        if (outcome !== 'navigate') return;
+        navigate(route, options);
+      });
+    },
+    [navigate],
+  );
+
+  const value = useMemo(
+    () => ({ route: parseHash(hash), navigate, navigateNextFrame }),
+    [hash, navigate, navigateNextFrame],
+  );
 
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }

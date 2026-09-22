@@ -27,6 +27,7 @@ import {
 import { useFocusMode } from '../app/focus-context';
 import { registerOverlay } from '../app/overlay';
 import { Link, useRouter } from '../app/router';
+import { nextFrame } from '../app/deferred-navigation';
 import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
 import { CollapseIcon, ExpandIcon } from '../components/icons';
@@ -264,16 +265,6 @@ function anchorLabel(anchor: EntryAnchor): string {
   return title === reference ? reference : `${reference} — ${title}`;
 }
 
-/** rAF where it exists, a timer where it does not. Returns a canceller. */
-function nextFrame(callback: () => void): () => void {
-  if (typeof requestAnimationFrame === 'function') {
-    const handle = requestAnimationFrame(callback);
-    return () => cancelAnimationFrame(handle);
-  }
-  const handle = setTimeout(callback, 16);
-  return () => clearTimeout(handle);
-}
-
 const CONTROL_CLASS =
   'mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
 
@@ -319,7 +310,7 @@ export default function EntryEditor({
 }) {
   const { storage, ready, touch, error: storageError } = useStorage();
   const unsavedWork = useUnsavedWorkGuard();
-  const { navigate } = useRouter();
+  const { navigate, navigateNextFrame } = useRouter();
 
   const [form, setForm] = useState<FormState | null>(null);
 
@@ -1087,7 +1078,13 @@ export default function EntryEditor({
       showNotice('Saved');
       // The live region has to sit in the DOM for a beat before this view
       // unmounts, or the announcement is never picked up.
-      nextFrame(() => navigate({ name: 'entry', id: saved.id }));
+      //
+      // Deferred through the router rather than by a bare frame, so it stands
+      // down if the reader has gone somewhere else in the meantime. Saving an
+      // entry that already exists navigates to the address already showing,
+      // which makes this frame invisible — and an invisible frame that fires
+      // late took the reader back off the page they had just opened.
+      navigateNextFrame({ name: 'entry', id: saved.id });
     } catch (cause) {
       setSaving(false);
       setSaveError(
@@ -1106,6 +1103,7 @@ export default function EntryEditor({
    * the deliberate act, and it is confirmed because it destroys writing.
    */
   async function handleDiscardDraft() {
+    setConfirmingDiscard(false);
     const id = draftId.current;
     getAutosaver().retire();
     autosaver.current = null;
@@ -1113,7 +1111,6 @@ export default function EntryEditor({
     draftCreatedAt.current = null;
     setHasDraft(false);
     setDraftRestored(false);
-    setConfirmingDiscard(false);
     if (id) await storage.deleteDraft(id).catch(() => {});
 
     if (entryId) {
