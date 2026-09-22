@@ -12,7 +12,7 @@
 # commit reaches history at all.
 #
 # What it checks:
-#   1. The workflow policy tests — that pages.yml still pins refs-only, verifies
+#   1. The workflow policy tests — that pages.yml still pins public, verifies
 #      before uploading, and cannot deploy without a passing build.
 #   2. The bundle gate — that a refs-only build carries none of the excluded
 #      compilation, and that the probe set has not eroded.

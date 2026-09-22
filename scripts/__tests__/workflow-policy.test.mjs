@@ -47,7 +47,7 @@ describe('the workflows were actually read', () => {
   });
 });
 
-describe('the Pages workflow can only ever publish a refs-only build', () => {
+describe('the Pages workflow can only ever publish the public build', () => {
   it('has exactly the two jobs it is supposed to have', () => {
     expect(Object.keys(pages.jobs).sort()).toEqual(['build', 'deploy']);
   });
@@ -90,7 +90,36 @@ describe('the Pages workflow can only ever publish a refs-only build', () => {
     }
   });
 
-  it('runs the verifier, in refs-only mode', () => {
+  /*
+   * A guard's description is part of the guard.
+   *
+   * Both of these said `refs-only` for months after the deployed profile
+   * became `public` — the assertions were right the whole time and the prose
+   * around them taught the opposite. Nobody reads a passing test; they read
+   * the sentence above it and the hook that runs it.
+   *
+   * Only the claims ABOUT what pages.yml pins are checked. Everywhere else
+   * `refs-only` is named it is describing something that really is refs-only
+   * — the hook's own bundle gate, and CI's second profile — and those must
+   * keep saying so.
+   */
+  it('says in prose what it pins in fact', () => {
+    const hook = readFileSync(resolve(process.cwd(), '.githooks/pre-push'), 'utf8');
+    const claim = hook.split('\n').find((line) => /pages\.yml still pins/.test(line));
+    expect(claim, 'the pre-push hook no longer describes what the policy tests check').toBeDefined();
+    expect(claim, 'the hook names a profile the workflow does not pin').toContain(
+      PUBLISHED_PROFILE,
+    );
+
+    const self = readFileSync(new URL(import.meta.url), 'utf8');
+    const title = self.split('\n').find((line) => /^describe\('the Pages workflow can only/.test(line));
+    expect(title, 'this suite no longer says what it is about').toBeDefined();
+    expect(title, 'this suite is titled for a profile it does not assert').toContain(
+      PUBLISHED_PROFILE,
+    );
+  });
+
+  it('runs the verifier against the profile it built', () => {
     const verify = stepsOf(pages, 'build').find((step) => /verify:bundle|verify-bundle/.test(stepText(step)));
     expect(verify, 'the Pages workflow does not run the bundle verifier').toBeDefined();
     // The verifier must be told the same profile the artefact was built with,
