@@ -186,6 +186,51 @@ describe('Search does not wait for Scripture data to show journal results', () =
   });
 
   /**
+   * A link must never point somewhere other than where it says.
+   *
+   * "Read it in the King James Version" goes to the span holding the verse.
+   * Working that out IS the divisions, and without them `passageRouteFor`
+   * falls back to the whole book — correct for a verse that genuinely has no
+   * segment, and a silent lie while one is still on its way. So the row does
+   * not appear until it can be right.
+   *
+   * Found by CI, not by a local run: locally the chunk always won the race.
+   * That is the whole argument for holding the loader instead of hoping.
+   */
+  it('does not offer a passage link while the divisions are still coming', async () => {
+    heldLoader();
+    const db = freshDb();
+    await db.open();
+
+    show(<SearchView query="John 15:5" />, db, '#/search?q=John%2015%3A5');
+    await screen.findByRole('heading', { level: 1 });
+
+    // The reference parsed — that needs no divisions — but the door to it is
+    // not opened until the destination is known.
+    await waitFor(() => {
+      expect(screen.queryByText(/Read it in the King James Version/)).toBeNull();
+    });
+  });
+
+  /**
+   * And the same row DOES appear, pointing at a passage, once they arrive.
+   *
+   * Without this the test above would pass against a search view that had
+   * simply lost the feature.
+   */
+  it('offers it, pointing at a passage, once they arrive', async () => {
+    __setSectionsLoader();
+    const db = freshDb();
+    await db.open();
+
+    show(<SearchView query="John 15:5" />, db, '#/search?q=John%2015%3A5');
+
+    const link = await screen.findByText(/Read it in the King James Version/);
+    const href = link.closest('a')?.getAttribute('href');
+    expect(href).toMatch(/^#\/passage\/john\//);
+  });
+
+  /**
    * And the thing it must never do while waiting: claim there is nothing.
    *
    * A false "nothing found" is the failure a reader acts on — they stop

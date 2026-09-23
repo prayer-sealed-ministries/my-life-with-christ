@@ -443,9 +443,9 @@ function ClearFilters({ onClear, className = '' }: { onClear: () => void; classN
  */
 function passageRouteFor(
   ref: { book: string; chapterStart: number; verseStart: number },
-  sections: Sections | null,
+  sections: Sections,
 ) {
-  const segment = sections?.segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+  const segment = sections.segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
   return segment
     ? ({ name: 'passage', bookId: ref.book, segmentId: segment.id } as const)
     : ({ name: 'book', bookId: ref.book } as const);
@@ -764,7 +764,17 @@ export default function SearchView({
         </div>
       ) : null}
 
-      {showResults && catalogue.references.length > 0 ? (
+      {/*
+        Not rendered until the divisions are here, because the destination is
+        the divisions: `passageRouteFor` answers "the span holding this verse"
+        and, without them, would fall back to the whole book.
+
+        That fallback is correct when a verse genuinely has no segment. It is a
+        silent lie while one is still loading — the reader taps "Read it in the
+        King James Version" and lands on the book. CI caught it; a local run did
+        not, because there the chunk always arrived first.
+      */}
+      {showResults && scriptureAnswered && sections && catalogue.references.length > 0 ? (
         <section className="mt-8">
           <h2 className={SECTION_HEADING}>Go to a passage</h2>
           <ul className={RESULT_LIST}>
