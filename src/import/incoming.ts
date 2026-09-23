@@ -22,7 +22,7 @@ import {
   MAX_SERMON_NOTES_BYTES,
   sermonNotesFormat,
   type SermonNotesFormat,
-} from './sermon-notes';
+} from './sermon-notes-format';
 
 /**
  * What a platform hands over, and the whole of it.

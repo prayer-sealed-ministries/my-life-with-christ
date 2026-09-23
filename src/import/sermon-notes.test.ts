@@ -286,13 +286,19 @@ describe('PDF', () => {
     expect(proposal.material.date).toBeUndefined();
   }, 20_000);
 
-  it('refuses a scanned PDF, and says why', async () => {
+  it('refuses a scanned PDF, and says both what it is and what we cannot do', async () => {
     const message = await refuses(
       latin1(SCANNED_PDF_NOTES),
       'scan.pdf',
-      /doesn't contain readable text/i,
+      /scanned pages rather than selectable text/i,
     );
-    expect(message).toMatch(/scanned-document import isn't supported yet/i);
+    // Two facts, in the order a reader needs them. Saying only the second
+    // leaves somebody holding a photocopy to work out why a PDF full of words
+    // is "not readable".
+    expect(message).toMatch(/text recognition is not available yet/i);
+    // "not available yet", not "not supported": it was measured and deferred
+    // on package size, not decided against.
+    expect(message).not.toMatch(/not supported/i);
   }, 20_000);
 
   it('refuses a file that is not a PDF', async () => {

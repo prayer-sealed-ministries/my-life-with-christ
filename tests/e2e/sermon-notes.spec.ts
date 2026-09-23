@@ -261,8 +261,9 @@ test.describe('E — a file that cannot be used', () => {
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible({ timeout: 30_000 });
-    await expect(alert).toContainText("doesn't contain readable text");
-    await expect(alert).toContainText("Scanned-document import isn't supported yet");
+    // What it is, then what we cannot do about it — in that order.
+    await expect(alert).toContainText('scanned pages rather than selectable text');
+    await expect(alert).toContainText('text recognition is not available yet');
     expect(await entryCount(page)).toBe(0);
   });
 });

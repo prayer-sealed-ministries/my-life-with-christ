@@ -20,6 +20,28 @@
 import { sha256 } from '../export/zip';
 import type { SourceMaterial } from '../types';
 import { ImportError, MAX_TEXT_CHARS, describeBytes, safeFilename } from './limits';
+/*
+ * Re-exported, not redefined.
+ *
+ * These four facts moved to a module of their own because the share handler
+ * needs them at startup and importing them from here dragged the whole parser
+ * — and, through it, the PDF engine — onto the path between tapping the widget
+ * and typing a sentence. Every caller that imported them from this file goes on
+ * doing so. See sermon-notes-format.ts.
+ */
+import {
+  MAX_SERMON_NOTES_BYTES,
+  SERMON_NOTES_ACCEPT,
+  sermonNotesFormat,
+  type SermonNotesFormat,
+} from './sermon-notes-format';
+
+export {
+  MAX_SERMON_NOTES_BYTES,
+  SERMON_NOTES_ACCEPT,
+  sermonNotesFormat,
+  type SermonNotesFormat,
+};
 import { hasUsableText, parsePdf } from './pdf';
 
 /** The identifier a structured file must carry to be one of these. */
@@ -30,22 +52,6 @@ export const SERMON_NOTES_VERSION = 1;
 
 /** Bumped whenever extraction changes in a way that alters `body`. */
 export const SERMON_NOTES_PARSER_VERSION = 1;
-
-/**
- * The file, before anything is read.
- *
- * Measured rather than guessed. A church handout is a page or two of text: the
- * structured JSON for one is a couple of kilobytes, a Markdown or text version
- * the same, and a text-based sermon PDF from a word processor runs from a few
- * kilobytes to a few hundred once fonts are embedded. 8MB is many times the
- * largest thing anyone should be handed on a Sunday, which leaves room for a
- * badly-made PDF full of images without leaving room for a file that was never
- * a handout.
- *
- * Smaller than the document importer's 25MB on purpose. That one takes a
- * lifetime of somebody's own writing in one file; this takes one sermon.
- */
-export const MAX_SERMON_NOTES_BYTES = 8 * 1024 * 1024;
 
 /**
  * The provided text, after parsing.
@@ -73,31 +79,6 @@ export interface SermonNotesProposal {
   /** Characters of provided text, so a preview can say how much there is. */
   characters: number;
 }
-
-export type SermonNotesFormat = SourceMaterial['format'];
-
-/** Which parser a filename asks for, or nothing if this is not a file we read. */
-export function sermonNotesFormat(filename: string): SermonNotesFormat | null {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.json')) return 'sermon-notes-json';
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
-  if (lower.endsWith('.txt')) return 'txt';
-  if (lower.endsWith('.pdf')) return 'pdf';
-  return null;
-}
-
-/** Extensions and media types to suggest to a picker. Never a guarantee. */
-export const SERMON_NOTES_ACCEPT = [
-  '.txt',
-  '.md',
-  '.markdown',
-  '.json',
-  '.pdf',
-  'text/plain',
-  'text/markdown',
-  'application/json',
-  'application/pdf',
-];
 
 // ---------------------------------------------------------------------------
 // Text
@@ -257,8 +238,22 @@ function guardLength(body: string): void {
 // The whole thing
 // ---------------------------------------------------------------------------
 
+/**
+ * What a scan is told, and why it is worded this way.
+ *
+ * Two facts, in the order a reader needs them: what this file appears to be,
+ * and what this app can do about it. The previous wording said only the
+ * second, which left somebody holding a photocopy to work out for themselves
+ * why a PDF full of words was "not readable".
+ *
+ * "not available yet" rather than "not supported": recognising text on the
+ * device is a real possibility that was measured and deferred on package size,
+ * not a thing this product has decided against. See the OCR investigation in
+ * the lane report.
+ */
 const NO_READABLE_TEXT =
-  "This PDF doesn't contain readable text. Scanned-document import isn't supported yet.";
+  'This PDF appears to contain scanned pages rather than selectable text. ' +
+  'Scanned-document text recognition is not available yet.';
 
 /**
  * Read a chosen file into a proposal.

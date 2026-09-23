@@ -53,6 +53,17 @@ export interface PdfExtraction {
   pages: PdfPage[];
   /** Pages that yielded nothing readable. */
   emptyPages: number;
+  /**
+   * WHICH pages yielded nothing readable, 1-based and in order.
+   *
+   * The count alone answers "is this a scan?"; the numbers answer "which of
+   * these pages is a scan?", which is a different question and the one a mixed
+   * document asks. A handout whose page 2 was photocopied into the middle of a
+   * typed outline has embedded text on pages 1 and 3 and an image on page 2;
+   * recognising the whole document would throw away two pages of exact text in
+   * order to guess at them.
+   */
+  emptyPageNumbers: number[];
   truncated: boolean;
 }
 
@@ -156,8 +167,8 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
   const total = document.numPages;
   const limit = Math.min(total, MAX_PDF_PAGES);
   const pages: PdfPage[] = [];
+  const emptyPageNumbers: number[] = [];
   let characters = 0;
-  let emptyPages = 0;
 
   try {
     for (let number = 1; number <= limit; number += 1) {
@@ -166,7 +177,7 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
       const text = itemsToText(content.items as TextItem[]);
       page.cleanup();
 
-      if (!text) emptyPages += 1;
+      if (!text) emptyPageNumbers.push(number);
       else {
         characters += text.length;
         pages.push({ page: number, text });
@@ -180,7 +191,12 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
     await loadingTask.destroy().catch(() => undefined);
   }
 
-  return { pages, emptyPages, truncated: total > limit };
+  return {
+    pages,
+    emptyPages: emptyPageNumbers.length,
+    emptyPageNumbers,
+    truncated: total > limit,
+  };
 }
 
 /**
