@@ -10,6 +10,7 @@ import { Suspense, lazy } from 'react';
 
 import { Shell } from './app/Shell';
 import { Link, useRouter } from './app/router';
+import { editorSessionKey } from './app/editor-session';
 import { Spinner } from './components/ui';
 import { BOOK_NAMES } from './lib/canon';
 import { topicsById } from './app/data';
@@ -122,7 +123,10 @@ function CurrentView() {
     // The editor holds transient state — a primed delete confirmation, a save
     // error — that must never survive a move to a different entry.
     case 'entry':
-      return <EntryEditor key={`entry:${route.id}`} entryId={route.id} />;
+      // Keyed by `editorSessionKey`, which focus mode reads too: one answer to
+      // "which editor is this", so a remount and the end of focus mode cannot
+      // disagree about what counts as a different one.
+      return <EntryEditor key={editorSessionKey(route)!} entryId={route.id} />;
     case 'newEntry':
       // The kind is part of the key as well as a prop. Without it, moving from
       // `#/entry/new` to `#/entry/new?kind=prayer` would reuse the instance
@@ -130,7 +134,7 @@ function CurrentView() {
       // wrong thing while the URL said otherwise.
       return (
         <EntryEditor
-          key={`new:${route.anchor ?? ''}:${route.kind ?? ''}:${route.draft ?? ''}`}
+          key={editorSessionKey(route)!}
           draftParam={route.draft}
           anchorParam={route.anchor}
           kindParam={route.kind}
