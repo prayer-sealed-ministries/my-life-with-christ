@@ -22,6 +22,18 @@ import type { Platform, SaveResult } from '../platform/ports';
 import { DexieStorageProvider } from '../storage/db';
 import type { Entry } from '../types';
 import DataView from './DataView';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * DataView genuinely needs them — the archive carries division ids and an
+ * import resolves them — so it suspends until they are here. Awaiting the real
+ * loader once, at module scope, is what lets these tests render it directly,
+ * and it keeps the data they assert against the data the product serves.
+ */
+await loadSections();
+
 
 let dbCounter = 0;
 let db: DexieStorageProvider;

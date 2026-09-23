@@ -13,7 +13,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { hasOutlineTitles, outlineBooks, segmentContaining, segmentsForBook } from '../app/data';
+import { hasOutlineTitles } from '../app/data';
+import { useSectionsOptional, type Sections } from '../app/sections';
 import { Link, useRouter, type Route } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { EmptyState, Field, LiveRegion, Spinner } from '../components/ui';
@@ -123,10 +124,10 @@ interface OutlineMatch {
  */
 const segmentIdsByBook = new Map<string, Set<string>>();
 
-function browsableSegmentIds(bookId: string): Set<string> {
+function browsableSegmentIds(bookId: string, sections: Sections): Set<string> {
   let ids = segmentIdsByBook.get(bookId);
   if (!ids) {
-    ids = new Set(segmentsForBook(bookId).map((segment) => segment.id));
+    ids = new Set(sections.segmentsForBook(bookId).map((segment) => segment.id));
     segmentIdsByBook.set(bookId, ids);
   }
   return ids;
@@ -139,11 +140,11 @@ function browsableSegmentIds(bookId: string): Set<string> {
  * wording) are searched, because a reader may remember either spelling, but only
  * the display wording is shown.
  */
-function searchOutlines(needle: string): OutlineMatch[] {
-  if (!needle || !hasOutlineTitles) return [];
+function searchOutlines(needle: string, sections: Sections | null): OutlineMatch[] {
+  if (!needle || !hasOutlineTitles || !sections) return [];
 
   const matches: OutlineMatch[] = [];
-  for (const book of outlineBooks) {
+  for (const book of sections.outlineBooks) {
     let ids: Set<string> | null = null;
 
     for (const entry of book.entries) {
@@ -151,7 +152,7 @@ function searchOutlines(needle: string): OutlineMatch[] {
       if (!haystack.includes(needle)) continue;
 
       // Resolved lazily, so a book with no match never pays for its segments.
-      if (ids === null) ids = browsableSegmentIds(book.id);
+      if (ids === null) ids = browsableSegmentIds(book.id, sections);
       const placed = ids.has(entry.id);
 
       matches.push({
@@ -440,8 +441,11 @@ function ClearFilters({ onClear, className = '' }: { onClear: () => void; classN
  * The segment holding it, when one exists — under `refs-only` that is the whole
  * chapter, under `full` it is whichever outline entry covers the verse.
  */
-function passageRouteFor(ref: { book: string; chapterStart: number; verseStart: number }) {
-  const segment = segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+function passageRouteFor(
+  ref: { book: string; chapterStart: number; verseStart: number },
+  sections: Sections | null,
+) {
+  const segment = sections?.segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
   return segment
     ? ({ name: 'passage', bookId: ref.book, segmentId: segment.id } as const)
     : ({ name: 'book', bookId: ref.book } as const);
@@ -606,7 +610,19 @@ export default function SearchView({
   const settled = !loading;
   const entries = ranked.map((hit) => hit.entry);
 
-  const outlineMatches = useMemo(() => searchOutlines(needle.toLowerCase()), [needle]);
+  /*
+   * The divisions, asked for only once something has been typed.
+   *
+   * Opening the search view costs nothing; a query is what makes them
+   * relevant, because on the public build a typed word is matched against
+   * outline titles and a typed reference has to resolve to a span. Journal
+   * results do not wait for any of it — `ranked` above is already on screen.
+   */
+  const sections = useSectionsOptional(needle.length > 0);
+  const outlineMatches = useMemo(
+    () => searchOutlines(needle.toLowerCase(), sections),
+    [needle, sections],
+  );
 
   /**
    * Everything that is not the journal: a typed reference, topics, books.
@@ -631,11 +647,17 @@ export default function SearchView({
     catalogue.references.length +
     catalogue.topics.length +
     catalogue.books.length;
-  const nothingFound = searching && settled && resultCount === 0;
+  /*
+   * "Nothing found" is a claim, and it is not available until every source has
+   * answered. Saying it while the divisions are still arriving would be a
+   * false negative on exactly the queries the divisions exist to match.
+   */
+  const scriptureAnswered = sections !== null;
+  const nothingFound = searching && settled && scriptureAnswered && resultCount === 0;
   const showResults = searching && settled && !nothingFound;
 
   const announcement =
-    searching && settled
+    searching && settled && scriptureAnswered
       ? `${resultCount} ${resultCount === 1 ? 'result' : 'results'}: ` +
         `${entries.length} in your journal, ${catalogue.topics.length} ${catalogue.topics.length === 1 ? 'topic' : 'topics'}` +
         (hasOutlineTitles
@@ -749,7 +771,7 @@ export default function SearchView({
             {catalogue.references.map((hit) => (
               <li key={hit.label} className="rounded-control border border-line">
                 <Link
-                  to={passageRouteFor(hit.ref)}
+                  to={passageRouteFor(hit.ref, sections)}
                   className="block rounded-control p-3 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   <span className="font-serif text-lg font-semibold">{hit.label}</span>
@@ -876,8 +898,14 @@ export default function SearchView({
 
       {/* No outline titles in this build means no outline section at all — an
           empty "0 results" heading would imply the search failed rather than
-          that the data was never shipped. */}
-      {showResults && hasOutlineTitles ? (
+          that the data was never shipped.
+
+          `scriptureAnswered` is the same distinction one step further in: the
+          build HAS titles, they have simply not arrived yet, and a heading
+          reading "Bible outline (0)" above "No outline passages match this"
+          would be a confident wrong answer about data nobody has looked at.
+          The section appears when it can say something true. */}
+      {showResults && hasOutlineTitles && scriptureAnswered ? (
         <section className="mt-8">
           <h2 className="border-b border-line pb-1 font-serif text-xl font-semibold">
             Bible outline ({outlineMatches.length})

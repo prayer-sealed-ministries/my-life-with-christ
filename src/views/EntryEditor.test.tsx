@@ -9,7 +9,18 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 
-import { hasOutlineTitles, segmentTitle, segmentsForBook } from '../app/data';
+import { hasOutlineTitles } from '../app/data';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * Top-level await rather than a fixture: this file's assertions are about what
+ * a reader sees, and a test that read the section data by some other route
+ * would be asserting against data the product might not be serving. The PDF
+ * lane's lesson — the test host and the product must share the implementation.
+ */
+const { segmentTitle, segmentsForBook } = await loadSections();
 import { CANON } from '../lib/canon';
 import { examinedAtLeast } from '../testing/floor';
 import { RouterProvider } from '../app/router';

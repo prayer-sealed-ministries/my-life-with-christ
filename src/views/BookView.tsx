@@ -18,16 +18,11 @@
 
 import { Fragment, useMemo } from 'react';
 
-import {
-  hasOutlines,
-  outlineBooksById,
-  segmentNote,
-  segmentTitle,
-  segmentsForBook,
-} from '../app/data';
+import { hasOutlines } from '../app/data';
+import { useSections, type Sections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
-import { EmptyState, Tag } from '../components/ui';
+import { EmptyState, Spinner, Tag } from '../components/ui';
 import { BookTopicList } from '../components/TopicChips';
 import { topicsForBook } from '../lib/topic-index';
 import { BOOK_NAMES } from '../lib/canon';
@@ -46,11 +41,14 @@ function SegmentItem({
   segment,
   bookId,
   journalCount,
+  sections,
 }: {
   segment: PassageSegment;
   bookId: string;
   journalCount: number;
+  sections: Sections;
 }) {
+  const { segmentTitle, segmentNote } = sections;
   const title = segmentTitle(segment);
   // Profile-aware wording, and null for an outline-backed passage.
   const note = segmentNote(segment);
@@ -153,11 +151,14 @@ function NotFound({ bookId }: { bookId: string }) {
 }
 
 export default function BookView({ bookId }: { bookId: string }) {
+  // Browsing a book IS the divisions, so this is one of the surfaces that
+  // legitimately waits for them.
+  const sections = useSections();
   // Explicitly optional: the id comes from the URL and may be anything.
   const name: string | undefined = BOOK_NAMES[bookId];
-  const segments = useMemo(() => segmentsForBook(bookId), [bookId]);
+  const segments = useMemo(() => sections?.segmentsForBook(bookId) ?? [], [bookId, sections]);
   // Empty under `refs-only`, where the author's prose is not in the build.
-  const intro = outlineBooksById.get(bookId)?.intro ?? '';
+  const intro = sections?.outlineBooksById.get(bookId)?.intro ?? '';
   const bookTopics = useMemo(() => topicsForBook(bookId), [bookId]);
 
   // A journal that could not be opened must never be reported as an empty one;
@@ -199,6 +200,14 @@ export default function BookView({ bookId }: { bookId: string }) {
     return counts;
   }, [entries, segments, bookId]);
 
+  /*
+   * The wait, placed after every hook so the hook order never changes.
+   *
+   * Before the not-found check, and that order matters: without the divisions
+   * a book has no segments, and "not found" would be the wrong answer to
+   * "not yet".
+   */
+  if (!sections) return <Spinner label="Loading" />;
   if (!name || segments.length === 0) return <NotFound bookId={bookId} />;
 
   const paragraphs = intro.split(/\n{2,}/).map((text) => text.trim()).filter(Boolean);
@@ -262,6 +271,7 @@ export default function BookView({ bookId }: { bookId: string }) {
       <ul className="mt-4 divide-y divide-line border-y border-line">
         {segments.map((segment) => (
           <SegmentItem
+            sections={sections}
             key={segment.id}
             segment={segment}
             bookId={bookId}

@@ -7,8 +7,6 @@ declare const __APP_VERSION__: string;
 declare const __DATA_PROFILE__: 'public' | 'refs-only';
 
 declare module 'virtual:journey-data' {
-  import type { OutlineBook } from './types';
-
   export const DATA_PROFILE: 'public' | 'refs-only';
   /**
    * True when this build carries a titled division scheme, whichever one.
@@ -24,6 +22,21 @@ declare module 'virtual:journey-data' {
    *   'none'     — no divisions; whole chapters (profile `refs-only`)
    */
   export const divisionSource: 'sections' | 'none';
+}
+
+/**
+ * The division payload, reached only by `import()`.
+ *
+ * Deliberately a module of its own rather than another export of
+ * `virtual:journey-data`: a dynamically-imported module is its own chunk by
+ * construction, which is what keeps three quarters of a megabyte of section
+ * headings off the path between tapping the widget and typing a sentence.
+ * Nothing in the application imports this statically — `src/app/sections.ts`
+ * is the only caller. See scripts/vite-plugin-data-profile.mjs.
+ */
+declare module 'virtual:journey-outlines' {
+  import type { OutlineBook } from './types';
+
   export const outlines: OutlineBook[];
   export default outlines;
 }

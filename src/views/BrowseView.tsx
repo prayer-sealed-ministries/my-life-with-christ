@@ -13,7 +13,9 @@
 
 import { useId, useMemo, useRef, useState } from 'react';
 
+import { Spinner } from '../components/ui';
 import { canonBooks } from '../app/data';
+import { useSections } from '../app/sections';
 import { Link } from '../app/router';
 import { Button, EmptyState, Field, LiveRegion } from '../components/ui';
 
@@ -34,6 +36,12 @@ function normalize(value: string): string {
 const TOTAL = canonBooks.length;
 
 export default function BrowseView() {
+  // The book list itself comes from versification and needs nothing here; the
+  // outline-entry count beside each book is a fact about the divisions, so
+  // this is where browsing starts paying for them.
+  // Named `divisions`, because `sections` in this file already means the two
+  // testament groupings the book list is rendered in.
+  const divisions = useSections();
   const [filter, setFilter] = useState('');
   const headingId = useId();
   const searchRef = useRef<HTMLDivElement>(null);
@@ -51,6 +59,11 @@ export default function BrowseView() {
     { key: 'OT', label: 'Old Testament', books: matched.filter((book) => book.testament === 'OT') },
     { key: 'NT', label: 'New Testament', books: matched.filter((book) => book.testament === 'NT') },
   ];
+
+  // After every hook, so the hook order cannot change between renders. The
+  // list of 66 books is versification and is ready immediately; what waits is
+  // the outline-entry count printed beside each one.
+  if (!divisions) return <Spinner label="Loading" />;
 
   // Filtering a list is a silent change for anyone not watching it happen, so
   // the result is announced politely rather than left to be discovered.
@@ -142,8 +155,8 @@ export default function BrowseView() {
                       <span className="sr-only">, </span>
                       <span className="text-sm text-ink-soft">
                         {countLabel(book.chapters, 'chapter', 'chapters')}
-                        {book.entryCount > 0
-                          ? `, ${countLabel(book.entryCount, 'outline entry', 'outline entries')}`
+                        {divisions.entryCountFor(book.id) > 0
+                          ? `, ${countLabel(divisions.entryCountFor(book.id), 'outline entry', 'outline entries')}`
                           : ''}
                       </span>
                     </Link>

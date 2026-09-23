@@ -11,6 +11,7 @@ import { Suspense, lazy } from 'react';
 import { Shell } from './app/Shell';
 import { Link, useRouter } from './app/router';
 import { editorSessionKey } from './app/editor-session';
+import { SectionsBoundary } from './app/SectionsBoundary';
 import { Spinner } from './components/ui';
 import { BOOK_NAMES } from './lib/canon';
 import { topicsById } from './app/data';
@@ -162,9 +163,26 @@ export default function App() {
 
   return (
     <Shell title={titleFor(route)}>
-      <Suspense fallback={<Spinner label="Loading" />}>
-        <CurrentView />
-      </Suspense>
+      {/*
+        Keyed by route NAME so that leaving a failed page clears the failure.
+        A boundary that latched would turn one bad chunk into an app that
+        stays broken until it is closed — and the nav above is still working,
+        so the reader has every reason to expect otherwise.
+
+        The name, not the whole route: `search` carries the query, so keying on
+        the route itself would remount this boundary — and blank the results,
+        and drop the caret — on every keystroke. Two passages in a row are the
+        same page as far as a failed chunk is concerned, and the retry button
+        is what covers that case.
+
+        Inside the shell, not around it: the header, the nav and the skip link
+        are how somebody gets out of here.
+      */}
+      <SectionsBoundary key={route.name}>
+        <Suspense fallback={<Spinner label="Loading" />}>
+          <CurrentView />
+        </Suspense>
+      </SectionsBoundary>
     </Shell>
   );
 }

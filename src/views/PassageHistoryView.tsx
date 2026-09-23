@@ -25,7 +25,7 @@ import {
   type HistoryYear,
 } from '../lib/passage-history';
 import { parseReferenceQuery, refLabel } from '../lib/search';
-import { segmentContaining } from '../app/data';
+import { useSectionsOptional, type Sections } from '../app/sections';
 import type { Entry, ScriptureRef } from '../types';
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2';
@@ -37,8 +37,8 @@ const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2';
  * `refs-only` it is the whole chapter. Resolved rather than constructed, for
  * the same reason the search view resolves it.
  */
-function passageRouteFor(ref: ScriptureRef) {
-  const segment = segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+function passageRouteFor(ref: ScriptureRef, sections: Sections) {
+  const segment = sections.segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
   return segment
     ? ({ name: 'passage', bookId: ref.book, segmentId: segment.id } as const)
     : ({ name: 'book', bookId: ref.book } as const);
@@ -53,8 +53,8 @@ function passageRouteFor(ref: ScriptureRef) {
  * state would invite someone to write about this passage and then not attach
  * it. Same convention as the passage view's own "Add entry".
  */
-function newEntryAnchor(ref: ScriptureRef): string | undefined {
-  return segmentContaining(ref.book, ref.chapterStart, ref.verseStart)?.id;
+function newEntryAnchor(ref: ScriptureRef, sections: Sections): string | undefined {
+  return sections.segmentContaining(ref.book, ref.chapterStart, ref.verseStart)?.id;
 }
 
 /** The whole chapter a verse or part-chapter reference sits in, if that is wider. */
@@ -153,6 +153,63 @@ function Year({ year, entries, passage }: HistoryYear & { passage: ScriptureRef 
   );
 }
 
+/**
+ * Where "read the passage itself" points.
+ *
+ * Its own component because this page is about the reader's journal and not
+ * about the divisions: the years, the entries and the excerpts all come from
+ * entry anchors and reference parsing, and none of them waits. Only the
+ * destination of this one link needs to know how this build divides John 15.
+ *
+ * It ASKS rather than SUSPENDS, and that is deliberate. A suspended child on a
+ * page whose substance is already on screen is not free: React holds the
+ * commit while a boundary anywhere in the tree is still resolving, so the
+ * effect that reads the journal and the effect that settles the URL both
+ * waited on a link. That was measured here, not reasoned about — it failed
+ * `settles the URL on one spelling of the passage`, which had nothing to do
+ * with Scripture at all.
+ */
+function ReadPassageLink({ passage, label }: { passage: ScriptureRef; label: string }) {
+  // Not named `ref`: React 19 treats that prop name as an element ref.
+  const sections = useSectionsOptional(true);
+  if (!sections) return null;
+  return (
+    <Link to={passageRouteFor(passage, sections)} className={`underline text-ink-soft ${FOCUS}`}>
+      Read {label}
+    </Link>
+  );
+}
+
+/**
+ * The two "start writing about this" invitations in the empty state.
+ *
+ * Same reasoning, and one hard requirement: `anchor` is a SEGMENT id, and an
+ * absent one opens an entry with nothing attached. So these do not render at
+ * all until they can render correctly. An invitation that quietly loses the
+ * passage would be worse than one that appears a moment later.
+ */
+function StartEntryLinks({ passage }: { passage: ScriptureRef }) {
+  const sections = useSectionsOptional(true);
+  if (!sections) return null;
+  const anchor = newEntryAnchor(passage, sections);
+  return (
+    <>
+      <Link
+        to={{ name: 'newEntry', kind: 'reading', anchor }}
+        className={`underline ${FOCUS}`}
+      >
+        Start a Bible reading
+      </Link>
+      <Link
+        to={{ name: 'newEntry', kind: 'reflection', anchor }}
+        className={`underline ${FOCUS}`}
+      >
+        Write a reflection
+      </Link>
+    </>
+  );
+}
+
 export default function PassageHistoryView({ reference }: { reference: string }) {
   const { navigate } = useRouter();
 
@@ -209,9 +266,7 @@ export default function PassageHistoryView({ reference }: { reference: string })
       <h1 className="font-serif text-2xl font-semibold sm:text-3xl">My history with {label}</h1>
 
       <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        <Link to={passageRouteFor(ref)} className={`underline text-ink-soft ${FOCUS}`}>
-          Read {label}
-        </Link>
+        <ReadPassageLink passage={ref} label={label} />
         {chapter ? (
           <Link
             to={{ name: 'passageHistory', reference: chapter }}
@@ -232,18 +287,7 @@ export default function PassageHistoryView({ reference }: { reference: string })
             <EmptyState title={`You haven’t written about ${label} yet`}>
               <p>When you do, it will appear here — in the order it happened.</p>
               <p className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
-                <Link
-                  to={{ name: 'newEntry', kind: 'reading', anchor: newEntryAnchor(ref) }}
-                  className={`underline ${FOCUS}`}
-                >
-                  Start a Bible reading
-                </Link>
-                <Link
-                  to={{ name: 'newEntry', kind: 'reflection', anchor: newEntryAnchor(ref) }}
-                  className={`underline ${FOCUS}`}
-                >
-                  Write a reflection
-                </Link>
+                <StartEntryLinks passage={ref} />
               </p>
             </EmptyState>
           </div>

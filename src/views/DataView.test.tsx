@@ -16,6 +16,18 @@ import { DexieStorageProvider } from '../storage/db';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Entry, JourneyExport } from '../types';
 import DataView from './DataView';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * DataView genuinely needs them — the archive carries division ids and an
+ * import resolves them — so it suspends until they are here. Awaiting the real
+ * loader once, at module scope, is what lets these tests render it directly,
+ * and it keeps the data they assert against the data the product serves.
+ */
+await loadSections();
+
 
 /** A journal that will not open: private browsing, or blocked site data. */
 const brokenStorage = (): StorageProvider => {

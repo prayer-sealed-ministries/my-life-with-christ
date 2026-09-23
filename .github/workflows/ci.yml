@@ -60,6 +60,13 @@ jobs:
       - name: Gate — the refs-only build is clean
         run: npm run verify:bundle -- --profile refs-only
 
+      # A different question about the same bytes: is the Scripture payload
+      # still off the path between launching the app and writing a sentence?
+      # Runs here rather than in its own job so it reads the artefact that was
+      # just gated, and so a startup regression blocks the same merge.
+      - name: Gate — Fast Capture does not wait for Scripture data (refs-only)
+        run: npm run verify:startup -- --profile refs-only
+
       - name: Build (public)
         env:
           DATA_PROFILE: public
@@ -67,6 +74,9 @@ jobs:
 
       - name: Gate — the deployed profile is clean
         run: npm run verify:bundle -- --profile public
+
+      - name: Gate — Fast Capture does not wait for Scripture data (public)
+        run: npm run verify:startup -- --profile public
 
   check:
     name: typecheck, lint, test (all profiles)

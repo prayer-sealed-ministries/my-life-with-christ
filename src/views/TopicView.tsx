@@ -15,13 +15,10 @@
 import { useMemo } from 'react';
 
 import {
-  findSegment,
-  outlineBooksById,
-  segmentContaining,
-  segmentTitle,
   topicsById,
   versification,
 } from '../app/data';
+import { useSections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { EmptyState, Spinner, Tag } from '../components/ui';
@@ -99,14 +96,19 @@ function TopicNotFound({ topicId }: { topicId: string }) {
 }
 
 export default function TopicView({ topicId }: { topicId: string }) {
+  // A topic resolves to spans of Scripture, and naming them needs the divisions.
+  const sections = useSections();
   const topic = topicsById.get(topicId);
 
   // Outline entries are the enhancement direction and only that: resolved from
   // the topic's refs, never the other way round. Empty under `refs-only`
   // whenever the outline layer is not in the build.
   const outlineEntries = useMemo(
-    () => (topic ? resolveTopicEntries(topic, outlineBooksById, versification) : []),
-    [topic],
+    () =>
+      topic && sections
+        ? resolveTopicEntries(topic, sections.outlineBooksById, versification)
+        : [],
+    [topic, sections],
   );
 
   const { data: entries, loading } = useStorageQuery<Entry[]>(
@@ -116,6 +118,10 @@ export default function TopicView({ topicId }: { topicId: string }) {
     [],
   );
 
+  // After every hook. A topic's own name and prose are ready immediately; what
+  // waits is the Scripture the topic points at, and naming those spans is what
+  // needs the divisions.
+  if (!sections) return <Spinner label="Loading" />;
   if (!topic) return <TopicNotFound topicId={topicId} />;
 
   return (
@@ -145,11 +151,11 @@ export default function TopicView({ topicId }: { topicId: string }) {
           // inside the book's verse count. It comes back undefined for a book
           // this build has no versification for, which the fallback below
           // handles rather than dropping the reference.
-          const segment = segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
+          const segment = sections.segmentContaining(ref.book, ref.chapterStart, ref.verseStart);
           const note = refNote(ref);
           // Under `refs-only` this is just the segment's reference; it is shown
           // only when it says something the ref label does not.
-          const context = segment ? segmentTitle(segment) : null;
+          const context = segment ? sections.segmentTitle(segment) : null;
 
           return (
             <li
@@ -197,8 +203,8 @@ export default function TopicView({ topicId }: { topicId: string }) {
           </p>
           <ul className="mt-4 space-y-2">
             {outlineEntries.map((entry) => {
-              const segment = findSegment(entry.book, entry.id);
-              const label = segment ? segmentTitle(segment) : entry.ref;
+              const segment = sections.findSegment(entry.book, entry.id);
+              const label = segment ? sections.segmentTitle(segment) : entry.ref;
               return (
                 <li key={entry.id}>
                   {segment ? (

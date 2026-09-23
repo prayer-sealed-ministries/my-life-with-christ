@@ -15,15 +15,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 
-import {
-  canonBooks,
-  findSegment,
-  hasOutlineTitles,
-  segmentTitle,
-  segmentsForBook,
-  topics,
-  topicsById,
-} from '../app/data';
+import { canonBooks, hasOutlineTitles, topics, topicsById } from '../app/data';
+import { loadSections, useSectionsOptional, type Sections } from '../app/sections';
 import { useFocusMode } from '../app/focus-context';
 import { registerOverlay } from '../app/overlay';
 import { Link, useRouter } from '../app/router';
@@ -53,6 +46,7 @@ import {
   findPassages,
   passageStatusText,
   toPassageMatch,
+  type PassageSearchResult,
   type PassageMatch,
 } from '../lib/passage-search';
 import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
@@ -222,7 +216,7 @@ function parseTags(text: string): string[] {
  * topic or book that no longer exists yields no anchor rather than a dangling
  * one. Neither form can collide with a segment id: ":" never appears in one.
  */
-function anchorFromParam(param: string): EntryAnchor | null {
+function anchorFromParam(param: string, sections: Sections): EntryAnchor | null {
   const topicId = param.startsWith('topic:') ? param.slice('topic:'.length) : null;
   if (topicId) return topicsById.has(topicId) ? { kind: 'topic', topicId } : null;
 
@@ -236,7 +230,7 @@ function anchorFromParam(param: string): EntryAnchor | null {
   // can answer.
   for (const book of canonBooks) {
     if (!param.startsWith(`${book.id}-`)) continue;
-    const segment = findSegment(book.id, param);
+    const segment = sections.findSegment(book.id, param);
     if (!segment) continue;
 
     // The scripture range is what persists. outlineEntryId is an enhancement and
@@ -247,6 +241,22 @@ function anchorFromParam(param: string): EntryAnchor | null {
   return null;
 }
 
+/**
+ * What the passage picker shows before the divisions are here.
+ *
+ * `searched: false` is the honest answer — nothing was looked up — and it is
+ * the same value the picker holds before the query is long enough to search,
+ * so `passageStatusText` already says nothing for it. A "Nothing matched"
+ * computed against an empty set would be a wrong answer stated confidently.
+ */
+const NO_PASSAGE_RESULTS: PassageSearchResult = {
+  query: '',
+  searched: false,
+  searchedTitles: hasOutlineTitles,
+  matches: [],
+  more: 0,
+};
+
 /** Stable identity for an anchor, for React keys and for de-duplication. */
 function anchorKey(anchor: EntryAnchor): string {
   if (anchor.kind === 'topic') return `topic:${anchor.topicId}`;
@@ -254,20 +264,27 @@ function anchorKey(anchor: EntryAnchor): string {
   return `ref:${anchor.book}:${anchor.chapterStart}:${anchor.verseStart}:${anchor.chapterEnd}:${anchor.verseEnd}`;
 }
 
-/** What an anchor is called on screen. Never depends on the outline layer. */
-function anchorLabel(anchor: EntryAnchor): string {
+/**
+ * What an anchor is called on screen.
+ *
+ * The reference is always available; the outline title that may be appended to
+ * it is not, so `sections` is nullable and an absent one simply leaves the
+ * title off. Never a placeholder and never a guess — the reference alone is
+ * the truth, and the title is the enhancement it has always been.
+ */
+function anchorLabel(anchor: EntryAnchor, sections: Sections | null): string {
   if (anchor.kind === 'topic') {
     return `Topic: ${topicsById.get(anchor.topicId)?.name ?? anchor.topicId}`;
   }
   if (anchor.kind === 'book') return BOOK_NAMES[anchor.book] ?? anchor.book;
 
   const reference = refToString(anchor, BOOK_NAMES[anchor.book] ?? anchor.book);
-  if (!hasOutlineTitles || !anchor.outlineEntryId) return reference;
+  if (!hasOutlineTitles || !anchor.outlineEntryId || !sections) return reference;
 
   // Under refs-only segmentTitle returns the reference itself, so this appends
   // nothing rather than repeating the reference twice.
-  const segment = findSegment(anchor.book, anchor.outlineEntryId);
-  const title = segment ? segmentTitle(segment) : reference;
+  const segment = sections.findSegment(anchor.book, anchor.outlineEntryId);
+  const title = segment ? sections.segmentTitle(segment) : reference;
   return title === reference ? reference : `${reference} — ${title}`;
 }
 
@@ -603,6 +620,28 @@ export default function EntryEditor({
   const [browseBook, setBrowseBook] = useState('');
   const [browseSegmentId, setBrowseSegmentId] = useState('');
 
+  /*
+   * The divisions, asked for only by the parts of this editor that are about
+   * Scripture.
+   *
+   * Writing is not one of them. A sermon note started from the widget has no
+   * anchors and an untouched passage picker, so nothing here is true and the
+   * payload is never requested — the reader types into Notes while three
+   * quarters of a megabyte of section headings stays unparsed on disk.
+   *
+   * It becomes true when the reader reaches for Scripture: typing in the
+   * passage search, choosing a book to browse, or holding an anchor whose
+   * outline title this editor would otherwise have to leave off.
+   */
+  const needsSections =
+    passageQuery.length > 0 ||
+    browseBook !== '' ||
+    (form?.anchors.some(
+      (anchor) => anchor.kind === 'scripture' && Boolean(anchor.outlineEntryId),
+    ) ??
+      false);
+  const sections = useSectionsOptional(needsSections);
+
   const loaded = form !== null;
   /**
    * The writer. One per editor, created lazily so a blank editor makes nothing.
@@ -772,7 +811,15 @@ export default function EntryEditor({
           return;
         }
 
-        const anchor = anchorParam ? anchorFromParam(anchorParam) : null;
+        /*
+         * An anchor in the URL is the one thing on this path that needs the
+         * divisions: the parameter is a SEGMENT id, and resolving it is how
+         * the passage gets attached at all. So this waits — and only this.
+         * Fast Capture carries no anchor and never reaches the await, which is
+         * what `fast-capture-startup.test.tsx` holds the loader to prove.
+         */
+        const anchor = anchorParam ? anchorFromParam(anchorParam, await loadSections()) : null;
+        if (cancelled) return;
         const initial: FormState = { ...blankForm(kindParam), anchors: anchor ? [anchor] : [] };
         canonicalForm.current = null;
         setForm(initial);
@@ -1066,12 +1113,26 @@ export default function EntryEditor({
         : current,
     );
 
-  // Recomputed per keystroke, which is cheap: this is string matching over a few
-  // thousand titles, and nothing is fetched or parsed. `segmentsForBook` caches
-  // each book the first time it is asked.
+  /*
+   * Recomputed per keystroke, which is cheap: this is string matching over a
+   * few thousand titles, and nothing is fetched or parsed. `segmentsForBook`
+   * caches each book the first time it is asked.
+   *
+   * Held back until the divisions are actually here. Searching an empty set
+   * would not report "still arriving", it would report "Nothing matched
+   * “sermon on the mount”" — a confident wrong answer, which is worse than
+   * a blank moment.
+   */
   const passageResults = useMemo(
-    () => findPassages(passageQuery, { segmentsForBook, segmentTitle, hasOutlineTitles }),
-    [passageQuery],
+    () =>
+      sections
+        ? findPassages(passageQuery, {
+            segmentsForBook: sections.segmentsForBook,
+            segmentTitle: sections.segmentTitle,
+            hasOutlineTitles,
+          })
+        : NO_PASSAGE_RESULTS,
+    [passageQuery, sections],
   );
 
   /**
@@ -1083,8 +1144,8 @@ export default function EntryEditor({
    * leaving them out would make Genesis 35 pickable everywhere except here.
    */
   const browseSegments = useMemo(
-    () => (browseBook ? segmentsForBook(browseBook) : []),
-    [browseBook],
+    () => (sections && browseBook ? sections.segmentsForBook(browseBook) : []),
+    [browseBook, sections],
   );
 
   /**
@@ -1098,7 +1159,7 @@ export default function EntryEditor({
     const anchor: EntryAnchor = match.outlineEntryId
       ? { kind: 'scripture', ...match.ref, outlineEntryId: match.outlineEntryId }
       : { kind: 'scripture', ...match.ref };
-    const label = anchorLabel(anchor);
+    const label = anchorLabel(anchor, sections);
     // addAnchor de-duplicates, so a second tap is harmless — but saying "added"
     // when nothing changed is a small lie to somebody who cannot see the chips.
     const already = form?.anchors.some((existing) => anchorKey(existing) === anchorKey(anchor));
@@ -1628,7 +1689,7 @@ export default function EntryEditor({
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {form.anchors.map((anchor) => {
                     const key = anchorKey(anchor);
-                    const label = anchorLabel(anchor);
+                    const label = anchorLabel(anchor, sections);
                     return (
                       <li
                         key={key}
@@ -1800,7 +1861,7 @@ export default function EntryEditor({
                         // An <option> is plain text, so the title and reference
                         // share one line here rather than stacking as they do on
                         // a result row.
-                        const title = segmentTitle(segment);
+                        const title = sections ? sections.segmentTitle(segment) : segment.ref;
                         const reference = refToString(
                           segmentRef(segment, browseBook),
                           BOOK_NAMES[browseBook] ?? browseBook,
@@ -1819,7 +1880,8 @@ export default function EntryEditor({
                     onClick={() => {
                       const segment = browseSegments.find((row) => row.id === browseSegmentId);
                       if (!segment) return;
-                      addPassage(toPassageMatch(segment, browseBook, segmentTitle));
+                      if (!sections) return;
+                      addPassage(toPassageMatch(segment, browseBook, sections.segmentTitle));
                       // Adding clears the choice, which disables this very
                       // button, and a disabled element cannot hold focus. The
                       // book stays chosen: picking two passages from one sermon
@@ -2076,7 +2138,7 @@ export default function EntryEditor({
                   onClick={() => {
                     if (!topicChoice) return;
                     addAnchor({ kind: 'topic', topicId: topicChoice });
-                    const added = anchorLabel({ kind: 'topic', topicId: topicChoice });
+                    const added = anchorLabel({ kind: 'topic', topicId: topicChoice }, sections);
                     setTopicChoice('');
                     // Clearing the choice disables this very button, and a
                     // disabled element cannot hold focus — so hand it back to

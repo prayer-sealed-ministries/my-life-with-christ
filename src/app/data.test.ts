@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { canonBooks, segmentContaining, segmentsForBook, versification } from './data';
+import { canonBooks, versification } from './data';
+import { loadSections } from './sections';
 import { hasOutlines } from 'virtual:journey-data';
+
+/*
+ * The divisions, through the loader the application itself uses. Top-level
+ * await rather than a fixture, so these assertions are about what the product
+ * serves and not about a second copy of the data assembled for the test.
+ */
+const { segmentContaining, segmentsForBook } = await loadSections();
 
 describe('segmentsForBook', () => {
   it('covers every verse of every book, whatever the profile', () => {

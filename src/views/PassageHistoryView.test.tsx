@@ -119,7 +119,13 @@ describe('the states a history can be in', () => {
   it('is calm when there is nothing yet, and offers a way in', async () => {
     await show('John 15', async () => {});
     expect(await screen.findByText(/You haven’t written about John 15 yet/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Start a Bible reading' })).toBeInTheDocument();
+    // Awaited, because the anchor these carry is a segment id and the segments
+    // are loaded on demand. They appear when they can be right; an invitation
+    // that opened an entry with the passage silently missing would be worse
+    // than one that arrives a moment later.
+    expect(
+      await screen.findByRole('link', { name: 'Start a Bible reading' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Write a reflection' })).toBeInTheDocument();
     // No verdict on how they have spent their time.
     for (const banned of [/should/i, /haven’t studied/i, /progress/i, /streak/i]) {

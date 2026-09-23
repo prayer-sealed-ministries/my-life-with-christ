@@ -2,14 +2,19 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import BookView from './BookView';
-import {
-  findSegment,
-  hasOutlines,
-  segmentTitle,
-  segmentsForBook,
-  segmentNote,
-  outlineBooksById,
-} from '../app/data';
+import { hasOutlines } from '../app/data';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * Top-level await rather than a fixture: this file's assertions are about what
+ * a reader sees, and a test that read the section data by some other route
+ * would be asserting against data the product might not be serving. The PDF
+ * lane's lesson — the test host and the product must share the implementation.
+ */
+const { findSegment, segmentTitle, segmentsForBook, segmentNote, outlineBooksById } =
+  await loadSections();
 
 /** Escape a reference for use inside an accessible-name RegExp. */
 const escapeForRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

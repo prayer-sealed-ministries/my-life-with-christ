@@ -3,15 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import BrowseView from './BrowseView';
 import { canonBooks, hasOutlines } from '../app/data';
+import { loadSections } from '../app/sections';
+
+/* Entry counts are a fact about the divisions, so they come from the loader. */
+const { entryCountFor } = await loadSections();
 
 const OT_COUNT = canonBooks.filter((book) => book.testament === 'OT').length;
-
-/** The canon row for a book, so counts are read from the profile in the build. */
-function bookById(id: string) {
-  const book = canonBooks.find((candidate) => candidate.id === id);
-  if (!book) throw new Error(`no canon book ${id}`);
-  return book;
-}
 
 /** The polite announcement region, wherever it sits in the tree. */
 function announcement(): string {
@@ -74,7 +71,7 @@ describe('BrowseView', () => {
       // outlines divide Genesis 78 ways and the BSB sections 135. What has to
       // hold is that the row states the count the data actually carries, and
       // pluralises it correctly.
-      const genesisEntries = bookById('genesis').entryCount;
+      const genesisEntries = entryCountFor('genesis');
       expect(genesisEntries).toBeGreaterThan(1);
       expect(genesis).toHaveTextContent(
         new RegExp(`50 chapters, ${genesisEntries} outline entries`),
@@ -85,12 +82,12 @@ describe('BrowseView', () => {
       // the singular is asserted where it exists and the plural form of the
       // same row is asserted where it does not. The chapter count above
       // exercises the singular under every profile either way.
-      const singular = canonBooks.find((book) => book.entryCount === 1);
+      const singular = canonBooks.find((book) => entryCountFor(book.id) === 1);
       if (singular) {
         const row = screen.getByRole('link', { name: new RegExp(`^${singular.name}\\b`) });
         expect(row).toHaveTextContent(/, 1 outline entry(?!\w)/);
       } else {
-        const obadiahEntries = bookById('obadiah').entryCount;
+        const obadiahEntries = entryCountFor('obadiah');
         expect(obadiahEntries).toBeGreaterThan(1);
         expect(obadiah).toHaveTextContent(
           new RegExp(`1 chapter, ${obadiahEntries} outline entries`),

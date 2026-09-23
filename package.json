@@ -22,14 +22,15 @@
     "verify:deployed": "node scripts/verify-deployed.mjs",
     "verify:no-private-data": "node scripts/verify-no-private-data.mjs",
     "verify:apk": "node scripts/verify-apk.mjs",
-    "gate": "npm run verify:no-private-data && npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only",
+    "gate": "npm run verify:no-private-data && npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only && npm run verify:startup -- --profile refs-only",
     "ingest:sections": "node scripts/ingest-sections.mjs",
     "fetch:kjv": "node scripts/fetch-kjv.mjs",
     "native:assets": "node scripts/native-assets.mjs",
     "native:sync": "node scripts/native-sync.mjs",
     "native:ios": "npm run native:sync && npx cap open ios",
     "native:android": "npm run native:sync && npx cap open android",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "verify:startup": "node scripts/verify-startup.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^8.1.1",

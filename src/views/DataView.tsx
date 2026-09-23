@@ -18,13 +18,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   DATA_PROFILE,
-  findSegment,
-  outlineBooks,
-  outlineEntriesById,
   topics,
   topicsById,
   versification,
 } from '../app/data';
+import { useSections, type Sections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { useFilePicker, useFileSaver } from '../platform/context';
@@ -64,10 +62,10 @@ const messageOf = (cause: unknown, fallback: string): string =>
  * reference for it. The entry still imports in full, and the warning is shown in
  * the preview before anything is written.
  */
-function resolveOutlineId(id: string): ScriptureRef | undefined {
-  const entry = outlineEntriesById.get(id);
+function resolveOutlineId(id: string, sections: Sections): ScriptureRef | undefined {
+  const entry = sections.outlineEntriesById.get(id);
   if (!entry) return undefined;
-  const segment = findSegment(entry.book, id);
+  const segment = sections.findSegment(entry.book, id);
   return segment ? segmentRef(segment, entry.book) : undefined;
 }
 
@@ -100,6 +98,9 @@ function lastExportedWords(iso: string | undefined, now: Date): string {
 }
 
 export default function DataView() {
+  // The archive carries division ids, and an import resolves them, so this
+  // surface genuinely needs the whole dataset before it can act.
+  const sections = useSections();
   const { storage, settings, updateSettings, touch, error: storageError } = useStorage();
   const files = useFileSaver();
   const picker = useFilePicker();
@@ -191,6 +192,10 @@ export default function DataView() {
   }, [from, to, kinds, descendantsOnly]);
 
   const runExport = async (filter?: ExportFilter) => {
+    // Narrowing does not survive into a callback, and the guard is real: the
+    // archive records which division each anchor names, so an export written
+    // without them would be a quietly poorer archive rather than a failure.
+    if (!sections) return;
     setBusy(filter ? 'partial' : 'full');
     setExportMessage('');
     setExportNothing('');
@@ -198,7 +203,7 @@ export default function DataView() {
     try {
       const { archive, saved } = await exportEverything({
         storage,
-        outlineBooks,
+        outlineBooks: sections.outlineBooks,
         topics,
         profile: DATA_PROFILE,
         filter,
@@ -308,12 +313,13 @@ export default function DataView() {
       return;
     }
 
+    if (!sections) return;
     setFileName(file.name);
     setReading(true);
     try {
       const [incoming, mine] = await Promise.all([
         parseImport(file.bytes, {
-          resolveOutlineId,
+          resolveOutlineId: (id: string) => resolveOutlineId(id, sections),
           isTopicId: (id) => topicsById.has(id),
           isBookId: (id) => Boolean(versification[id]),
         }),
@@ -379,6 +385,11 @@ export default function DataView() {
       detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, then writes the file's entries. There is no undo.`,
     },
   ];
+
+  // After every hook. The archive writes division ids and an import resolves
+  // them, so this page cannot act until the divisions are here — and it must
+  // not offer an export it would write incorrectly.
+  if (!sections) return <Spinner label="Loading" />;
 
   return (
     <div className="space-y-8">

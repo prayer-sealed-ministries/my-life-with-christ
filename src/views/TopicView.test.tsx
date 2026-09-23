@@ -1,7 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { outlineBooksById, segmentsForBook, topics, versification } from '../app/data';
+import { topics, versification } from '../app/data';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * Top-level await rather than a fixture: this file's assertions are about what
+ * a reader sees, and a test that read the section data by some other route
+ * would be asserting against data the product might not be serving. The PDF
+ * lane's lesson — the test host and the product must share the implementation.
+ */
+const { outlineBooksById, segmentsForBook } = await loadSections();
 import { RouterProvider, parseHash } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
 import { formatRef, resolveTopicEntries } from '../lib/passages';

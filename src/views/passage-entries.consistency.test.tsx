@@ -25,7 +25,17 @@ import PassageView from './PassageView';
 import PassageHistoryView from './PassageHistoryView';
 import { RouterProvider } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
-import { findSegment, segmentsForBook } from '../app/data';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * Top-level await rather than a fixture: this file's assertions are about what
+ * a reader sees, and a test that read the section data by some other route
+ * would be asserting against data the product might not be serving. The PDF
+ * lane's lesson — the test host and the product must share the implementation.
+ */
+const { findSegment, segmentsForBook } = await loadSections();
 import { segmentRef } from '../lib/passages';
 import { refLabel } from '../lib/search';
 import { ENTRY_KINDS } from '../lib/entry-kinds';

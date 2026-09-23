@@ -2,32 +2,72 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Entry, OutlineBook, PassageSegment } from '../types';
+import type { Entry, OutlineBook } from '../types';
 
 /**
- * The outline data is mocked here on purpose.
+ * The division data is substituted here on purpose, and only the DATA.
  *
  * `hasOutlineTitles` is a build constant, so the real module can only ever show
- * one data profile per run. Mocking it is the only way to prove, in the default
- * run, that the outline section is present under `full` and gone entirely under
- * `refs-only` — the branch most likely to rot unnoticed. It also keeps these
- * assertions off the purchased dataset, whose titles may be re-ingested.
+ * one data profile per run. Overriding it is the only way to prove, in the
+ * default run, that the outline section is present under `public` and gone
+ * entirely under `refs-only` — the branch most likely to rot unnoticed. It also
+ * keeps these assertions off whichever headings happen to be ingested today.
  *
- * `segmentsForBook` is mocked to the same shape the real one produces: an entry
- * whose printed reference is impossible claims no verses, so buildSegments gives
- * it no segment. The live data has exactly one such entry today, and the view
- * has to stay right when it is adjudicated or when another appears.
+ * The divisions themselves go in through `__setSectionsLoader`, which is the
+ * seam the product's own loader is built around, so this file exercises the
+ * real `useSectionsOptional`, the real segmentation and the real caching. An
+ * earlier version handed the view a hand-written `segmentsForBook` instead;
+ * that made the test host and the product two different implementations, which
+ * is the trap the PDF lane fell into.
+ *
+ * `luke-15-20-6` prints a reference that runs backwards, so it claims no verses
+ * and real segmentation gives it no segment — the shape of the live
+ * `matthew-9-18-6`. That behaviour is now produced rather than asserted by
+ * hand, which is the point.
  */
 const profile = vi.hoisted(() => ({ hasOutlineTitles: true }));
 
-vi.mock('../app/data', () => {
-  const outlineEntry = (id: string, ref: string, title: string, displayTitle: string) => ({
+vi.mock('../app/data', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../app/data')>();
+  return {
+    ...actual,
+    // Both, and together: `hasOutlines` is what decides whether a book is
+    // divided at all, and a build cannot have titles without divisions.
+    get hasOutlines() {
+      return profile.hasOutlineTitles;
+    },
+    get hasOutlineTitles() {
+      return profile.hasOutlineTitles;
+    },
+  };
+});
+
+const outlineFixture = (() => {
+  /*
+   * The verse span is carried, not implied.
+   *
+   * It used to be left off, because a hand-written `segmentsForBook` decided
+   * which entries had segments and the data never had to be right. Real
+   * segmentation asks the entry, so an entry with no verses is a whole chapter
+   * — and the "impossible reference" below quietly became a perfectly good
+   * one. The fixture has to be true now, which is the improvement.
+   */
+  const outlineEntry = (
+    id: string,
+    ref: string,
+    title: string,
+    displayTitle: string,
+    verseStart: number,
+    verseEnd: number,
+  ) => ({
     id,
     ref,
     sourceRef: ref,
     book: 'luke',
     chapterStart: 15,
     chapterEnd: 15,
+    verseStart,
+    verseEnd,
     title,
     displayTitle,
     classicStory: true,
@@ -42,41 +82,24 @@ vi.mock('../app/data', () => {
       order: 42,
       intro: '',
       entries: [
-        outlineEntry('luke-15-11-32', 'Luke 15:11-32', 'THE PRODIGALL SON', 'The Prodigal Son'),
-        outlineEntry('luke-15-1-7', 'Luke 15:1-7', 'The Lost Sheep', 'The Lost Sheep'),
-        // Reference runs backwards, so it resolves to no span and gets no
-        // segment — the shape of the real `matthew-9-18-6`.
-        outlineEntry('luke-15-20-6', 'Luke 15:20-6', 'A Prodigal Aside', 'A Prodigal Aside'),
+        outlineEntry('luke-15-11-32', 'Luke 15:11-32', 'THE PRODIGALL SON', 'The Prodigal Son', 11, 32),
+        outlineEntry('luke-15-1-7', 'Luke 15:1-7', 'The Lost Sheep', 'The Lost Sheep', 1, 7),
+        // 20 to 6 runs backwards, so it resolves to no span and real
+        // segmentation gives it no segment — the shape of the live
+        // `matthew-9-18-6`.
+        outlineEntry('luke-15-20-6', 'Luke 15:20-6', 'A Prodigal Aside', 'A Prodigal Aside', 20, 6),
       ],
     },
   ];
 
-  const segments: PassageSegment[] = books[0].entries
-    .filter((entry) => entry.id !== 'luke-15-20-6')
-    .map((entry): PassageSegment => ({
-      kind: 'outline',
-      id: entry.id,
-      ref: entry.ref,
-      entry,
-      chapterStart: 15,
-      verseStart: 1,
-      chapterEnd: 15,
-      verseEnd: 32,
-    }));
-
-  return {
-    get hasOutlineTitles() {
-      return profile.hasOutlineTitles;
-    },
-    outlineBooks: books,
-    segmentsForBook: (bookId: string) => (bookId === 'luke' ? segments : []),
-  };
-});
+  return books;
+})();
 
 import { RouterProvider, useRouter } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
 import { DexieStorageProvider } from '../storage/db';
 import SearchView from './SearchView';
+import { __setSectionsLoader } from '../app/sections';
 
 let dbCounter = 0;
 
@@ -139,11 +162,19 @@ beforeEach(() => {
   profile.hasOutlineTitles = true;
   routeQueries.length = 0;
   window.location.hash = '#/search';
+  // The fixture goes in through the product's own loader. Resolved already, so
+  // these tests see the divisions on the tick after the query is typed rather
+  // than waiting on anything — and they go in fresh each time, because the
+  // loader caches both the promise and the segments built from it.
+  __setSectionsLoader(async () => ({ outlines: outlineFixture }));
 });
 
 // Vitest does not run with `globals: true`, so Testing Library's automatic
 // cleanup never registers. Without this, every render stacks up in one document.
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  __setSectionsLoader();
+});
 
 describe('SearchView', () => {
   it('invites a search before anything is typed', async () => {

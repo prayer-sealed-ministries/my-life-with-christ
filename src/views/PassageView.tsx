@@ -18,14 +18,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import {
-  findSegment,
-  hasOutlines,
-  segmentContaining,
-  segmentNote,
-  segmentsForBook,
-  segmentTitle,
-} from '../app/data';
+import { hasOutlines } from '../app/data';
+import { useSections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorageQuery } from '../app/storage';
 import { EmptyState, LiveRegion, Spinner, Tag } from '../components/ui';
@@ -76,11 +70,13 @@ function PassageNav({
   bookName,
   previous,
   next,
+  segmentTitle,
 }: {
   bookId: string;
   bookName: string;
   previous: PassageSegment | undefined;
   next: PassageSegment | undefined;
+  segmentTitle: (segment: PassageSegment) => string;
 }) {
   const linkClass = `flex h-full min-h-11 flex-col justify-center rounded-control border border-line-strong px-3 py-2 transition-colors hover:bg-raised ${FOCUS}`;
 
@@ -162,19 +158,32 @@ function EntryCard({ entry }: { entry: Entry }) {
 }
 
 export default function PassageView({ bookId, segmentId }: { bookId: string; segmentId: string }) {
+  // Reading a passage IS the divisions: which span this is, what it is called,
+  // and what sits either side of it all come from them.
+  const sections = useSections();
   // Explicitly optional: the id comes from the URL and may be anything.
   const bookName: string | undefined = BOOK_NAMES[bookId];
 
-  // segmentsForBook caches per book, so these memos hold a stable identity and
-  // the passage effect below does not re-fire on every render.
-  const segment = useMemo(() => findSegment(bookId, segmentId), [bookId, segmentId]);
+  /*
+   * segmentsForBook caches per book, so these memos hold a stable identity and
+   * the passage effect below does not re-fire on every render.
+   *
+   * The helpers are in the dependency lists because they are values now rather
+   * than imports, and they are stable for the same reason the memos are: one
+   * `Sections` object is built once, when the chunk arrives, and handed to
+   * every caller thereafter.
+   */
+  const segment = useMemo(
+    () => sections?.findSegment(bookId, segmentId),
+    [bookId, segmentId, sections],
+  );
   const neighbours = useMemo(() => {
-    const all = segmentsForBook(bookId);
+    const all = sections?.segmentsForBook(bookId) ?? [];
     const at = all.findIndex((candidate) => candidate.id === segmentId);
     return at < 0
       ? { previous: undefined, next: undefined }
       : { previous: all[at - 1], next: all[at + 1] };
-  }, [bookId, segmentId]);
+  }, [bookId, segmentId, sections]);
 
   const ref = useMemo(() => (segment ? segmentRef(segment, bookId) : null), [segment, bookId]);
 
@@ -209,8 +218,8 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
     const parts = segmentId.slice(bookId.length + 1).split('-');
     if (!parts.every((part) => /^\d+$/.test(part))) return undefined;
     const numbers = parts.map(Number);
-    return segmentContaining(bookId, numbers[0], parts.length >= 3 ? numbers[1] : 1);
-  }, [segment, bookId, segmentId]);
+    return sections?.segmentContaining(bookId, numbers[0], parts.length >= 3 ? numbers[1] : 1);
+  }, [segment, bookId, segmentId, sections]);
 
   // null means "still loading"; an empty array means the text did not resolve.
   const [verses, setVerses] = useState<PassageVerse[] | null>(null);
@@ -280,6 +289,14 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
   const entriesReady = !loading && journal.key === passageKey;
   const entries = entriesReady ? journal.entries : [];
 
+  /*
+   * After every hook, and before the not-found page.
+   *
+   * Without the divisions there is no segment, and "there is no passage
+   * john-15-1-17" would be a wrong answer to a question nobody has asked yet.
+   */
+  if (!sections) return <Spinner label="Loading" />;
+
   if (!segment || !ref) {
     return (
       <>
@@ -302,7 +319,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
               to={{ name: 'passage', bookId, segmentId: nearest.id }}
               className={`inline-flex min-h-11 items-center underline underline-offset-4 ${FOCUS}`}
             >
-              Read {segmentTitle(nearest)}, which contains it
+              Read {sections.segmentTitle(nearest)}, which contains it
             </Link>
           </p>
         ) : null}
@@ -328,7 +345,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
     );
   }
 
-  const title = segmentTitle(segment);
+  const title = sections.segmentTitle(segment);
   const reference = refToString(ref, bookName ?? bookId);
   const outlineEntry = segment.kind === 'outline' ? segment.entry : null;
   // `series` is one of the fields stripped under `refs-only`, so it is simply
@@ -336,7 +353,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
   // survives both profiles.
   const series = outlineEntry?.series ?? null;
   const classicStory = outlineEntry?.classicStory === true;
-  const note = segmentNote(segment);
+  const note = sections.segmentNote(segment);
 
   const chapters = byChapter(verses ?? []);
   const multiChapter = chapters.length > 1;
@@ -515,6 +532,7 @@ export default function PassageView({ bookId, segmentId }: { bookId: string; seg
       <PassageNav
         bookId={bookId}
         bookName={bookName ?? bookId}
+        segmentTitle={sections.segmentTitle}
         previous={neighbours.previous}
         next={neighbours.next}
       />

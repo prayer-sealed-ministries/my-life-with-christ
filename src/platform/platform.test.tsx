@@ -28,6 +28,18 @@ import { PlatformProvider } from './provider';
 import type { OutgoingFile, Platform } from './ports';
 import { StorageUnavailableError, selectStorageProvider } from './storage';
 import { webFileSaver, webPrinter, webUnsavedWorkGuard } from './web';
+import { loadSections } from '../app/sections';
+
+/*
+ * The divisions, through the loader the application itself uses.
+ *
+ * DataView genuinely needs them — the archive carries division ids and an
+ * import resolves them — so it suspends until they are here. Awaiting the real
+ * loader once, at module scope, is what lets these tests render it directly,
+ * and it keeps the data they assert against the data the product serves.
+ */
+await loadSections();
+
 
 let counter = 0;
 

@@ -496,6 +496,21 @@ disagreeing about what they are looking for. The list is kept short on purpose:
 a guard that embedded a substantial excerpt in order to detect it would be
 republishing it to detect it.
 
+**A lazily-loaded chunk is shipped data.** The Scripture section headings are no
+longer in the startup chunk — `src/app/sections.ts` fetches them on demand, from
+the bundle, so that Fast Capture does not wait for three quarters of a megabyte
+it never reads. Nothing about the licensing changed with the loading: the chunk
+is published the moment the build is, and `verify:bundle` walks the whole of
+`dist/` rather than following the entry's imports, so it reads that chunk with
+exactly the same eyes. Proven by putting a forbidden sentinel into
+`src/data/sections.json` and watching the gate fail, naming the lazy chunk.
+
+`npm run verify:startup` asks the other question about the same bytes: that the
+divisions are still reached only by `import()`, still in exactly one chunk, and
+that the chunk a build carries belongs to the profile that built it — a
+refs-only build with the public arrangement in it fails `PROFILE_ISOLATED`. It
+runs in `npm run gate` and in CI beside each bundle gate.
+
 ### Two ways the line could be lost, and what stops each
 
 **1. Someone re-adds the data.** `.gitignore` names the locations it would land
