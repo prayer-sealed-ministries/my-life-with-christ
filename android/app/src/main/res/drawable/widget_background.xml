@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The card the widget sits on.
+
+  It exists for legibility rather than decoration: without a surface the text
+  is drawn straight onto a photograph, and no colour choice survives that.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_surface" />
+    <corners android:radius="16dp" />
+</shape>

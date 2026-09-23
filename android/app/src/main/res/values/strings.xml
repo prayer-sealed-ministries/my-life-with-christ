@@ -11,4 +11,20 @@
     <!-- Owned by this application. It reaches nothing else, and carries an
          action name rather than a route. See src/app/launch-actions.ts. -->
     <string name="launch_action_scheme">mylifewithchrist</string>
+
+    <!-- Home-screen widget. Strings live here rather than in the layout or the
+         Java so that translating them later is an ordinary job. -->
+    <string name="widget_sermon_note_label">Sermon note</string>
+    <string name="widget_sermon_note_action">Sermon note</string>
+    <string name="widget_sermon_note_description">One tap into a new sermon note.</string>
+    <!-- Read aloud in place of the widget. Says what will happen and where, as
+         a person who cannot see the glyph still needs both. -->
+    <string name="widget_sermon_note_action_label">Start a sermon note in My Life With Christ</string>
+    <!--
+      What the widget asks for. The SAME action the launcher shortcut names,
+      and the only thing either of them is allowed to carry: an action name,
+      never a route. Looked up in the allow-list in src/app/launch-actions.ts.
+      src/platform/android-widget.test.ts holds the two to each other.
+    -->
+    <string name="widget_sermon_note_url">mylifewithchrist://action/sermon-fast-capture</string>
 </resources>

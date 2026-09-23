@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Colours for the home-screen widget, and only for it.
+
+  Explicit rather than theme attributes on purpose. A widget is drawn inside
+  the launcher's process against whatever wallpaper a person has chosen, so
+  `?attr/colorSurface` resolves against the LAUNCHER's theme, not this app's —
+  which is how a widget ends up as grey text on a grey photograph. A stated
+  colour with a stated contrast is the only thing that holds everywhere.
+-->
+<resources>
+    <color name="widget_surface">#FFFDFBF7</color>
+    <color name="widget_ink">#FF1C1A17</color>
+    <color name="widget_ink_soft">#FF5A5349</color>
+</resources>

@@ -9,8 +9,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { launchUrlFor } from '../app/launch-actions';
-import type { Route } from '../app/router';
+import { launchUrlFor, routeForLaunchAction } from '../app/launch-actions';
+import { href, type Route } from '../app/router';
 
 const listeners: Array<(event: { url?: string }) => void> = [];
 const remove = vi.fn();
@@ -126,6 +126,42 @@ describe('the shortcut tapped while the app is already running', () => {
     listeners[0]({ url: 'mylifewithchrist://action/wipe-journal' });
     listeners[0]({});
     expect(h.went).toEqual([]);
+  });
+
+  it('asks for the same place twice when a doorway is used twice', () => {
+    /*
+     * Two taps — a shortcut then a widget, or one widget tapped twice in a
+     * hurry — must ask for the same destination rather than something new.
+     *
+     * That is what keeps writing safe under the second tap. The route carries
+     * no draft id and no nonce, so the second invocation resolves to the hash
+     * the editor is already on, and `go` replaces an address with itself. A
+     * route that differed per invocation would remount the editor and take the
+     * page out from under whoever was typing into it.
+     */
+    const first = routeForLaunchAction('sermon-fast-capture');
+    const second = routeForLaunchAction('sermon-fast-capture');
+    expect(first).toEqual(second);
+    expect(href(first!), 'the same action resolves to two addresses').toBe(href(second!));
+  });
+
+  it('does not let a widget tap leak into the next ordinary launch', async () => {
+    /*
+     * The binding reads the launch URL once, when it is attached. Tapping the
+     * app icon afterwards starts the app with no URL at all, and the reader
+     * must land where the icon says — home — rather than back in an editor
+     * because of something they tapped an hour ago.
+     */
+    launchUrl = { url: launchUrlFor('sermon-fast-capture') };
+    const fromWidget = host();
+    await bindLaunchActions(fromWidget);
+    expect(fromWidget.went).toEqual([{ name: 'newEntry', kind: 'sermon' }]);
+
+    // The next launch is an ordinary one: no URL.
+    launchUrl = undefined;
+    const fromIcon = host();
+    await bindLaunchActions(fromIcon);
+    expect(fromIcon.went, 'the widget action was replayed on a normal launch').toEqual([]);
   });
 
   it('detaches cleanly', async () => {

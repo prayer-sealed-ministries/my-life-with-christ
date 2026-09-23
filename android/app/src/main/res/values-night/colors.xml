@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The same widget on a launcher in dark mode. Same contrast decisions, inverted.
+-->
+<resources>
+    <color name="widget_surface">#FF161513</color>
+    <color name="widget_ink">#FFF6F3EE</color>
+    <color name="widget_ink_soft">#FFBDB5A8</color>
+</resources>

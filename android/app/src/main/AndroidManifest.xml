@@ -82,6 +82,30 @@
 
         </activity>
 
+        <!--
+          The home-screen widget: one tap into a new sermon note.
+
+          `exported="false"` on purpose. A widget receiver only ever hears from
+          the system, which addresses it explicitly by component, so there is
+          no reason to offer this receiver to every application on the device.
+          The intent the widget SENDS is explicit too (see
+          SermonNoteWidget.java), and carries an action name rather than a
+          route — the same one the launcher shortcut carries.
+
+          No periodic update is declared: see res/xml/sermon_note_widget_info.xml.
+        -->
+        <receiver
+            android:name=".SermonNoteWidget"
+            android:label="@string/widget_sermon_note_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sermon_note_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

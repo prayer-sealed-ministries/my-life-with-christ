@@ -21,6 +21,7 @@
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "verify:deployed": "node scripts/verify-deployed.mjs",
     "verify:no-private-data": "node scripts/verify-no-private-data.mjs",
+    "verify:apk": "node scripts/verify-apk.mjs",
     "gate": "npm run verify:no-private-data && npx vitest run scripts/__tests__/ && DATA_PROFILE=refs-only npm run build && npm run verify:bundle -- --profile refs-only",
     "ingest:sections": "node scripts/ingest-sections.mjs",
     "fetch:kjv": "node scripts/fetch-kjv.mjs",

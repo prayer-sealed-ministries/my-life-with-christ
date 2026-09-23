@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One doorway, and nothing else on it.
+
+  No journal text appears here at any size — no title, no draft, no speaker, no
+  church. A home screen is visible to whoever is stood next to the reader, and
+  the whole point of this widget is speed, not a summary.
+
+  The identity line is small and the action is the large one: a person glancing
+  at their home screen needs to know what they are about to tap, not to read
+  the tagline.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_background"
+    android:padding="12dp"
+    android:contentDescription="@string/widget_sermon_note_action_label">
+
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="10dp"
+        android:src="@drawable/ic_shortcut_sermon_note"
+        android:tint="@color/widget_ink"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Identity, quietly. Ellipsised rather than shrunk: a launcher can
+             give this very little width, and half a word is worse than none. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_ink_soft"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_sermon_note_action"
+            android:textColor="@color/widget_ink"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+</LinearLayout>
