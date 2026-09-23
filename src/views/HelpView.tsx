@@ -62,10 +62,14 @@ export default function HelpView() {
           reference — &ldquo;sermon on the mount&rdquo;, or &ldquo;John 4&rdquo;.
         </p>
         {/* Deliberately not a set of platform instructions, which would be
-            wrong on half the devices and stale on the rest. */}
+            wrong on half the devices and stale on the rest. Android is named
+            for the widget, and only there, because it is the one place the
+            widget exists — and a sentence that quietly implied otherwise would
+            send somebody looking for it on a phone that has not got it. */}
         <p className="measure text-sm leading-relaxed text-ink-soft">
           On supported devices, the <strong>Sermon note</strong> shortcut on the app icon starts
-          writing straight away. You can also share a sermon document to My Life With Christ from
+          writing straight away. On Android, the <strong>Sermon note</strong> widget does the same
+          from your Home screen. You can also share a sermon document to My Life With Christ from
           another app and review it here first — nothing is added to your journal until you
           confirm it.
         </p>
