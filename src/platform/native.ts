@@ -20,8 +20,10 @@ import type {
   PickedFile,
   Platform,
   Printer,
-  UnsavedWorkGuard,
   SaveResult,
+  ShareRequest,
+  Sharer,
+  UnsavedWorkGuard,
 } from './ports';
 import { JourneyDocuments, fromBase64, toBase64 } from './native-documents';
 
@@ -118,10 +120,35 @@ export const nativeUnsavedWorkGuard: UnsavedWorkGuard = {
   },
 };
 
+/**
+ * Sharing through the operating system's own chooser.
+ *
+ * The bytes go over as base64 and the native side writes them into this app's
+ * cache before handing the OS a grant for that one file. Nothing above this
+ * line knows where it went, and the application never learns what the person
+ * chose — which is the point: a share is between them and whoever they sent it
+ * to.
+ */
+export const nativeSharer: Sharer = {
+  canShare: true,
+
+  async share(request: ShareRequest): Promise<{ shared: boolean }> {
+    const result = await JourneyDocuments.shareDocument({
+      title: request.title,
+      text: request.text,
+      name: request.file?.filename,
+      mimeType: request.file?.mimeType,
+      base64: request.file ? toBase64(request.file.bytes) : undefined,
+    });
+    return { shared: result.shared === true };
+  },
+};
+
 /** The native platform, assembled. */
 export const nativePlatformAdapters: Platform = {
   files: nativeFileSaver,
   picker: nativeFilePicker,
   printer: nativePrinter,
   unsavedWork: nativeUnsavedWorkGuard,
+  sharer: nativeSharer,
 };

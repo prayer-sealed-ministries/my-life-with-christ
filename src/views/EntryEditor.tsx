@@ -53,6 +53,7 @@ import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 import { formatDay } from '../lib/dates';
 import { describeProvenance } from '../lib/provided-notes';
 import { SermonNotesImport } from './SermonNotesImport';
+import { ShareEntry } from './ShareEntry';
 import {
   hasIncomingDocument,
   onIncomingDocument,
@@ -484,6 +485,18 @@ export default function EntryEditor({
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  /** Open only on a saved entry, and only when there is nothing unsaved. */
+  /**
+   * The saved entry, loaded when Share is pressed, or null when it is closed.
+   *
+   * Read from storage rather than assembled from the form on screen. What a
+   * person shares is what is SAVED — the version that exists, that they could
+   * open again tomorrow — and the editor may be holding edits that are not
+   * that. Sharing is offered only when there is nothing unsaved, so the two
+   * agree; loading it anyway means they cannot silently disagree.
+   */
+  const [sharing, setSharing] = useState<Entry | null>(null);
+  const [shareProblem, setShareProblem] = useState('');
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const discardRef = useRef<HTMLButtonElement>(null);
   /** Is the church-notes import panel open? Nothing is written while it is. */
@@ -1555,7 +1568,14 @@ export default function EntryEditor({
               {form.sourceMaterial.date ? ` · ${formatDay(form.sourceMaterial.date)}` : ''}
               {` · Imported from ${form.sourceMaterial.filename}`}
             </p>
-            <p className="mt-0.5 text-xs text-ink-muted">Not your own writing.</p>
+            {/*
+              `ink-soft`, not `ink-muted`. This sits on a RAISED panel, where
+              muted is 4.48:1 against #24282e at 12px — a hair under AA. It
+              passes at 5.06:1 on the ordinary background, which is why it went
+              unnoticed: the a11y sweep never renders this line, because its
+              fixtures have no provided notes to describe.
+            */}
+            <p className="mt-0.5 text-xs text-ink-soft">Not your own writing.</p>
 
             <div className="measure mt-3 text-sm leading-relaxed text-ink">
               <Markdown source={form.sourceMaterial.body} />
@@ -2263,7 +2283,54 @@ export default function EntryEditor({
 
       {entryId ? (
         <section className="mt-10 border-t border-line pt-6">
-          <h2 className={SECTION_HEADING}>
+          <h2 className={SECTION_HEADING}>Share</h2>
+          {sharing ? (
+            <ShareEntry entry={sharing} onClose={() => setSharing(null)} />
+          ) : (
+            <div className="mt-2">
+              <p className="measure text-sm text-ink-soft">
+                Send this one entry to somebody — a message, an email, a file. Your journal
+                stays here.
+              </p>
+              {/*
+                Offered only when there is nothing unsaved.
+                A draft means the version on screen is newer than the version
+                that exists. Sharing the saved one silently would send somebody
+                an older page than the reader is looking at; sharing the draft
+                would send something they have not committed to. Neither is a
+                choice this should make on their behalf, so it asks.
+              */}
+              {hasDraft ? (
+                <p className="mt-2 text-sm text-ink-soft">
+                  Save your changes first — sharing sends the saved version of this entry.
+                </p>
+              ) : null}
+              {shareProblem ? (
+                <p role="alert" className="mt-2 text-sm text-ink-soft">
+                  {shareProblem}
+                </p>
+              ) : null}
+              <div className="mt-2">
+                <Button
+                  disabled={hasDraft}
+                  onClick={() => {
+                    setShareProblem('');
+                    void storage
+                      .getEntry(entryId)
+                      .then((found) => {
+                        if (found) setSharing(found);
+                        else setShareProblem('This entry could not be read just now.');
+                      })
+                      .catch(() => setShareProblem('This entry could not be read just now.'));
+                  }}
+                >
+                  Share this entry
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <h2 className={`${SECTION_HEADING} mt-10`}>
             Delete
           </h2>
           {/* Two steps, both on the page. window.confirm is a modal that blocks

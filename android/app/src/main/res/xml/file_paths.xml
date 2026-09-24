@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Capacitor's defaults, kept as they were.
+    -->
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+
+    <!--
+      Where a shared journal page is written.
+
+      Its own name and its own subdirectory, so the grant this app mints for a
+      share names exactly one file in one place. Inside getCacheDir(), which is
+      private to this application and needs no storage permission — the person
+      receiving the page gets a copy through the chooser, and no app gains the
+      ability to browse anything of this reader's.
+    -->
+    <cache-path name="shared_entries" path="shared/" />
 </paths>

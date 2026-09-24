@@ -20,6 +20,8 @@ import type {
   Platform,
   Printer,
   SaveResult,
+  ShareRequest,
+  Sharer,
   UnsavedWorkGuard,
 } from './ports';
 
@@ -150,12 +152,64 @@ export const webUnsavedWorkGuard: UnsavedWorkGuard = {
   },
 };
 
+/**
+ * Sharing on the web, where the answer depends on the browser.
+ *
+ * `navigator.share` exists on mobile Safari and Chrome and hands the same
+ * system sheet a native app gets. On a desktop browser it is usually absent,
+ * and there is no honest substitute for a share sheet — so the capability
+ * reports false and the view offers a download and a copy instead of
+ * pretending.
+ *
+ * `canShare({ files })` is asked separately: a browser may share text and
+ * refuse files, and offering a PDF it will reject produces a failure the
+ * reader cannot act on.
+ *
+ * An `AbortError` means the person dismissed the sheet. That is a choice, not
+ * a fault, and it comes back as `shared: false`.
+ */
+export const webSharer: Sharer = {
+  get canShare(): boolean {
+    return typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  },
+
+  async share(request: ShareRequest): Promise<{ shared: boolean }> {
+    if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+      throw new Error('This browser cannot open a share sheet');
+    }
+
+    const payload: ShareData = { title: request.title };
+    if (request.text) payload.text = request.text;
+
+    if (request.file) {
+      const file = new File([request.file.bytes as BlobPart], request.file.filename, {
+        type: request.file.mimeType,
+      });
+      // Only when the browser says it will take it.
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        payload.files = [file];
+      } else if (!request.text) {
+        throw new Error('This browser cannot share a file');
+      }
+    }
+
+    try {
+      await navigator.share(payload);
+      return { shared: true };
+    } catch (cause) {
+      if (cause instanceof Error && cause.name === 'AbortError') return { shared: false };
+      throw cause;
+    }
+  },
+};
+
 /** The web platform, assembled. */
 export const webPlatform: Platform = {
   files: webFileSaver,
   picker: webFilePicker,
   printer: webPrinter,
   unsavedWork: webUnsavedWorkGuard,
+  sharer: webSharer,
 };
 
 /**

@@ -15,7 +15,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import androidx.core.content.FileProvider;
+
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -297,5 +301,120 @@ public class JourneyDocumentsPlugin extends Plugin {
             // An unusable hint list is not worth failing a pick over.
         }
         return types;
+    }
+
+    /**
+     * The directory shared pages are written into, inside this app's cache.
+     *
+     * A subdirectory rather than the cache root so that cleaning up what this
+     * feature made cannot touch anything else that happens to be cached.
+     */
+    private static final String SHARE_DIR = "shared";
+
+    /**
+     * Offer one page of the journal to the system share sheet.
+     *
+     * WHERE THE FILE LIVES, AND WHY IT IS SAFE
+     *
+     * `getCacheDir()` is this application's private cache: no other app can
+     * read it, and it needs no storage permission — this plugin still declares
+     * none. The file is handed out through the FileProvider already configured
+     * for this package, which mints a URI granting read access to exactly that
+     * one file, to exactly the app the person chooses, for as long as the
+     * chooser lives. No path ever crosses into JavaScript and no directory is
+     * exposed.
+     *
+     * Stale pages from earlier shares are removed first. A share is meant to
+     * be ephemeral; a cache quietly accumulating somebody's journal pages
+     * would be the opposite of what this feature promises.
+     */
+    @PluginMethod
+    public void shareDocument(PluginCall call) {
+        String title = call.getString("title", "");
+        String text = call.getString("text");
+        String name = call.getString("name");
+        String mimeType = call.getString("mimeType");
+        String base64 = call.getString("base64");
+
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("There is no window to share from.");
+            return;
+        }
+
+        Intent send = new Intent(Intent.ACTION_SEND);
+        if (title != null && !title.isEmpty()) {
+            send.putExtra(Intent.EXTRA_SUBJECT, title);
+        }
+
+        if (base64 != null && !base64.isEmpty() && name != null && !name.isEmpty()) {
+            Uri uri;
+            try {
+                uri = writeShareFile(name, Base64.decode(base64, Base64.DEFAULT));
+            } catch (Exception failure) {
+                call.reject("That page could not be prepared for sharing.");
+                return;
+            }
+            send.setType(mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType);
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            // The grant travels with the intent and dies with the chooser.
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } else if (text != null && !text.isEmpty()) {
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_TEXT, text);
+        } else {
+            call.reject("There was nothing to share.");
+            return;
+        }
+
+        try {
+            activity.startActivity(Intent.createChooser(send, title));
+        } catch (Exception failure) {
+            call.reject("This device has nothing to share with.");
+            return;
+        }
+
+        /*
+         * Resolved as soon as the chooser is shown.
+         *
+         * Android does not tell an app what the person picked, or whether they
+         * picked anything at all — and this application deliberately does not
+         * want to know. "Shared" here means "the sheet was opened", which is
+         * the only honest claim available, and the journal is unchanged either
+         * way.
+         */
+        JSObject result = new JSObject();
+        result.put("shared", true);
+        call.resolve(result);
+    }
+
+    /** Write one page into the private share cache, replacing what was there. */
+    private Uri writeShareFile(String name, byte[] bytes) throws Exception {
+        File dir = new File(getContext().getCacheDir(), SHARE_DIR);
+        if (dir.exists()) {
+            File[] stale = dir.listFiles();
+            if (stale != null) {
+                for (File file : stale) {
+                    // Best effort: a file another app still holds open is not
+                    // worth failing a share over, and it is overwritten below.
+                    file.delete();
+                }
+            }
+        } else if (!dir.mkdirs()) {
+            throw new IllegalStateException("could not create the share directory");
+        }
+
+        // The name is rebuilt here rather than trusted: a filename is the one
+        // piece of this that came from a document title somebody typed.
+        String safe = name.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (safe.isEmpty() || safe.equals(".") || safe.equals("..")) {
+            safe = "entry";
+        }
+
+        File file = new File(dir, safe);
+        try (OutputStream out = new FileOutputStream(file)) {
+            out.write(bytes);
+        }
+        return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
     }
 }

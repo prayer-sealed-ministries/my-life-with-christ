@@ -68,6 +68,9 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
       },
     },
     picker: { pick: async () => null },
+    // These tests are about the other ports; a stub that claimed to share
+    // would be claiming it for a host that has no share sheet.
+    sharer: { canShare: false, share: async () => ({ shared: false }) },
     printer: {
       print: () => {
         printed += 1;

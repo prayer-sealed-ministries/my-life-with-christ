@@ -71,7 +71,8 @@ export default function HelpView() {
           writing straight away. On Android, the <strong>Sermon note</strong> widget does the same
           from your Home screen. You can also share a sermon document to My Life With Christ from
           another app and review it here first — nothing is added to your journal until you
-          confirm it.
+          confirm it. From a saved entry, <strong>Share this entry</strong> sends that one page to
+          somebody, without sharing your whole journal.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           Your writing is saved locally as you type, so an interruption does not erase your

@@ -161,6 +161,50 @@ export interface UnsavedWorkGuard {
 }
 
 /**
+ * A file handed to the operating system's share sheet.
+ *
+ * Bytes, a name and a media type — never a path. The platform layer decides
+ * where a file has to sit for the OS to offer it; nothing above this line
+ * learns that a filesystem exists.
+ */
+export interface ShareableFile {
+  filename: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+/** What a share carries. Text, a file, or both — the OS decides what it can use. */
+export interface ShareRequest {
+  /** Shown as the subject or the message body, depending on where it goes. */
+  title: string;
+  text?: string;
+  file?: ShareableFile;
+}
+
+/**
+ * Offer one thing to the operating system's share sheet.
+ *
+ * NOT a network operation and never a publish. This hands bytes to the share
+ * UI the person already knows, and the person chooses what happens next —
+ * a message, a mail, a file, a printer. Nothing is uploaded, nothing is
+ * recorded, and the application never learns where it went.
+ *
+ * `shared: false` is an ordinary outcome, not an error: somebody who opens the
+ * share sheet and changes their mind has done nothing wrong and must see no
+ * apology for it.
+ */
+export interface Sharer {
+  /**
+   * Can this platform offer a share sheet?
+   *
+   * A capability, like `Printer.canPrint`, and read for the same reason: a
+   * button that silently does nothing teaches a reader the app is broken.
+   */
+  readonly canShare?: boolean;
+  share(request: ShareRequest): Promise<{ shared: boolean }>;
+}
+
+/**
  * Everything the application needs from the platform it is running on.
  *
  * Assembled once at startup and passed down through context. A view takes the
@@ -172,4 +216,5 @@ export interface Platform {
   picker: FilePicker;
   printer: Printer;
   unsavedWork: UnsavedWorkGuard;
+  sharer: Sharer;
 }

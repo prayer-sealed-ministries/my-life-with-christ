@@ -1,12 +1,14 @@
 /**
- * The native document bridge: two methods, and deliberately no more.
+ * The native document bridge: four verbs, and deliberately no more.
  *
  * WHY THIS IS IN-REPOSITORY RATHER THAN A DEPENDENCY
  *
- * The product needs exactly two things from the operating system:
+ * The product needs exactly these things from the operating system:
  *
- *   saveDocument  — hand the user bytes and let THEM choose where it goes
- *   pickDocument  — let the user choose a file and give us its bytes
+ *   saveDocument       — hand the user bytes and let THEM choose where it goes
+ *   pickDocument       — let the user choose a file and give us its bytes
+ *   takeSharedDocument — collect a document another app sent here
+ *   shareDocument      — offer one page of the journal to the share sheet
  *
  * Nothing maintained provides both with the semantics that matter here.
  * `@capacitor/filesystem` writes inside the app sandbox, which is not
@@ -83,6 +85,28 @@ export interface JourneyDocumentsPlugin {
     /** Set when something arrived that could not be read or was too large. */
     error?: string;
   }>;
+
+  /**
+   * Offer one document to the system share sheet.
+   *
+   * The counterpart of `takeSharedDocument`: that one receives what another
+   * app sent here, this one sends one page of the journal out. Resolves
+   * `{ shared: false }` when the chooser is dismissed, which is an ordinary
+   * outcome and never an error.
+   *
+   * The file is written into this app's own cache and offered through a
+   * FileProvider grant that lasts as long as the chooser — never a path, never
+   * world-readable, and never anywhere another app can browse. What the person
+   * then does with it is between them and whoever they sent it to; nothing
+   * comes back.
+   */
+  shareDocument(options: {
+    title: string;
+    text?: string;
+    name?: string;
+    mimeType?: string;
+    base64?: string;
+  }): Promise<{ shared: boolean }>;
 }
 
 export const JourneyDocuments = registerPlugin<JourneyDocumentsPlugin>('JourneyDocuments');
