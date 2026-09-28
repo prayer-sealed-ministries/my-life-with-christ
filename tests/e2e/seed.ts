@@ -248,6 +248,43 @@ export async function forceTheme(page: Page, theme: 'light' | 'dark'): Promise<v
  * Done after load, never before: letting Dexie create the schema means this
  * cannot drift from the app's own version or index definitions.
  */
+/**
+ * The seed entries, with one of them carrying a church's handout.
+ *
+ * WHY THIS EXISTS
+ *
+ * None of the fifteen seed entries had `sourceMaterial`, so the provided-notes
+ * parts of the editor were never rendered by any accessibility sweep — and the
+ * one line in the app that used muted ink on a raised panel lived there. It
+ * measured 4.48:1 in dark mode, under AA, and every suite passed for a year
+ * because the element was never on the page to measure.
+ *
+ * One entry rather than all fifteen, and one added prayer, because what is
+ * needed is that the SEMANTIC CONTEXT is rendered somewhere — a card that
+ * labels somebody else's material, and a private field — not that every
+ * fixture carries every field.
+ *
+ * Kept out of `SEED_ENTRIES` itself so that specs counting entries, searching
+ * them or exporting them see exactly what they always saw.
+ */
+export function seedWithProvidedNotes(): Entry[] {
+  return SEED_ENTRIES.map((entry, index) =>
+    index === 0
+      ? {
+          ...entry,
+          prayer: entry.prayer || 'Keep me honest about this.',
+          sourceMaterial: {
+            format: 'markdown' as const,
+            filename: 'sunday-handout.md',
+            importedAt: iso('2024-01-07'),
+            body: '# Setting Godly Priorities\n\nCity Gate Church — Matthew 6:19-34\n\nOne: where your treasure is.',
+            parserVersion: 1,
+          },
+        }
+      : entry,
+  );
+}
+
 export async function seedEntries(page: Page, entries: Entry[] = SEED_ENTRIES): Promise<void> {
   const rows = entries.map((entry) => ({
     ...entry,

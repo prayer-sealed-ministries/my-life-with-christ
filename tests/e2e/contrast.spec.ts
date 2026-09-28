@@ -18,7 +18,7 @@
 import { expect, test } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
-import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { dismissWelcome, forceTheme, seedEntries, seedWithProvidedNotes } from './seed';
 import { detectProfile, openDisclosures, resolveViews } from './views';
 
 
@@ -161,7 +161,9 @@ for (const theme of ['light', 'dark'] as const) {
     await forceTheme(page, theme);
     await page.goto('#/');
     await page.waitForLoadState('networkidle');
-    await seedEntries(page);
+    // With provided notes and a prayer: those semantic contexts were never
+  // rendered by this sweep, which is how a 4.48:1 label went unseen.
+  await seedEntries(page, seedWithProvidedNotes());
 
     console.log(`  data profile under test: ${await detectProfile(page)}`);
     const VIEWS = (await resolveViews(page)).map((target) => target.hash);
@@ -187,6 +189,25 @@ for (const theme of ['light', 'dark'] as const) {
       // silence would be indistinguishable from a clean result.
       examinedAtLeast(measured.length, 3, `colour pairs in ${view}`);
       all.push(...measured.map((row) => ({ ...row, view })));
+    }
+
+    /*
+     * The share surface, which no routed view reaches on its own.
+     *
+     * It is behind a button on a saved entry, so the sweep above walks past it
+     * — and it is a form somebody reads carefully before sending their own
+     * writing to another person. Sampled here rather than left to axe, which
+     * cannot see a panel that has not been opened.
+     */
+    await page.goto('#/entry/seed-01');
+    await page.waitForLoadState('networkidle');
+    const share = page.getByRole('button', { name: 'Share this entry' });
+    if (await share.count()) {
+      await share.click();
+      await expect(page.getByRole('heading', { name: 'Share this entry' })).toBeVisible();
+      const shared = await page.evaluate(measureContrast);
+      examinedAtLeast(shared.length, 3, 'colour pairs on the share surface');
+      all.push(...shared.map((row) => ({ ...row, view: '#/entry/seed-01 (share)' })));
     }
 
     const failures = all.filter((row) => row.kind !== 'disabled' && row.ratio < row.required);

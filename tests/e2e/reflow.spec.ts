@@ -18,7 +18,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
-import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { dismissWelcome, forceTheme, seedEntries, seedWithProvidedNotes } from './seed';
 import { detectProfile, resolveViews } from './views';
 
 
@@ -179,7 +179,9 @@ async function ready(page: Page, theme: 'light' | 'dark'): Promise<string[]> {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('#/');
   await page.waitForLoadState('networkidle');
-  await seedEntries(page);
+  // With provided notes: the card that labels somebody else's material is a
+  // block of metadata on a raised panel, and it never appeared in this sweep.
+  await seedEntries(page, seedWithProvidedNotes());
 
   console.log(`  data profile under test: ${await detectProfile(page)}`);
   return (await resolveViews(page)).map((target) => target.hash);

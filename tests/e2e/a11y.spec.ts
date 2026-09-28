@@ -11,7 +11,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
-import { dismissWelcome, forceTheme, seedEntries } from './seed';
+import { dismissWelcome, forceTheme, seedEntries, seedWithProvidedNotes } from './seed';
 import { detectProfile, openDisclosures, resolveViews, type ViewTarget } from './views';
 
 const WIDTHS = [
@@ -58,7 +58,9 @@ async function ready(
   await forceTheme(page, theme);
   await page.goto('#/');
   await page.waitForLoadState('networkidle');
-  await seedEntries(page);
+  // With provided notes and a prayer: those semantic contexts were never
+  // rendered by this sweep, which is how a 4.48:1 label went unseen.
+  await seedEntries(page, seedWithProvidedNotes());
 
   // Say which build this ran against, so a green suite cannot quietly mean a
   // different profile than the reader assumes.
