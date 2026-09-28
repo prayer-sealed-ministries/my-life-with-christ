@@ -11,12 +11,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  SHARE_DEFAULTS,
+  PRIVATE_BY_DEFAULT,
   buildSharedEntryDocument,
   renderSharedEntryMarkdown,
   renderSharedEntryText,
   sharedEntryFilename,
-  type ShareSelection,
+  type ShareScope,
 } from './entry-document';
 import type { Entry } from '../types';
 
@@ -58,7 +58,7 @@ function entry(overrides: Partial<Entry> = {}): Entry {
   };
 }
 
-const all: ShareSelection = {
+const all: ShareScope = {
   includeScripture: true,
   includeDetails: true,
   includeNotes: true,
@@ -68,29 +68,29 @@ const all: ShareSelection = {
   includeLinks: true,
 };
 
-const text = (e: Entry, s: ShareSelection) => renderSharedEntryText(buildSharedEntryDocument(e, s));
+const text = (e: Entry, s: ShareScope) => renderSharedEntryText(buildSharedEntryDocument(e, s));
 
 describe('the defaults', () => {
   it('keeps reflection and prayer out until they are chosen', () => {
     // Rule 5 of this repository, and not a preference: a person sending the
     // outline of a sermon must not send their own response to it because they
     // did not notice a switch.
-    expect(SHARE_DEFAULTS.includeReflection).toBe(false);
-    expect(SHARE_DEFAULTS.includePrayer).toBe(false);
+    expect(PRIVATE_BY_DEFAULT.includeReflection).toBe(false);
+    expect(PRIVATE_BY_DEFAULT.includePrayer).toBe(false);
   });
 
   it('keeps somebody else’s handout out until it is chosen', () => {
-    expect(SHARE_DEFAULTS.includeProvidedNotes).toBe(false);
+    expect(PRIVATE_BY_DEFAULT.includeProvidedNotes).toBe(false);
   });
 
   it('carries the notes, the passage and the circumstances', () => {
-    expect(SHARE_DEFAULTS.includeNotes).toBe(true);
-    expect(SHARE_DEFAULTS.includeScripture).toBe(true);
-    expect(SHARE_DEFAULTS.includeDetails).toBe(true);
+    expect(PRIVATE_BY_DEFAULT.includeNotes).toBe(true);
+    expect(PRIVATE_BY_DEFAULT.includeScripture).toBe(true);
+    expect(PRIVATE_BY_DEFAULT.includeDetails).toBe(true);
   });
 
   it('shares an ordinary sermon note and nothing private', () => {
-    const shared = text(entry(), SHARE_DEFAULTS);
+    const shared = text(entry(), PRIVATE_BY_DEFAULT);
 
     expect(shared).toContain('Abiding in Christ');
     expect(shared).toContain('John 15:1-17');
@@ -111,7 +111,7 @@ describe('selection', () => {
       const off = text(entry(), { ...all, [key]: false });
       expect(off, `${key} off`).not.toContain(marker);
 
-      const on = text(entry(), { ...SHARE_DEFAULTS, [key]: true });
+      const on = text(entry(), { ...PRIVATE_BY_DEFAULT, [key]: true });
       expect(on, `${key} on`).toContain(marker);
     }
   });
@@ -248,14 +248,14 @@ describe('links', () => {
 
 describe('the two renderings', () => {
   it('gives plain text no markdown punctuation to paste into a message', () => {
-    const shared = text(entry(), SHARE_DEFAULTS);
+    const shared = text(entry(), PRIVATE_BY_DEFAULT);
     expect(shared).not.toMatch(/^#/m);
     expect(shared).not.toMatch(/^\*\*/m);
     expect(shared).toContain('My notes');
   });
 
   it('gives markdown real headings', () => {
-    const shared = renderSharedEntryMarkdown(buildSharedEntryDocument(entry(), SHARE_DEFAULTS));
+    const shared = renderSharedEntryMarkdown(buildSharedEntryDocument(entry(), PRIVATE_BY_DEFAULT));
     expect(shared).toContain('# Abiding in Christ');
     expect(shared).toContain('## My notes');
   });
@@ -269,17 +269,17 @@ describe('the two renderings', () => {
 
 describe('the filename', () => {
   it('is made from the title and carries no identifier', () => {
-    const document = buildSharedEntryDocument(entry(), SHARE_DEFAULTS);
+    const document = buildSharedEntryDocument(entry(), PRIVATE_BY_DEFAULT);
     expect(sharedEntryFilename(document, 'pdf')).toBe('abiding-in-christ.pdf');
   });
 
   it('still names an untitled entry something a person can find', () => {
-    const document = buildSharedEntryDocument(entry({ title: '' }), SHARE_DEFAULTS);
+    const document = buildSharedEntryDocument(entry({ title: '' }), PRIVATE_BY_DEFAULT);
     expect(sharedEntryFilename(document, 'txt')).toBe('untitled-entry.txt');
   });
 
   it('refuses a title that would escape a directory', () => {
-    const document = buildSharedEntryDocument(entry({ title: '../../etc/passwd' }), SHARE_DEFAULTS);
+    const document = buildSharedEntryDocument(entry({ title: '../../etc/passwd' }), PRIVATE_BY_DEFAULT);
     const name = sharedEntryFilename(document, 'pdf');
     expect(name).not.toContain('/');
     expect(name).not.toContain('..');

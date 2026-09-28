@@ -25,16 +25,16 @@ import { useMemo, useState } from 'react';
 import { Button, LiveRegion } from '../components/ui';
 import { useSharer } from '../platform/context';
 import {
-  SHARE_DEFAULTS,
+  PRIVATE_BY_DEFAULT,
   buildSharedEntryDocument,
   renderSharedEntryText,
   sharedEntryFilename,
-  type ShareSelection,
+  type ShareScope,
 } from '../share/entry-document';
 import type { Entry } from '../types';
 
 /** The switches, in the order they appear, with the wording a reader sees. */
-const CHOICES: Array<{ key: keyof ShareSelection; label: string; hint?: string }> = [
+const CHOICES: Array<{ key: keyof ShareScope; label: string; hint?: string }> = [
   { key: 'includeScripture', label: 'Scripture references' },
   { key: 'includeDetails', label: 'Speaker, place and series' },
   { key: 'includeNotes', label: 'My notes' },
@@ -50,7 +50,7 @@ const CHOICES: Array<{ key: keyof ShareSelection; label: string; hint?: string }
 
 export function ShareEntry({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const sharer = useSharer();
-  const [selection, setSelection] = useState<ShareSelection>(SHARE_DEFAULTS);
+  const [selection, setSelection] = useState<ShareScope>(PRIVATE_BY_DEFAULT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [announcement, setAnnouncement] = useState('');
@@ -62,7 +62,7 @@ export function ShareEntry({ entry, onClose }: { entry: Entry; onClose: () => vo
   const preview = useMemo(() => renderSharedEntryText(document), [document]);
 
   /** Which switches would do nothing, because the entry has no such writing. */
-  const empty: Partial<Record<keyof ShareSelection, boolean>> = {
+  const empty: Partial<Record<keyof ShareScope, boolean>> = {
     includeScripture: entry.scriptureRefs.length === 0,
     includeDetails: !entry.place && !entry.speaker && !entry.sermonSeries,
     includeNotes: !entry.notes.trim(),

@@ -132,8 +132,11 @@ lose anything by being read here.
   into the build. Nothing is fetched at runtime, there is no analytics or
   telemetry, and imported documents are parsed entirely on the device.
 - **No ads and no data mining**, now or as part of the intended product.
-- Sharing is designed for but **not built**. `ShareProvider` defines the shape
-  v2 must honour; no sharing UI exists today.
+- **Sharing is one entry at a time, through your own device.** From a saved
+  entry you can send that page — and only that page — to the operating
+  system's share sheet as a PDF or as plain text. Reflections, prayers and
+  provided church notes are excluded unless you tick them, every time. Nothing
+  is uploaded, nothing is recorded, and there are no share links or accounts.
 
 **This is local-first, not invulnerable.** Data sits in your browser's storage
 on a device you control. Anyone with access to that unlocked device has access

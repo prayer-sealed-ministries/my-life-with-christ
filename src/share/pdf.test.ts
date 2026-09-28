@@ -15,9 +15,9 @@ import { describe, expect, it } from 'vitest';
 
 import { parsePdf } from '../import/pdf';
 import {
-  SHARE_DEFAULTS,
+  PRIVATE_BY_DEFAULT,
   buildSharedEntryDocument,
-  type ShareSelection,
+  type ShareScope,
 } from './entry-document';
 import { renderSharedEntryPdf } from './pdf';
 import type { Entry } from '../types';
@@ -57,7 +57,7 @@ function entry(overrides: Partial<Entry> = {}): Entry {
   };
 }
 
-const everything: ShareSelection = {
+const everything: ShareScope = {
   includeScripture: true,
   includeDetails: true,
   includeNotes: true,
@@ -68,7 +68,7 @@ const everything: ShareSelection = {
 };
 
 /** Generate, then read back with the shipped extractor. */
-async function readBack(e: Entry, selection: ShareSelection): Promise<string> {
+async function readBack(e: Entry, selection: ShareScope): Promise<string> {
   const bytes = await renderSharedEntryPdf(buildSharedEntryDocument(e, selection));
   expect(bytes.byteLength).toBeGreaterThan(500);
   const extraction = await parsePdf(bytes);
@@ -77,12 +77,12 @@ async function readBack(e: Entry, selection: ShareSelection): Promise<string> {
 
 describe('the shared PDF', () => {
   it('is a real PDF a parser can read', async () => {
-    const bytes = await renderSharedEntryPdf(buildSharedEntryDocument(entry(), SHARE_DEFAULTS));
+    const bytes = await renderSharedEntryPdf(buildSharedEntryDocument(entry(), PRIVATE_BY_DEFAULT));
     expect(new TextDecoder().decode(bytes.subarray(0, 5))).toBe('%PDF-');
   }, 30_000);
 
   it('carries the heading, the day, the passage and the notes', async () => {
-    const text = await readBack(entry(), SHARE_DEFAULTS);
+    const text = await readBack(entry(), PRIVATE_BY_DEFAULT);
 
     expect(text).toContain('MY LIFE WITH CHRIST');
     expect(text).toContain('Abiding in Christ');
@@ -92,7 +92,7 @@ describe('the shared PDF', () => {
   }, 30_000);
 
   it('leaves out what was not selected', async () => {
-    const text = await readBack(entry(), SHARE_DEFAULTS);
+    const text = await readBack(entry(), PRIVATE_BY_DEFAULT);
 
     expect(text).not.toContain(REFLECTION);
     expect(text).not.toContain(PRAYER);
@@ -131,7 +131,7 @@ describe('the shared PDF', () => {
   it('runs a long entry onto more pages rather than off the edge', async () => {
     // A realistic long entry: fifteen thousand characters of notes.
     const long = entry({ notes: 'Abide in the vine. '.repeat(790) });
-    const bytes = await renderSharedEntryPdf(buildSharedEntryDocument(long, SHARE_DEFAULTS));
+    const bytes = await renderSharedEntryPdf(buildSharedEntryDocument(long, PRIVATE_BY_DEFAULT));
     const extraction = await parsePdf(bytes);
 
     expect(extraction.pages.length).toBeGreaterThan(1);

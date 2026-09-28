@@ -35,7 +35,7 @@ import type { Entry } from '../types';
  * prayer are doing different things, and the second should never happen by
  * accident because the first was easy.
  */
-export interface ShareSelection {
+export interface ShareScope {
   includeScripture: boolean;
   /** Place, speaker, series — the circumstances, not the writing. */
   includeDetails: boolean;
@@ -51,8 +51,13 @@ export interface ShareSelection {
  *
  * Rule 5 of this repository is explicit and is not a preference: "Reflections
  * and prayers require their own affirmative choice, per share — `ShareScope`
- * defaults them to `false`, and that default does not change." The existing
- * `PRIVATE_BY_DEFAULT` in storage/ShareProvider.ts says the same.
+ * defaults them to `false`, and that default does not change."
+ *
+ * The names are the ones that rule uses. They were carried over from a
+ * speculative `storage/ShareProvider.ts` — a seam for revocable links and
+ * group sharing that was never implemented and has now been retired — because
+ * the privacy rule it carried is the part that was worth keeping. The values
+ * for notes, reflection, prayer and links are unchanged from what it held.
  *
  * A reflection is the most private thing in the journal after a prayer — it is
  * what a sermon meant to one person — and the common share is "here are the
@@ -63,7 +68,7 @@ export interface ShareSelection {
  *
  * So both stay off, and the options surface shows plainly what is included.
  */
-export const SHARE_DEFAULTS: ShareSelection = {
+export const PRIVATE_BY_DEFAULT: ShareScope = {
   includeScripture: true,
   includeDetails: true,
   includeNotes: true,
@@ -116,7 +121,7 @@ function trimmed(value: string | undefined): string {
  */
 export function buildSharedEntryDocument(
   entry: Entry,
-  selection: ShareSelection,
+  selection: ShareScope,
 ): SharedEntryDocument {
   const sections: SharedSection[] = [];
 

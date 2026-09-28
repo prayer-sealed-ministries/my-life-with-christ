@@ -613,7 +613,8 @@ scripts/               ingest, KJV fetch, vite plugin, bundle verifier
 src/
   data/                outlines, topics, overrides, KJV
   lib/                 canon, verse index, passages, bible loader
-  storage/             StorageProvider + Dexie, ShareProvider
+  storage/             StorageProvider + Dexie
+  share/               one entry, as a document to send
   export/              zip, archive, generators, importer, migration
   types/               the domain contract
 ```
