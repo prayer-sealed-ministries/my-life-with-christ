@@ -16,6 +16,9 @@ import { DexieStorageProvider } from '../storage/db';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Entry, JourneyExport } from '../types';
 import DataView from './DataView';
+import { buildArchive } from '../export/archive';
+import { createZip, readZip } from '../export/zip';
+import type { DraftForm } from '../types';
 import { loadSections } from '../app/sections';
 
 /*
@@ -143,6 +146,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const EMPTY_FORM: DraftForm = {
+  kind: 'sermon',
+  title: '',
+  date: '2026-05-01',
+  place: '',
+  speaker: '',
+  sermonSeries: '',
+  notes: '',
+  reflection: '',
+  prayer: '',
+  tagsText: '',
+  links: [],
+  anchors: [],
+  forDescendants: false,
+  scriptureRefs: [],
+  sourceMaterial: null,
+};
+
 describe('DataView', () => {
   it('leads with the warning and says plainly that nothing has been exported', async () => {
     renderView();
@@ -227,6 +248,85 @@ describe('DataView', () => {
     expect(await screen.findAllByText(/Merged journey\.json: 2 entries written/)).toHaveLength(2);
     await waitFor(async () => expect(await db.listEntries()).toHaveLength(2));
   });
+
+  it('names unfinished drafts in the preview, without showing any of their words', async () => {
+    renderView();
+    await screen.findByRole('heading', { level: 1 });
+
+    const payload: JourneyExport = {
+      format: 'journey-export',
+      version: 1,
+      exportedAt: '2026-05-01T00:00:00.000Z',
+      entries: [GRACE, QUIET],
+      drafts: [
+        {
+          id: 'd1',
+          createdAt: '2026-05-01T09:00:00.000Z',
+          updatedAt: '2026-05-01T09:05:00.000Z',
+          form: { ...EMPTY_FORM, notes: 'DRAFT-PROSE-nobody else should read this' },
+        },
+      ],
+    };
+    const file = new File([JSON.stringify(payload)], 'journey.json', { type: 'application/json' });
+
+    fireEvent.change(screen.getByLabelText('Journal file to read'), { target: { files: [file] } });
+
+    const preview = await screen.findByRole('heading', { name: 'What this would do' });
+    const card = preview.closest('div') as HTMLElement;
+
+    // During a migration "2 entries" on a file that also carries unfinished
+    // writing leaves the drafts to turn up unannounced afterwards.
+    expect(within(card).getByText(/holds/).textContent).toMatch(
+      /2 entries, and 1 unfinished draft\./,
+    );
+
+    // A count, and only a count. The words stay out of it.
+    expect(document.body.textContent).not.toContain('DRAFT-PROSE');
+  });
+
+  it('says a damaged backup could not be VERIFIED, and blames nobody', async () => {
+    renderView();
+    await screen.findByRole('heading', { level: 1 });
+
+    // A real archive, altered inside a still-valid zip, manifest untouched.
+    const built = await buildArchive({
+      entries: [GRACE, QUIET],
+      outlineBooks: [],
+      topics: [],
+      profile: 'public',
+    });
+    const files = (await readZip(built.bytes)).map((one) => ({ path: one.path, content: one.bytes }));
+    const canonical = files.find((one) => one.path === 'data/journey.json')!;
+    canonical.content = new TextEncoder().encode(
+      new TextDecoder().decode(canonical.content).replace(GRACE.title, 'SOMETHING ELSE'),
+    );
+    const damaged = await createZip(files);
+
+    const file = new File([damaged as BlobPart], 'backup.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText('Journal file to read'), { target: { files: [file] } });
+
+    const told = await screen.findAllByText(/could not be verified and was not restored/i);
+    expect(told.length).toBeGreaterThan(0);
+    const said = told[0].textContent ?? '';
+    expect(said).toMatch(/Nothing was changed/);
+
+    // Not merely "the words appear somewhere". The generic failure path
+    // interpolates this error's own message, so a test that only looked for
+    // "could not be verified" passed with the integrity branch disabled —
+    // which is how this assertion came to be written this way.
+    expect(said).toMatch(/The file may be damaged or incomplete/);
+    expect(said, 'it read perfectly well; that is the problem').not.toMatch(/could not be read/);
+
+    // Corruption produces this too, so the wording may not accuse anyone, and
+    // the failing checksums are not a reader's problem.
+    for (const word of ['hacked', 'malicious', 'compromised', 'tampered']) {
+      expect(said.toLowerCase()).not.toContain(word);
+    }
+    expect(said).not.toMatch(/[0-9a-f]{16}/);
+
+    expect(screen.queryByRole('heading', { name: 'What this would do' })).toBeNull();
+    expect(await db.listEntries()).toHaveLength(0);
+  }, 30_000);
 
   it('offers replace as a labelled radio, marked destructive', async () => {
     await db.putEntries([GRACE]);
