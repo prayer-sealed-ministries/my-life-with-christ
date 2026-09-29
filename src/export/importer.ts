@@ -7,12 +7,29 @@
  *
  * Nothing is written until the caller has seen a preview. An import can replace
  * a lifetime of writing; it does not get to surprise anyone.
+ *
+ * AN ARCHIVE IS VERIFIED BEFORE IT IS BELIEVED
+ *
+ * A .zip is checked against its own MANIFEST.txt before a single entry is
+ * parsed out of it. Until that passes, the bytes are not a journal — they are
+ * an unread file — and nothing downstream may treat them as content: not the
+ * preview, not the conflict counts, and certainly not storage.
+ *
+ * This was not a theoretical worry. It was measured: an archive altered inside
+ * a still-valid ZIP, its manifest left untouched, imported silently into an
+ * empty journal — which is the state every migrating device is in — and the
+ * original writing was gone. MANIFEST.txt had recorded the right checksum the
+ * whole time; nothing consulted it.
+ *
+ * A bare journey.json carries no manifest and never did. It is a different
+ * input, not an older archive, and it is accepted exactly as before.
  */
 
 import type { Entry, ImportMode, ImportPreview, JourneyExport } from '../types';
 import type { StorageProvider } from '../storage/StorageProvider';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
 import { readZip, zipEntryText } from './zip';
+import { verifyArchiveManifest } from './manifest.mjs';
 
 /** Where journey.json lives inside an archive this app wrote. */
 const CANONICAL_PATH = 'data/journey.json';
@@ -24,6 +41,29 @@ export interface ParsedImport extends MigrationResult {
   filter?: JourneyExport['filter'];
   exportedAt?: string;
 }
+
+/**
+ * The archive did not match its own manifest, so it was not read.
+ *
+ * Carries the detail for a developer and keeps it away from the reader. What
+ * a person needs to know is that the file could not be verified and that
+ * nothing was changed. Which file hashed wrong is noise to them, and the
+ * wording stays clear of "tampered" or "malicious": a bad copy, a failing
+ * card, or a sync that stopped halfway produce exactly this, and are far more
+ * likely than anyone meddling.
+ */
+export class ArchiveIntegrityError extends Error {
+  readonly problems: { assertion: string; detail: string }[];
+
+  constructor(problems: { assertion: string; detail: string }[]) {
+    super('This backup could not be verified and was not restored.');
+    this.name = 'ArchiveIntegrityError';
+    this.problems = problems;
+  }
+}
+
+const messageOf = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause);
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
@@ -46,12 +86,23 @@ export async function parseImport(
     text = data;
     source = 'json';
   } else if (looksLikeZip(data)) {
-    const entries = await readZip(data);
-    const canonical =
-      entries.find((entry) => entry.path === CANONICAL_PATH) ??
-      entries.find((entry) => entry.path.endsWith('/journey.json')) ??
-      entries.find((entry) => entry.path.endsWith('.json') && !entry.path.endsWith('schema.json'));
+    let entries;
+    try {
+      entries = await readZip(data);
+    } catch (cause) {
+      // A ZIP that will not open is damage of the loudest kind. It is reported
+      // as a failure to verify, like every other kind, because from where the
+      // reader sits there is no useful difference.
+      throw new ArchiveIntegrityError([
+        { assertion: 'ARCHIVE_WAS_READ', detail: messageOf(cause) },
+      ]);
+    }
 
+    // Before anything is read out of it.
+    const integrity = await verifyArchiveManifest(entries);
+    if (!integrity.ok) throw new ArchiveIntegrityError(integrity.problems);
+
+    const canonical = entries.find((entry) => entry.path === CANONICAL_PATH);
     if (!canonical) {
       throw new Error(
         `That archive has no ${CANONICAL_PATH}. If it is a Journey export, the file may be damaged.`,

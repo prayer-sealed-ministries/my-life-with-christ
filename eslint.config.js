@@ -33,6 +33,21 @@ export default tseslint.config(
     },
   },
 
+  // Shared plain-ESM modules inside the application.
+  //
+  // src/export/manifest.mjs is .mjs so the plain-Node CLI can import it too.
+  // Without this block the src glob above (.ts/.tsx only) would leave
+  // integrity code as the one unlinted file in the application.
+  {
+    files: ['src/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+
   // Build and ingest scripts: Node, plain ESM.
   {
     files: ['scripts/**/*.mjs', '*.config.js'],

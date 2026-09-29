@@ -70,35 +70,48 @@ never committed, never called a production key).
 | Force-stop and relaunch | identical; an acknowledged write had already committed |
 | Restore the second archive on top | 0 new / 3 unchanged — idempotent, no duplication |
 | Truncated archive | rejected: "could not be read … Nothing was changed." |
+| Archive altered inside a valid zip, manifest untouched | **imported silently — the defect this rehearsal found, since fixed** |
 | Archive B after all of that | exact recovery again, zero drift |
 
 Drafts survived **byte-identical**, kept their parent entries and their original
 start times, and came back as drafts — the app showed "DRAFT · Continue sermon
 · 3 more unfinished", not four extra entries.
 
-### The one gap found, and why step 3 exists
+### The gap this rehearsal found, and what was done about it
 
-**The app does not verify MANIFEST.txt when it imports.** It reads
-`data/journey.json` and nothing else. A zip that will not open is rejected; an
-archive whose *contents* were damaged after it was written still parses, and
-still imports, silently.
+**The app did not verify MANIFEST.txt when it imported.** It read
+`data/journey.json` and nothing else. A zip that would not open was rejected;
+an archive whose *contents* were damaged after it was written still parsed, and
+still imported, silently.
 
 This was not assumed. An archive was altered inside a still-valid zip, its
 manifest left alone, and fed to the app on an empty journal — which is the state
 a migrating device is always in. It imported the damaged content without a word,
 and the original text was gone.
 
-In ordinary use this hardly matters: an export is written and read back by the
-same app minutes apart. It matters enormously here, where the archive is the
-only copy and a phone is about to be wiped. Hence:
+**That is now fixed.** `parseImport` checks an archive against its own manifest
+before a single entry is read out of it: before the preview, before any
+conflict count, before storage. A mismatch refuses the restore and the journal
+is left exactly as it was. See `src/export/restore-integrity.test.ts`, which
+holds that line over thirteen kinds of damage, against both an empty and a
+populated journal.
+
+**Step 3 below still stands anyway**, and is not redundant:
 
 ```
 npm run verify:archive -- <archive.zip>
 ```
 
-which checks the archive against its own manifest, on the computer, before
-anything is uninstalled. It is proved to fail on every kind of damage it claims
-to catch — see `scripts/__tests__/verify-archive.test.mjs`.
+It asks the same question from outside the app, on the computer, before
+anything is uninstalled. Both now share one implementation of the manifest
+grammar and the hashing (`src/export/manifest.mjs`) and use different ZIP
+readers, so a bug in either decoder cannot hide from both; parity over the same
+fixtures is asserted in `scripts/__tests__/verify-archive.test.mjs`.
+
+The reason to run it anyway is simple: at the moment you uninstall, the archive
+becomes the only copy of the journal, and "the app said it was fine" and "the
+file is fine" should be two separate observations. Defence in depth here is
+deliberate — do not drop step 3 because the app now checks too.
 
 ---
 
@@ -181,9 +194,9 @@ step 3.
 The preview reports what it would do before anything is written. Expect
 `N new`, `0 conflicts` on an empty journal.
 
-> **Note the preview counts entries only.** It does not mention drafts, though
-> drafts are restored too. "3 entries" on a file holding 3 entries and 4 drafts
-> is not an error.
+The preview now names unfinished drafts alongside entries, so a file holding 3
+entries and 4 drafts says so rather than reporting "3 entries" and leaving the
+drafts to appear unannounced after the restore.
 
 After committing, check against what the phone held before:
 

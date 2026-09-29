@@ -33,7 +33,13 @@ import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
-import { applyImport, parseImport, previewImport, type ParsedImport } from '../export/importer';
+import {
+  ArchiveIntegrityError,
+  applyImport,
+  parseImport,
+  previewImport,
+  type ParsedImport,
+} from '../export/importer';
 import { segmentRef } from '../lib/passages';
 import type {
   Entry,
@@ -331,7 +337,14 @@ export default function DataView() {
     } catch (cause) {
       if (token !== readToken.current) return;
       setImportError(
-        `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`,
+        cause instanceof ArchiveIntegrityError
+          ? // An archive that did not match its own manifest. Deliberately not
+            // "could not be read" — it read perfectly well, which is the
+            // problem — and deliberately no accusation: a bad copy, a failing
+            // card or a half-finished sync produce this too, and are likelier
+            // than anyone meddling. The failing checksums stay out of the UI.
+            `${file.name} could not be verified and was not restored. The file may be damaged or incomplete. Nothing was changed.`
+          : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`,
       );
       setFileName('');
     } finally {
@@ -724,7 +737,11 @@ export default function DataView() {
             <h3 className="font-medium">What this would do</h3>
 
             <p className="break-words text-sm text-ink-soft">
-              {fileName} holds {plural(preview.incoming, 'entry', 'entries')}.
+              {fileName} holds {plural(preview.incoming, 'entry', 'entries')}
+              {parsed && parsed.drafts.length > 0
+                ? `, and ${plural(parsed.drafts.length, 'unfinished draft', 'unfinished drafts')}`
+                : ''}
+              .
             </p>
 
             <ul className="space-y-1 text-sm">

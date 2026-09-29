@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MINIMUM_HASHED_FILES, verifyArchive } from '../verify-archive.mjs';
 import { buildArchive } from '../../src/export/archive';
+import { parseImport } from '../../src/export/importer';
 import { ALL_ENTRIES } from '../../src/export/fixtures';
 import outlines from '../../src/data/sections.json';
 import topicsFile from '../../src/data/topics.json';
@@ -12,14 +13,15 @@ import topicsFile from '../../src/data/topics.json';
 /**
  * Proof that the archive checker can fail.
  *
- * The app does not verify MANIFEST.txt on import, so this script is the only
- * thing standing between a damaged archive and a journal restored from it. A
- * checker that cannot distinguish a damaged archive from a sound one would be
- * worse than none, because the procedure in docs/A17-MIGRATION.md tells a
- * person to wipe a phone once it passes.
+ * The app verifies an archive against its manifest before restoring it. This
+ * script asks the same question from outside the app, which is what the A17
+ * migration procedure relies on: before a phone is wiped, "the file is sound"
+ * should be an observation someone can make without the app's word for it.
  *
- * So every assertion is proved twice: sound archive passes, damaged archive
- * fails on that named assertion.
+ * A checker that cannot distinguish a damaged archive from a sound one would
+ * be worse than none, because docs/A17-MIGRATION.md tells a person to go ahead
+ * and uninstall once it passes. So every assertion is proved twice: a sound
+ * archive passes, and a damaged one fails on that named assertion.
  */
 
 const NOW = new Date('2026-09-13T12:00:00.000Z');
@@ -30,10 +32,25 @@ async function soundArchive() {
     drafts: [
       {
         id: 'draft-1',
-        entryId: null,
         createdAt: '2026-09-13T11:00:00.000Z',
         updatedAt: '2026-09-13T11:30:00.000Z',
-        entry: { kind: 'sermon', notes: 'unfinished' },
+        form: {
+          kind: 'sermon',
+          title: '',
+          date: '2026-09-13',
+          place: '',
+          speaker: '',
+          sermonSeries: '',
+          notes: 'unfinished',
+          reflection: '',
+          prayer: '',
+          tagsText: '',
+          links: [],
+          anchors: [],
+          forDescendants: false,
+          scriptureRefs: [],
+          sourceMaterial: null,
+        },
       },
     ],
     outlineBooks: outlines,
@@ -55,7 +72,7 @@ const failedAssertions = (result) => new Set(result.problems.map((problem) => pr
 
 describe('verify-archive', () => {
   it('passes a sound archive, and says what it examined', async () => {
-    const result = verifyArchive(await soundArchive());
+    const result = await verifyArchive(await soundArchive());
 
     expect(result.problems).toEqual([]);
     expect(result.ok).toBe(true);
@@ -88,15 +105,19 @@ describe('verify-archive', () => {
 
     expect(after, 'the mutation must preserve length').toBe(before);
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     // Nothing but the hash can see this: same length, and no other check reads
     // README.txt at all.
     expect(failedAssertions(result)).toEqual(new Set(['CHECKSUMS_MATCH']));
-    // The damage this exists to catch: still a valid zip, still valid JSON,
-    // still imports into the app without a word.
-    expect(result.counts.format).toBe('journey-export');
+
+    // The damage this exists to catch: the zip still opened and every file is
+    // still there. Before the manifest was consulted, this imported silently.
+    expect(result.files).toBeGreaterThanOrEqual(MINIMUM_HASHED_FILES);
+    // And nothing was read out of it — counts come only from a verified
+    // archive, so an unverified one reports none.
+    expect(result.counts).toBeNull();
   });
 
   it('fails CHECKSUMS_MATCH when a file has grown or shrunk', async () => {
@@ -104,7 +125,7 @@ describe('verify-archive', () => {
       files['data/entries.csv'] = strToU8(`${strFromU8(files['data/entries.csv'])}\nextra,row\n`);
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('CHECKSUMS_MATCH');
@@ -112,7 +133,7 @@ describe('verify-archive', () => {
 
   it('fails ARCHIVE_WAS_READ when the file is truncated', async () => {
     const bytes = await soundArchive();
-    const result = verifyArchive(bytes.slice(0, Math.floor(bytes.length / 2)));
+    const result = await verifyArchive(bytes.slice(0, Math.floor(bytes.length / 2)));
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('ARCHIVE_WAS_READ');
@@ -124,7 +145,7 @@ describe('verify-archive', () => {
       delete files['data/schema.json'];
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('STRUCTURE_INTACT');
@@ -135,7 +156,7 @@ describe('verify-archive', () => {
       files['notes/planted.md'] = strToU8('# not written by the export\n');
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('MANIFEST_AGREES');
@@ -146,7 +167,7 @@ describe('verify-archive', () => {
       delete files['data/entries.csv'];
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('MANIFEST_AGREES');
@@ -170,7 +191,7 @@ describe('verify-archive', () => {
       files['MANIFEST.txt'] = strToU8(rewritten.join('\n'));
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('RECORD_READABLE');
@@ -186,9 +207,108 @@ describe('verify-archive', () => {
       files['MANIFEST.txt'] = strToU8([...prose, hashes[0]].join('\n'));
     });
 
-    const result = verifyArchive(damaged);
+    const result = await verifyArchive(damaged);
 
     expect(result.ok).toBe(false);
     expect(failedAssertions(result)).toContain('ARCHIVE_WAS_READ');
   });
+});
+
+/**
+ * Parity with the product's own restore check.
+ *
+ * The two share the manifest grammar and the hashing — that is the whole
+ * reason src/export/manifest.mjs is plain JavaScript — but they use different
+ * ZIP readers on purpose, so that a bug in either decoder cannot hide from
+ * both. Different readers are only useful if their verdicts still agree, which
+ * is what this asserts.
+ *
+ * It is also the check that would catch the two drifting apart later: the CLI
+ * is what the A17 migration procedure tells a person to run before wiping a
+ * phone, and "the CLI passed it" has to mean "the app will accept it".
+ */
+describe('parity between the CLI and the product', () => {
+  /** @type {{ name: string, damage: (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array> }[]} */
+  const cases = [
+    { name: 'a sound archive', damage: (bytes) => bytes },
+    {
+      name: 'a wrong hash at the right size',
+      damage: (bytes) =>
+        rebuild(bytes, (files) => {
+          const text = strFromU8(files['README.txt']);
+          const at = text.indexOf('journal');
+          files['README.txt'] = strToU8(`${text.slice(0, at)}JOURNAL${text.slice(at + 7)}`);
+        }),
+    },
+    {
+      name: 'a wrong size',
+      damage: (bytes) =>
+        rebuild(bytes, (files) => {
+          files['data/entries.csv'] = strToU8(`${strFromU8(files['data/entries.csv'])}\nextra,row\n`);
+        }),
+    },
+    {
+      name: 'a missing listed file',
+      damage: (bytes) => rebuild(bytes, (files) => void delete files['data/entries.csv']),
+    },
+    {
+      name: 'a missing required file',
+      damage: (bytes) => rebuild(bytes, (files) => void delete files['data/schema.json']),
+    },
+    {
+      name: 'a manifest listing a path twice',
+      damage: (bytes) =>
+        rebuild(bytes, (files) => {
+          const lines = strFromU8(files['MANIFEST.txt']).split('\n');
+          const line = lines.find((one) => one.endsWith('  data/schema.json'));
+          files['MANIFEST.txt'] = strToU8([...lines, line].join('\n'));
+        }),
+    },
+    {
+      name: 'a malformed manifest that hashes almost nothing',
+      damage: (bytes) =>
+        rebuild(bytes, (files) => {
+          const lines = strFromU8(files['MANIFEST.txt']).split('\n');
+          const hashes = lines.filter((line) => /^[0-9a-f]{64}\s/.test(line));
+          const prose = lines.filter((line) => !/^[0-9a-f]{64}\s/.test(line));
+          files['MANIFEST.txt'] = strToU8([...prose, hashes[0]].join('\n'));
+        }),
+    },
+    {
+      name: 'a corrupted draft',
+      damage: (bytes) =>
+        rebuild(bytes, (files) => {
+          const text = strFromU8(files['data/journey.json']);
+          expect(text).toContain('unfinished');
+          files['data/journey.json'] = strToU8(text.replace('unfinished', 'REWRITTEN!'));
+        }),
+    },
+    {
+      name: 'a truncated zip',
+      damage: (bytes) => bytes.slice(0, Math.floor(bytes.length / 2)),
+    },
+  ];
+
+  // A floor: an emptied or filtered list would let this suite pass having
+  // compared nothing.
+  it('compares enough cases to mean something', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(9);
+  });
+
+  for (const { name, damage } of cases) {
+    it(`agrees on ${name}`, async () => {
+      const bytes = await damage(await soundArchive());
+
+      const cli = await verifyArchive(bytes);
+      const productAccepted = await parseImport(bytes).then(
+        () => true,
+        () => false,
+      );
+
+      expect(
+        cli.ok,
+        `CLI said ${cli.ok ? 'PASS' : 'FAIL'}, product said ${productAccepted ? 'accept' : 'refuse'}`,
+      ).toBe(productAccepted);
+    });
+  }
 });

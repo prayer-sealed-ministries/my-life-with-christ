@@ -201,12 +201,15 @@ export async function createZip(entries: ZipEntry[], now = new Date()): Promise<
   return writer.concat();
 }
 
-/** SHA-256 of a file's bytes, lowercase hex, for the manifest. */
-export async function sha256(content: string | Uint8Array): Promise<string> {
-  const bytes = toBytes(content);
-  const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
+/**
+ * SHA-256 of a file's bytes, lowercase hex, for the manifest.
+ *
+ * Re-exported rather than implemented here so that the side that WRITES a
+ * manifest and the side that VERIFIES one cannot drift into two hashes. The
+ * implementation lives beside the manifest grammar, in a module the plain-Node
+ * CLI can import too.
+ */
+export { sha256 } from './manifest.mjs';
 
 // ---------------------------------------------------------------------------
 // Reading

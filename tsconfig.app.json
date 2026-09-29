@@ -15,6 +15,14 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
 
+    // src/export/manifest.mjs is plain JavaScript on purpose: the plain-Node
+    // CLI that also verifies archives cannot import TypeScript, because CI
+    // pins Node 22, which does not strip types. `checkJs` means it is still
+    // type-checked here from its JSDoc — a hand-written .d.mts would be an
+    // assertion about integrity code that nothing verifies.
+    "allowJs": true,
+    "checkJs": true,
+
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
