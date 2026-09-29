@@ -11,5 +11,17 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["vite.config.ts", "capacitor.config.ts", "scripts/**/*"]
+  "include": ["vite.config.ts", "capacitor.config.ts", "scripts/**/*"],
+
+  // Vitest specs for the scripts are deliberately outside this project.
+  //
+  // `checkJs` is false, so these .mjs files were never type-checked here and
+  // nothing is lost by excluding them. What IS gained: a spec may import the
+  // application's TypeScript to build a real fixture — verify-archive's test
+  // builds a genuine export with `buildArchive`, rather than reimplementing
+  // the format and testing its own guess. Left in this project, that import
+  // drags src/ into a `lib` that has no DOM, and files like
+  // src/platform/compression.ts fail on types that exist perfectly well where
+  // they actually run.
+  "exclude": ["scripts/__tests__"]
 }

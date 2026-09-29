@@ -80,6 +80,13 @@ cd android && ./gradlew assembleRelease      # an .apk, for local checks
 - [ ] Rehearse on the emulator first: install the old build, create an
       entry and an unfinished draft, install the new build over it with
       no uninstall and no clear-data, and confirm both survive.
+- [ ] When the identities already differ and the device holds real
+      writing, there is no in-place path at all — the journal has to
+      cross on an archive. `docs/A17-MIGRATION.md` is that procedure,
+      rehearsed on the emulator, including the step that validates an
+      archive against its own manifest **before** anything is
+      uninstalled (`npm run verify:archive`). The app itself does not
+      check the manifest on import.
 
 ## Play
 
