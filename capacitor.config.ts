@@ -34,6 +34,27 @@ const config: CapacitorConfig = {
    */
   webDir: 'dist',
 
+  /**
+   * The bridge does not narrate what crosses it.
+   *
+   * Capacitor's default ('debug') logs every plugin call's arguments to
+   * logcat on debug builds. Measured on the emulator, that meant lines like
+   *
+   *   V Capacitor: ... methodName: setPin, methodData: {"pin":"135792"}
+   *
+   * and it is not only the PIN: the same logging carries whatever else crosses
+   * the bridge, which for this app is archive bytes and sermon-note text. A
+   * release build would not log it, but the phone in actual use is debug-signed
+   * and USB-debuggable, so "it is fine in production" is not the situation to
+   * design for.
+   *
+   * There is no per-plugin opt-out, and a PIN has no other way to reach native
+   * code. So the logging goes. What is lost is Capacitor's own call tracing
+   * during development; what is kept is a journal that does not narrate itself
+   * to anything holding an adb cable.
+   */
+  loggingBehavior: 'none',
+
   ios: {
     // Anything the page cannot render gets the page's own background rather
     // than a white flash on a dark theme.
