@@ -25,6 +25,7 @@ import {
   requireDecompression,
 } from './compression';
 import { PlatformProvider } from './provider';
+import { webAppLock } from './app-lock';
 import type { OutgoingFile, Platform } from './ports';
 import { StorageUnavailableError, selectStorageProvider } from './storage';
 import { webFileSaver, webPrinter, webUnsavedWorkGuard } from './web';
@@ -61,6 +62,9 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
     get printed() {
       return printed;
     },
+    // Unsupported, which is what a platform with no App Lock reports. The
+    // gate must start the app unchanged when this is the answer.
+    appLock: webAppLock,
     files: {
       save: async (file) => {
         saved.push(file);

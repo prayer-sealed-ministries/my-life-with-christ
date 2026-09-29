@@ -12,6 +12,7 @@
  * archive writer would be a second answer to a question that must only have one.
  */
 
+import { nativeAppLock } from './app-lock';
 import type {
   FilePicker,
   FileSaver,
@@ -151,4 +152,5 @@ export const nativePlatformAdapters: Platform = {
   printer: nativePrinter,
   unsavedWork: nativeUnsavedWorkGuard,
   sharer: nativeSharer,
+  appLock: nativeAppLock,
 };

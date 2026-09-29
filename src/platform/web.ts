@@ -11,6 +11,7 @@
  * shells; neither will know the other exists.
  */
 
+import { webAppLock } from './app-lock';
 import type {
   FilePicker,
   FileSaver,
@@ -210,6 +211,7 @@ export const webPlatform: Platform = {
   printer: webPrinter,
   unsavedWork: webUnsavedWorkGuard,
   sharer: webSharer,
+  appLock: webAppLock,
 };
 
 /**

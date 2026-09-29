@@ -14,6 +14,7 @@
  */
 
 import { Link } from '../app/router';
+import AppLockSettings from './AppLockSettings';
 import { useStorage } from '../app/storage';
 import { useTheme, type ThemeChoice } from '../app/theme';
 import {
@@ -200,6 +201,8 @@ export default function SettingsView() {
           Open Data &amp; Backup
         </Link>
       </section>
+
+      <AppLockSettings />
 
       <section aria-labelledby="privacy" className="space-y-3">
         <h2 id="privacy" className="font-serif text-lg font-semibold">

@@ -13,6 +13,10 @@ public class MainActivity extends BridgeActivity {
         // choose, and collect one the system shared. Everything about what an
         // archive or a sermon handout IS stays in shared TypeScript.
         registerPlugin(JourneyDocumentsPlugin.class);
+        // App Lock: the PIN verifier, the attempt penalty and the device-credential
+        // recovery path all live natively, so none of it is reachable from the
+        // web layer except through these methods.
+        registerPlugin(AppLockPlugin.class);
         super.onCreate(savedInstanceState);
 
         // A cold share: the intent this process was created for.
@@ -27,6 +31,23 @@ public class MainActivity extends BridgeActivity {
      * activity was created with, and anything asking later would see the old
      * document instead of this one.
      */
+    /**
+     * Going away. While App Lock is on, the journal must not stay readable in
+     * the app switcher; below API 33 that means FLAG_SECURE, set here and
+     * cleared on the way back so ordinary screenshots keep working.
+     */
+    @Override
+    public void onPause() {
+        RecentsPrivacy.onLeaving(this);
+        super.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        RecentsPrivacy.onReturning(this);
+    }
+
     @Override
     public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);

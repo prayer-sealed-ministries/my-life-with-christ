@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and below (fullBackupContent).
+
+  App Lock state is excluded, and must stay excluded. The verifier is an HMAC
+  under a key that lives in this device's Keystore and cannot leave it, so a
+  verifier restored onto another phone could never be satisfied by any PIN at
+  all — the owner would face a lock with no key. Leaving App Lock off on a new
+  device, to be turned on again deliberately, is the honest outcome.
+
+  Everything else keeps backing up: this is a narrow exclusion, not a decision
+  to switch off Android backup for the app.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="app_lock.xml" />
+</full-backup-content>

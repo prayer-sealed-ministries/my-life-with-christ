@@ -13,6 +13,8 @@ import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
 import { bindLaunchActions, locationHost } from './platform/native-launch';
 import { PlatformProvider } from './platform/provider';
+import { AppLockGate, AppLockProvider } from './app/app-lock';
+import LockScreen from './views/LockScreen';
 import './index.css';
 
 // The build states which data scheme it carries, rather than leaving it to be
@@ -60,22 +62,33 @@ createRoot(root).render(
         to the web implementations, so nothing that does not opt in changes. */}
     <PlatformProvider>
       <ThemeProvider>
-        <StorageContextProvider>
-          <RouterProvider>
-            {/* Above the routed view on purpose: a save confirmation has to
-                outlive the navigation the save triggers. */}
-            <NoticeProvider>
-              {/* Also above the routed view: a successful save remounts the
-                  editor, and focus mode has to survive it. */}
-              {/* Renders nothing. Listens for a document the system shared
-                  into the app and routes it to the one importer. */}
-              <SharedDocuments />
-              <FocusProvider>
-                <App />
-              </FocusProvider>
-            </NoticeProvider>
-          </RouterProvider>
-        </StorageContextProvider>
+        {/* The gate sits above storage, the router and every provider that
+            touches the journal. Nothing below it exists while the app is
+            locked — not the database connection, not the shared-document
+            listener, not a route. That is what makes "no private content
+            flash" a property of the tree rather than a thing to remember. */}
+        <AppLockProvider>
+          <AppLockGate lockScreen={<LockScreen />}>
+            <StorageContextProvider>
+              <RouterProvider>
+                {/* Above the routed view on purpose: a save confirmation has
+                    to outlive the navigation the save triggers. */}
+                <NoticeProvider>
+                  {/* Also above the routed view: a successful save remounts
+                      the editor, and focus mode has to survive it. */}
+                  {/* Renders nothing. Listens for a document the system shared
+                      into the app and routes it to the one importer. Inside
+                      the gate, so a document that arrives while locked stays
+                      with the native side until somebody unlocks. */}
+                  <SharedDocuments />
+                  <FocusProvider>
+                    <App />
+                  </FocusProvider>
+                </NoticeProvider>
+              </RouterProvider>
+            </StorageContextProvider>
+          </AppLockGate>
+        </AppLockProvider>
       </ThemeProvider>
     </PlatformProvider>
   </StrictMode>,

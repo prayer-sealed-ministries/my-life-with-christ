@@ -204,6 +204,8 @@ export interface Sharer {
   share(request: ShareRequest): Promise<{ shared: boolean }>;
 }
 
+import type { AppLock } from './app-lock';
+
 /**
  * Everything the application needs from the platform it is running on.
  *
@@ -217,4 +219,10 @@ export interface Platform {
   printer: Printer;
   unsavedWork: UnsavedWorkGuard;
   sharer: Sharer;
+  /**
+   * Optional App Lock. `supported` is false on editions that cannot enforce
+   * it, and Settings hides the section rather than offering a promise the
+   * edition cannot keep.
+   */
+  appLock: AppLock;
 }
