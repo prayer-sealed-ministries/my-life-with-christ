@@ -91,8 +91,26 @@ cd android && ./gradlew assembleRelease      # an .apk, for local checks
 ## Play
 
 - [ ] Internal Testing track first.
-- [ ] Data Safety form must match what the app actually does.
-- [ ] A privacy policy URL is required.
+- [ ] Data Safety form must match what the app actually does. Fill it in from
+      `docs/GOOGLE-PLAY-DATA-SAFETY.md`, which quotes Google's own
+      definitions of "collect" and "share" and records what the source
+      actually does — including the one item that must be confirmed in the
+      Console rather than assumed.
+- [ ] A privacy policy URL is required. The text is written and unpublished at
+      `docs/PRIVACY-POLICY.md`; it still carries a contact placeholder.
+- [ ] **Confirm the package's Play history before choosing a versionCode.**
+      Local evidence shows no prior upload, which is not proof there was none.
+      The exact question to ask is in `docs/RELEASE-STATUS.md`.
+
+## Where the release paperwork lives
+
+| Document | What it is for |
+| --- | --- |
+| `docs/RELEASE-STATUS.md` | What is done, what is waiting on a person, the effective permission table, and the Play version-history question. |
+| `docs/PRIVACY-POLICY.md` | The policy text, written from source. Unpublished. |
+| `docs/GOOGLE-PLAY-DATA-SAFETY.md` | Internal worksheet for the Data Safety form. |
+| `docs/SIGNING-MIGRATION-RUNBOOK.md` | The permanent-signing migration. Plan only; blocked on an off-machine key backup. |
+| `docs/A17-MIGRATION.md` | The archive bridge the signing migration depends on. |
 
 ## After
 
