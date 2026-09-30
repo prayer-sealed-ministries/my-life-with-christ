@@ -1,8 +1,10 @@
 /**
- * The journal, oldest to newest.
+ * The journal, newest first.
  *
- * This is the view the whole product points at: a life of entries read in the
- * order it was lived. Two things live here and nowhere else.
+ * This is the view the whole product points at. The most recent writing is at
+ * the top, because the entry somebody wants next is almost always the one they
+ * just made — the long view of a life lived in order is what the exported book
+ * is for. Two things live here and nowhere else.
  *
  * First, the export reminder. Browser storage is not a backup, and the app has
  * to say so — but never while someone is writing. The timeline is the moment a
@@ -189,7 +191,7 @@ function ExportReminderBanner({
 export default function TimelineView() {
   const { settings, updateSettings } = useStorage();
   const { data: entries, loading } = useStorageQuery<Entry[]>(
-    (storage) => storage.listEntriesChronological(),
+    (storage) => storage.listEntries(),
     [],
     [],
   );

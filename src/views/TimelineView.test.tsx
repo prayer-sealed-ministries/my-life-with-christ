@@ -71,7 +71,7 @@ describe('TimelineView', () => {
     );
   });
 
-  it('groups entries by year then month, oldest first, each linking to its entry', async () => {
+  it('groups entries by year then month, newest first, each linking to its entry', async () => {
     const provider = freshProvider();
     await provider.open();
     await provider.putEntries([
@@ -85,20 +85,21 @@ describe('TimelineView', () => {
     await screen.findByRole('link', { name: /Second Sunday/ });
 
     const years = screen.getAllByRole('heading', { level: 2 });
-    expect(years.map((heading) => heading.textContent)).toEqual(['2025', '2026']);
+    expect(years.map((heading) => heading.textContent)).toEqual(['2026', '2025']);
 
     const months = screen.getAllByRole('heading', { level: 3 });
     expect(months.map((heading) => heading.textContent)).toEqual([
-      monthName(2025, 10),
       monthName(2026, 2),
+      monthName(2025, 10),
     ]);
 
-    // Oldest first, and the two March entries share one month heading.
+    // Newest first, and the two March entries still share one month heading —
+    // within that month the later entry (the 29th) comes before the earlier.
     const links = screen.getAllByRole('link', { name: /quiet reading|Sunday|Same month/ });
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '#/entry/a',
-      '#/entry/b',
       '#/entry/c',
+      '#/entry/b',
+      '#/entry/a',
     ]);
   });
 
