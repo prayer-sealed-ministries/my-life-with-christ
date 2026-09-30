@@ -28,6 +28,7 @@ import {
   PRIVATE_BY_DEFAULT,
   buildSharedEntryDocument,
   renderSharedEntryText,
+  scriptureReferences,
   sharedEntryFilename,
   type ShareScope,
 } from '../share/entry-document';
@@ -63,7 +64,10 @@ export function ShareEntry({ entry, onClose }: { entry: Entry; onClose: () => vo
 
   /** Which switches would do nothing, because the entry has no such writing. */
   const empty: Partial<Record<keyof ShareScope, boolean>> = {
-    includeScripture: entry.scriptureRefs.length === 0,
+    // The same list the document builds, not `scriptureRefs` alone: a
+    // reference chosen in the picker is an anchor, and checking only the typed
+    // field greyed this switch out over an entry that had three.
+    includeScripture: scriptureReferences(entry).length === 0,
     includeDetails: !entry.place && !entry.speaker && !entry.sermonSeries,
     includeNotes: !entry.notes.trim(),
     includeReflection: !entry.reflection.trim(),

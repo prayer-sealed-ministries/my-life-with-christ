@@ -23,6 +23,8 @@
  * A shared entry is a page from somebody's notebook, not a database record.
  */
 
+import { refToString } from '../lib/bible';
+import { BOOK_NAMES } from '../lib/canon';
 import { formatDay } from '../lib/dates';
 import { ENTRY_KIND_LABELS } from '../lib/entry-kinds';
 import type { Entry } from '../types';
@@ -108,6 +110,46 @@ export interface SharedEntryDocument {
 /** An entry with no title still needs to be called something. */
 const UNTITLED = 'Untitled entry';
 
+/**
+ * Every Scripture reference this entry carries, as a person would write them.
+ *
+ * Two sources, because the app has two ways of attaching one and a reader
+ * cannot tell them apart. `scriptureRefs` holds what somebody typed; `anchors`
+ * holds what they chose in the picker — an exact verse, a range, or a passage.
+ *
+ * Before this, only the first was shared. Choosing "John 3:16" in the picker
+ * and leaving "Scripture references" ticked sent no reference at all, and the
+ * switch showed "Nothing written here" over an entry that plainly had one. The
+ * toggle governs the meaning, not the mechanism that produced it.
+ *
+ * Topic anchors are deliberately absent. A topic is not a Scripture reference,
+ * and sending one under a switch labelled "Scripture references" would share
+ * something the label does not describe — which is the kind of surprise this
+ * whole surface exists to prevent. A whole-book anchor IS one, and is named the
+ * way `indexes/by-book.md` names the same thing.
+ *
+ * `refToString` is the formatter the editor's own chips use, so a reference
+ * reads here exactly as it read when it was chosen. De-duplicated the way the
+ * archive's About line is, and in the order the entry holds them: what was
+ * typed first, then what was picked.
+ */
+export function scriptureReferences(entry: Entry): string[] {
+  const labels = [
+    ...entry.scriptureRefs.map(trimmed),
+    ...entry.anchors.flatMap((anchor) => {
+      if (anchor.kind === 'scripture') {
+        return [refToString(anchor, BOOK_NAMES[anchor.book] ?? anchor.book)];
+      }
+      if (anchor.kind === 'book') {
+        return [`${BOOK_NAMES[anchor.book] ?? anchor.book} (whole book)`];
+      }
+      return [];
+    }),
+  ].filter(Boolean);
+
+  return [...new Set(labels)];
+}
+
 function trimmed(value: string | undefined): string {
   return (value ?? '').trim();
 }
@@ -161,7 +203,7 @@ export function buildSharedEntryDocument(
     title: trimmed(entry.title) || UNTITLED,
     date: formatDay(entry.date),
     kind: ENTRY_KIND_LABELS[entry.kind] ?? entry.kind,
-    scripture: selection.includeScripture ? entry.scriptureRefs.map(trimmed).filter(Boolean) : [],
+    scripture: selection.includeScripture ? scriptureReferences(entry) : [],
     details,
     sections,
     links: selection.includeLinks

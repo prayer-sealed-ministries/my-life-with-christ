@@ -285,3 +285,142 @@ describe('the filename', () => {
     expect(name).not.toContain('..');
   });
 });
+
+describe('a reference is a reference, whichever way it was attached', () => {
+  /*
+   * The app has two ways to attach Scripture and a reader cannot tell them
+   * apart: type it, or choose it in the picker. Only the first was ever
+   * shared. Ticking "Scripture references" on an entry whose references came
+   * from the picker sent none of them, and the switch read "Nothing written
+   * here" over an entry that plainly had three.
+   *
+   * The toggle governs the meaning, not the mechanism.
+   */
+  const at = (book: string, cs: number, vs: number, ce: number, ve: number) =>
+    ({ kind: 'scripture', book, chapterStart: cs, verseStart: vs, chapterEnd: ce, verseEnd: ve }) as const;
+
+  const picked = entry({
+    scriptureRefs: [],
+    anchors: [
+      at('john', 3, 16, 3, 16),
+      at('john', 3, 16, 3, 18),
+      at('romans', 8, 31, 8, 39),
+    ],
+  });
+
+  it('shares an exact verse chosen in the picker', () => {
+    const document = buildSharedEntryDocument(picked, PRIVATE_BY_DEFAULT);
+    // "John 3:16", not "John 3:16-16" and not a start/end object.
+    expect(document.scripture).toContain('John 3:16');
+  });
+
+  it('shares a range chosen in the picker', () => {
+    const document = buildSharedEntryDocument(picked, PRIVATE_BY_DEFAULT);
+    expect(document.scripture).toContain('John 3:16-18');
+    expect(document.scripture).toContain('Romans 8:31-39');
+  });
+
+  it('shares a passage, and never its outline id', () => {
+    // A passage anchor carries an outlineEntryId on top of its range. The
+    // range is what a reader means; the id is an implementation detail and
+    // must not leave the device.
+    const document = buildSharedEntryDocument(
+      entry({
+        scriptureRefs: [],
+        anchors: [{ ...at('john', 3, 1, 3, 21), outlineEntryId: 'OUTLINEMARKER-john-3-1-21' }],
+      }),
+      PRIVATE_BY_DEFAULT,
+    );
+
+    expect(document.scripture).toEqual(['John 3:1-21']);
+    expect(JSON.stringify(document)).not.toContain('OUTLINEMARKER');
+  });
+
+  it('still shares what somebody typed, and keeps both', () => {
+    const document = buildSharedEntryDocument(
+      entry({ scriptureRefs: ['John 15:1-17'], anchors: [at('john', 3, 16, 3, 16)] }),
+      PRIVATE_BY_DEFAULT,
+    );
+
+    // Typed first, then picked — the order the entry holds them in.
+    expect(document.scripture).toEqual(['John 15:1-17', 'John 3:16']);
+  });
+
+  it('says the same reference once', () => {
+    const document = buildSharedEntryDocument(
+      entry({
+        scriptureRefs: ['John 3:16'],
+        anchors: [at('john', 3, 16, 3, 16), at('john', 3, 16, 3, 16)],
+      }),
+      PRIVATE_BY_DEFAULT,
+    );
+
+    expect(document.scripture).toEqual(['John 3:16']);
+  });
+
+  it('keeps genuinely different overlapping references apart', () => {
+    // A verse inside a range is not the same reference as the range. Only
+    // identical ones collapse.
+    const document = buildSharedEntryDocument(
+      entry({ scriptureRefs: [], anchors: [at('john', 3, 16, 3, 16), at('john', 3, 1, 3, 21)] }),
+      PRIVATE_BY_DEFAULT,
+    );
+
+    expect(document.scripture).toEqual(['John 3:16', 'John 3:1-21']);
+  });
+
+  it('names a whole book as one, and leaves topics out of it', () => {
+    /*
+     * A topic is not a Scripture reference. Sending one under a switch
+     * labelled "Scripture references" would share something the label does not
+     * describe, which is exactly the surprise this surface exists to prevent.
+     */
+    const document = buildSharedEntryDocument(
+      entry({
+        scriptureRefs: [],
+        anchors: [
+          { kind: 'book', book: 'john' },
+          { kind: 'topic', topicId: 'TOPICMARKER-grief' },
+        ],
+      }),
+      PRIVATE_BY_DEFAULT,
+    );
+
+    expect(document.scripture).toEqual(['John (whole book)']);
+    expect(JSON.stringify(document)).not.toContain('TOPICMARKER');
+  });
+
+  it('sends no reference at all when the switch is off', () => {
+    const document = buildSharedEntryDocument(picked, {
+      ...PRIVATE_BY_DEFAULT,
+      includeScripture: false,
+    });
+
+    expect(document.scripture).toEqual([]);
+    // And not smuggled into any other part of the document either.
+    const rendered = `${JSON.stringify(document)}\n${renderSharedEntryText(document)}\n${renderSharedEntryMarkdown(document)}`;
+    expect(rendered).not.toContain('John 3:16');
+    expect(rendered).not.toContain('Romans 8:31');
+  });
+
+  it('shares the reference and never the verse text', () => {
+    // References only. Expanding John 3:16 into the KJV would be sharing
+    // Scripture the reader never chose to send.
+    const document = buildSharedEntryDocument(picked, PRIVATE_BY_DEFAULT);
+    const rendered = `${renderSharedEntryText(document)}\n${renderSharedEntryMarkdown(document)}`;
+
+    expect(rendered).toContain('John 3:16');
+    expect(rendered).not.toMatch(/For God so loved/i);
+    expect(rendered).not.toMatch(/everlasting life/i);
+  });
+
+  it('reads the same in the text and the Markdown', () => {
+    const document = buildSharedEntryDocument(picked, PRIVATE_BY_DEFAULT);
+    for (const reference of ['John 3:16', 'John 3:16-18', 'Romans 8:31-39']) {
+      expect(renderSharedEntryText(document), `text is missing ${reference}`).toContain(reference);
+      expect(renderSharedEntryMarkdown(document), `markdown is missing ${reference}`).toContain(
+        reference,
+      );
+    }
+  });
+});
