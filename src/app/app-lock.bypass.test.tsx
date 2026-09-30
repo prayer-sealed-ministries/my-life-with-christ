@@ -25,10 +25,16 @@ import { AppLockGate, AppLockProvider } from './app-lock';
 import { useAppLock } from './app-lock-context';
 import { PlatformContext } from '../platform/context';
 import type { AppLock } from '../platform/app-lock';
+import type { AppStateSource } from '../platform/app-state';
 import { webPlatform } from '../platform/web';
 import type { Platform } from '../platform/ports';
 
 const CORRECT = '135792';
+
+/** A lifecycle source that does nothing: see the note in app-lock.gate.test.tsx. */
+function inertAppState(): AppStateSource {
+  return { subscribe: () => () => {} };
+}
 
 function lockThatOpensTo(pin: string, enabled: boolean): AppLock {
   return {
@@ -80,7 +86,7 @@ function renderWithGate(lock: AppLock, children: React.ReactNode) {
   const platform: Platform = { ...webPlatform, appLock: lock };
   return render(
     <PlatformContext.Provider value={platform}>
-      <AppLockProvider lock={lock}>
+      <AppLockProvider lock={lock} appState={inertAppState()}>
         <Probe />
         <AppLockGate lockScreen={<p>App locked</p>}>{children}</AppLockGate>
       </AppLockProvider>

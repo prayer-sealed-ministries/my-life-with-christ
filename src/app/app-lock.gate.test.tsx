@@ -8,7 +8,7 @@
  * and hid it with CSS, which is the arrangement §10 exists to forbid.
  */
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect } from 'react';
 
@@ -21,6 +21,31 @@ import { webPlatform } from '../platform/web';
 import type { Platform } from '../platform/ports';
 
 const PRIVATE_TEXT = 'PRIVATE-JOURNAL-CONTENT';
+
+/**
+ * Let React run whatever it still owes, then read the counter.
+ *
+ * `MOUNTS` is incremented in a passive effect, and a passive effect runs AFTER
+ * the commit that put the node in the document — measured here, not assumed: a
+ * MutationObserver watching for the journal's text sees `MOUNTS === 0` at the
+ * instant the node appears, every single time, and 1 only once the effects have
+ * been flushed.
+ *
+ * That matters in both directions. Asserting the counter is 1 straight after a
+ * DOM wait is reading it in that gap and relying on Testing Library's act
+ * wrapper to have closed it first — which is what failed once under a machine
+ * at load 50. And asserting it is 0 while locked is weaker than it looks: a
+ * subtree that HAD been constructed would also read 0 until its effect ran, so
+ * the privacy claim would pass for the wrong reason.
+ *
+ * Flushing first makes a zero mean "never constructed" rather than "not yet
+ * accounted for". It is not a delay: `act` returns as soon as React has no
+ * outstanding work, and adds nothing when there was none.
+ */
+async function settledMounts(): Promise<number> {
+  await act(async () => {});
+  return MOUNTS;
+}
 
 /** How many times the journal subtree has been constructed, ever. */
 let MOUNTS = 0;
@@ -84,6 +109,26 @@ function fakeLock(options: {
   };
 }
 
+/**
+ * A lifecycle source that does nothing, for the tests that are not about
+ * lifecycle.
+ *
+ * Without it `AppLockProvider` falls back to `capacitorAppState()`, which
+ * dynamically imports `@capacitor/app`. That import resolves in a promise
+ * continuation that can land after the test has finished, and the web plugin's
+ * constructor attaches a `visibilitychange` listener to `document` on a module
+ * singleton that is never torn down — so one test's fallback outlives it and is
+ * still there for the next.
+ *
+ * Nothing in this file wants that. The tests that DO exercise background and
+ * resume inject `fakeAppState()` and drive it deliberately; the rest should
+ * begin from a known state rather than from whatever the previous test left
+ * attached.
+ */
+function inertAppState(): AppStateSource {
+  return { subscribe: () => () => {} };
+}
+
 function fakeAppState() {
   let notify: ((active: boolean) => void) | null = null;
   const source: AppStateSource = {
@@ -101,7 +146,7 @@ function fakeAppState() {
   };
 }
 
-function renderGate(lock: AppLock, appState?: AppStateSource) {
+function renderGate(lock: AppLock, appState: AppStateSource = inertAppState()) {
   const platform: Platform = { ...webPlatform, appLock: lock };
   return render(
     <PlatformContext.Provider value={platform}>
@@ -142,7 +187,7 @@ describe('when App Lock is on', () => {
     // The instrument that matters: not "is it visible", but "did it ever
     // exist". A rendered-then-hidden journal would fail here and pass a
     // visibility check.
-    expect(MOUNTS).toBe(0);
+    expect(await settledMounts()).toBe(0);
     expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
     expect(document.body.textContent).not.toContain(PRIVATE_TEXT);
   });
@@ -163,7 +208,7 @@ describe('when App Lock is on', () => {
 
     expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
     expect(screen.queryByText('App locked')).toBeNull();
-    expect(MOUNTS).toBe(0);
+    expect(await settledMounts()).toBe(0);
 
     release({
       enabled: true,
@@ -174,7 +219,7 @@ describe('when App Lock is on', () => {
       now: { elapsedMs: 0, bootId: 'b' },
     });
     expect(await screen.findByText('App locked')).toBeInTheDocument();
-    expect(MOUNTS).toBe(0);
+    expect(await settledMounts()).toBe(0);
   });
 
   it('opens on the right PIN and not on a wrong one', async () => {
@@ -192,7 +237,7 @@ describe('when App Lock is on', () => {
     const platform: Platform = { ...webPlatform, appLock: lock };
     render(
       <PlatformContext.Provider value={platform}>
-        <AppLockProvider lock={lock}>
+        <AppLockProvider lock={lock} appState={inertAppState()}>
           <Probe />
           <AppLockGate lockScreen={<LockScreenStub />}>
             <PrivateJournal />
@@ -204,12 +249,18 @@ describe('when App Lock is on', () => {
     await screen.findByText('App locked');
 
     await expect(seen.unlock('000000')).resolves.toBe(false);
-    expect(MOUNTS).toBe(0);
+    expect(await settledMounts()).toBe(0);
     expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
 
     await expect(seen.unlock('135792')).resolves.toBe(true);
     expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
-    expect(MOUNTS).toBe(1);
+    // Waited for, not assumed. `findByText` resolves from inside the
+    // MutationObserver callback that fires when the node is inserted, and the
+    // effect that counts the mount has not run at that point — so this used to
+    // depend on the act wrapper flushing in between. Exactly one, still: a
+    // second mount would mean duplicate lifecycle ownership, which is the thing
+    // this number is here to catch.
+    await waitFor(async () => expect(await settledMounts()).toBe(1));
   });
 
   it('writes no unlocked flag anywhere that could outlive the process', async () => {
@@ -227,7 +278,7 @@ describe('when App Lock is on', () => {
     const platform: Platform = { ...webPlatform, appLock: lock };
     render(
       <PlatformContext.Provider value={platform}>
-        <AppLockProvider lock={lock}>
+        <AppLockProvider lock={lock} appState={inertAppState()}>
           <Probe />
           <AppLockGate lockScreen={<LockScreenStub />}>
             <PrivateJournal />
@@ -255,7 +306,7 @@ describe('when App Lock is on', () => {
     // A new process. Nothing carried over, and nothing looked up.
     renderGate(lock);
     expect(await screen.findByText('App locked')).toBeInTheDocument();
-    expect(MOUNTS).toBe(0);
+    expect(await settledMounts()).toBe(0);
   });
 });
 
@@ -417,7 +468,7 @@ describe('the attempt penalty', () => {
       const platform: Platform = { ...webPlatform, appLock: lock };
       render(
         <PlatformContext.Provider value={platform}>
-          <AppLockProvider lock={lock}>
+          <AppLockProvider lock={lock} appState={inertAppState()}>
             <Probe />
             <AppLockGate lockScreen={<LockScreenStub />}>
               <PrivateJournal />
