@@ -1615,6 +1615,10 @@ export default function EntryEditor({
           <SermonNotesImport
             replacing={form.sourceMaterial !== null}
             incoming={shared}
+            // The panel is framed the way the way in was. Pressing a neutral
+            // "Import notes…" on a prayer and being told this is about notes
+            // your church handed out would undo the point of the neutral label.
+            church={form.kind === 'sermon'}
             onCancel={() => {
               setImportingNotes(false);
               // Cancelling a shared document discards the candidate and frees
@@ -1648,12 +1652,35 @@ export default function EntryEditor({
             }}
           />
         ) : !form.sourceMaterial ? (
-          <div>
-            <Button onClick={() => setImportingNotes(true)}>Import church notes</Button>
-            <p className="measure mt-1 text-xs text-ink-muted">
-              A file your church handed out. It is kept separately from your own writing.
-            </p>
-          </div>
+          /*
+            Prominent for a sermon, quiet everywhere else.
+
+            A sermon is the entry kind somebody arrives at holding a handout, so
+            the way in is a real button with a line saying what it takes. A
+            prayer is not: offering "Import church notes" above an empty prayer
+            is the app guessing wrong about what somebody came to do, in the
+            largest control on the screen.
+
+            It is not taken away, though. The unusual case is real, and a person
+            who does have a file for a reading or a reflection should not have to
+            change the kind of their entry to reach it. It becomes one quiet
+            line, neutrally worded, because on those kinds the material may have
+            nothing to do with a church.
+          */
+          form.kind === 'sermon' ? (
+            <div>
+              <Button onClick={() => setImportingNotes(true)}>Import church notes</Button>
+              <p className="measure mt-1 text-xs text-ink-muted">
+                A file your church handed out. It is kept separately from your own writing.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <Button variant="ghost" size="compact" onClick={() => setImportingNotes(true)}>
+                Import notes&hellip;
+              </Button>
+            </div>
+          )
         ) : null}
 
         {form.sourceMaterial ? (

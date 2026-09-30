@@ -54,11 +54,28 @@ export function SermonNotesImport({
    * rules about somebody else's words.
    */
   incoming,
+  /**
+   * Whether to frame this as a church handout.
+   *
+   * A sermon is the kind somebody arrives at holding a piece of paper, and the
+   * church framing is the true and useful one there. On the other kinds the
+   * way in is deliberately neutral — "Import notes…" — because the file may
+   * have nothing to do with a church, and it would be a strange thing to press
+   * that and be told in the largest text on the panel that this is about notes
+   * your church handed out.
+   *
+   * Only the framing changes. The gate, the parser, the preview and the
+   * explicit press are one path for every kind; there is one importer, and a
+   * second set of rules about somebody else's words is exactly what must not
+   * exist.
+   */
+  church = true,
   onUse,
   onCancel,
 }: {
   replacing: boolean;
   incoming?: IncomingDocument | null;
+  church?: boolean;
   onUse: (proposal: SermonNotesProposal) => void;
   onCancel: () => void;
 }) {
@@ -164,11 +181,12 @@ export function SermonNotesImport({
         id="sermon-notes-import-heading"
         className="font-serif text-lg font-semibold text-ink"
       >
-        Import church notes
+        {church ? 'Import church notes' : 'Import notes'}
       </h2>
       <p className="measure mt-1 text-sm text-ink-soft">
-        Notes your church handed out. They are kept as provided notes, under their own
-        heading — your own writing stays yours and starts blank.
+        {church
+          ? 'Notes your church handed out. They are kept as provided notes, under their own heading — your own writing stays yours and starts blank.'
+          : 'Somebody else’s words. They are kept as provided notes, under their own heading — your own writing stays yours and starts blank.'}
       </p>
 
       {proposal === null ? (

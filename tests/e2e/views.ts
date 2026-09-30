@@ -114,6 +114,12 @@ export async function resolveViews(page: Page): Promise<ViewTarget[]> {
     { key: 'passage-history', hash: '#/history/Matthew%205' },
     { key: 'entry-edit', hash: '#/entry/seed-01' },
     { key: 'entry-new', hash: '#/entry/new' },
+    // A second editor, on a kind that is not a sermon. The editor adapts to the
+    // selected kind — the church-note import becomes one quiet secondary
+    // control — and `#/entry/new` is a sermon, so without this row that control
+    // is rendered by the product and measured by nothing: not by axe, not by
+    // the contrast pass, not at 320px.
+    { key: 'entry-new-prayer', hash: '#/entry/new?kind=prayer' },
     { key: 'data', hash: '#/data' },
     // Settings carries a preference that changes when the reminder speaks, so
     // it belongs in the sweep rather than relying on its own spec alone.
