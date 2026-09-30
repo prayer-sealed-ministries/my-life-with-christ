@@ -1081,3 +1081,180 @@ describe('EntryEditor — accessibility of the controls', () => {
     expect(within(summary as HTMLElement).getByText('Details')).toBeInTheDocument();
   });
 });
+
+describe('EntryEditor — choosing a verse', () => {
+  /*
+   * The verse half of the same picker.
+   *
+   * What is being checked is that it produces the SAME kind of anchor a passage
+   * does — one ScriptureRef with a start and an end — and that an impossible
+   * selection is not reachable. The guarantee is structural rather than
+   * validated: the verse list is the chosen chapter's, and the end-verse list
+   * begins at the chosen verse, so a range running backwards is not a state
+   * these controls have.
+   */
+  const mode = (label: 'A passage' | 'A verse') => screen.getByRole('radio', { name: label });
+  const bookPicker = () => screen.getByLabelText('Book');
+  const chapterPicker = () => screen.getByLabelText('Chapter');
+  const versePicker = () => screen.getByLabelText('Verse', { exact: true });
+  const endPicker = () => screen.getByLabelText('To verse');
+  const addVerse = () => screen.getByRole('button', { name: 'Add verse' });
+
+  const optionValues = (select: HTMLElement) =>
+    within(select)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter(Boolean);
+
+  async function openVerseMode() {
+    setup(<EntryEditor />);
+    await notesBox();
+    fireEvent.click(mode('A verse'));
+  }
+
+  it('starts on passages, so the picker behaves as it always did', async () => {
+    setup(<EntryEditor />);
+    await notesBox();
+
+    expect(mode('A passage')).toBeChecked();
+    expect(screen.getByLabelText('Passage')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Chapter')).toBeNull();
+  });
+
+  it('asks for a book, then a chapter, then a verse — each waiting on the last', async () => {
+    await openVerseMode();
+
+    expect(chapterPicker()).toBeDisabled();
+    expect(versePicker()).toBeDisabled();
+    expect(endPicker()).toBeDisabled();
+    expect(addVerse()).toBeDisabled();
+
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    expect(chapterPicker()).toBeEnabled();
+    expect(versePicker()).toBeDisabled();
+
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    expect(versePicker()).toBeEnabled();
+    // John 3 has 36 verses, and the list is exactly that — not a fixed 176.
+    expect(optionValues(versePicker())).toHaveLength(36);
+    expect(optionValues(versePicker()).at(-1)).toBe('36');
+
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+    expect(addVerse()).toBeEnabled();
+  });
+
+  it('adds one exact verse, written the way a person writes it', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+    fireEvent.click(addVerse());
+
+    // "John 3:16" — not "John 3:16-16", and not a start/end object.
+    expect(await screen.findByText('John 3:16')).toBeInTheDocument();
+  });
+
+  it('adds a range when an end verse is chosen', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+    fireEvent.change(endPicker(), { target: { value: '18' } });
+    fireEvent.click(addVerse());
+
+    expect(await screen.findByText('John 3:16-18')).toBeInTheDocument();
+  });
+
+  it('cannot be made to run backwards', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+
+    // The end list starts at the chosen verse, so 15 is not on offer at all.
+    const ends = optionValues(endPicker());
+    expect(ends[0]).toBe('16');
+    expect(ends).not.toContain('15');
+    expect(ends).not.toContain('1');
+  });
+
+  it('forgets a verse the new chapter may not have', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '36' } });
+
+    // John 2 stops at 25, so verse 36 must not survive the change.
+    fireEvent.change(chapterPicker(), { target: { value: '2' } });
+    expect((versePicker() as HTMLSelectElement).value).toBe('');
+    expect(addVerse()).toBeDisabled();
+    expect(optionValues(versePicker())).toHaveLength(25);
+  });
+
+  it('forgets a chapter the new book may not have', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'psalms' } });
+    fireEvent.change(chapterPicker(), { target: { value: '119' } });
+    fireEvent.change(versePicker(), { target: { value: '105' } });
+
+    // Jude has one chapter of 25 verses.
+    fireEvent.change(bookPicker(), { target: { value: 'jude' } });
+    expect((chapterPicker() as HTMLSelectElement).value).toBe('');
+    expect((versePicker() as HTMLSelectElement).value).toBe('');
+    expect(optionValues(chapterPicker())).toEqual(['1']);
+  });
+
+  it('drops a half-made choice when the mode changes, and comes back clean', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+
+    fireEvent.click(mode('A passage'));
+    expect(screen.getByLabelText('Passage')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Chapter')).toBeNull();
+
+    fireEvent.click(mode('A verse'));
+    // The book is kept — it is true in both modes — but the verse is not, so
+    // "Add verse" cannot act on something no longer on screen.
+    expect((bookPicker() as HTMLSelectElement).value).toBe('john');
+    expect((chapterPicker() as HTMLSelectElement).value).toBe('');
+    expect(addVerse()).toBeDisabled();
+  });
+
+  it('handles a multi-digit verse at the end of a long chapter', async () => {
+    await openVerseMode();
+    fireEvent.change(bookPicker(), { target: { value: 'psalms' } });
+    fireEvent.change(chapterPicker(), { target: { value: '119' } });
+
+    const verses = optionValues(versePicker());
+    expect(verses).toHaveLength(176);
+    expect(verses.at(-1)).toBe('176');
+
+    fireEvent.change(versePicker(), { target: { value: '176' } });
+    fireEvent.click(addVerse());
+    expect(await screen.findByText('Psalms 119:176')).toBeInTheDocument();
+  });
+
+  it('saves the verse as an ordinary scripture anchor', async () => {
+    const { storage } = setup(<EntryEditor />);
+    await notesBox();
+    fireEvent.click(mode('A verse'));
+    fireEvent.change(bookPicker(), { target: { value: 'john' } });
+    fireEvent.change(chapterPicker(), { target: { value: '3' } });
+    fireEvent.change(versePicker(), { target: { value: '16' } });
+    fireEvent.click(addVerse());
+    await screen.findByText('John 3:16');
+
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'For God so loved.' } });
+    fireEvent.click(save());
+
+    await waitFor(async () => expect((await storage.listEntries()).length).toBe(1));
+    const [entry] = await storage.listEntries();
+    // One kind of anchor, with the ends meeting. No outlineEntryId: a verse
+    // chosen by number is not a division anybody named.
+    expect(entry.anchors).toEqual([
+      { kind: 'scripture', book: 'john', chapterStart: 3, verseStart: 16, chapterEnd: 3, verseEnd: 16 },
+    ]);
+  });
+});

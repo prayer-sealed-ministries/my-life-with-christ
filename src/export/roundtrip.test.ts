@@ -94,6 +94,90 @@ describe('round trip', () => {
   });
 });
 
+describe('a verse, a range and a passage survive the journey unchanged', () => {
+  /*
+   * The three things the picker can produce, through export, a wiped database
+   * and an import.
+   *
+   * They are one shape — a ScriptureRef with a start and an end — so this is
+   * really asking whether the ends survive. An exact verse whose end were
+   * dropped would come back as a whole chapter and point at the wrong forty
+   * verses; a range whose end were dropped would come back as its first verse
+   * alone. Both would read as plausible references, which is why the assertion
+   * is on the numbers and not on whether the import succeeded.
+   */
+  const anchored = (id: string, book: string, cs: number, vs: number, ce: number, ve: number): Entry => ({
+    ...SERMON,
+    id,
+    title: id,
+    anchors: [{ kind: 'scripture', book, chapterStart: cs, verseStart: vs, chapterEnd: ce, verseEnd: ve }],
+    scriptureRefs: [],
+  });
+
+  const CASES: Entry[] = [
+    // John 3:16 — one verse.
+    anchored('rt-verse', 'john', 3, 16, 3, 16),
+    // John 3:16-18 — a range inside a chapter.
+    anchored('rt-range', 'john', 3, 16, 3, 18),
+    // Romans 8:31-39 — the range from the brief, in another book.
+    anchored('rt-romans', 'romans', 8, 31, 8, 39),
+    // A whole chapter, which is what an existing passage selection looks like.
+    anchored('rt-passage', 'john', 3, 1, 3, 36),
+    // A range that crosses a chapter break, which the model has always allowed.
+    anchored('rt-cross', 'john', 3, 16, 4, 2),
+  ];
+
+  it('comes back with the same start and end verses', async () => {
+    await db.putEntries(CASES);
+    const before = byId(await db.listEntries());
+
+    const archive = await buildArchive(archiveOptions(before));
+    await db.clearEntries();
+    const parsed = await parseImport(archive.bytes);
+    await applyImport(parsed, db, 'merge');
+
+    const after = byId(await db.listEntries());
+    examinedAtLeast(after.length, CASES.length, 'references restored from the archive');
+    expect(after).toEqual(before);
+
+    // Spelled out as well as compared, so a failure says which end moved rather
+    // than printing two large objects side by side.
+    const ends = (entries: Entry[]) =>
+      entries.map((each) => {
+        const anchor = each.anchors[0];
+        if (anchor.kind !== 'scripture') throw new Error(`${each.id} lost its scripture anchor`);
+        return `${each.id} ${anchor.book} ${anchor.chapterStart}:${anchor.verseStart}-${anchor.chapterEnd}:${anchor.verseEnd}`;
+      });
+    expect(ends(after)).toEqual([
+      'rt-cross john 3:16-4:2',
+      'rt-passage john 3:1-3:36',
+      'rt-range john 3:16-3:18',
+      'rt-romans romans 8:31-8:39',
+      'rt-verse john 3:16-3:16',
+    ]);
+  });
+
+  it('writes them into the archive the way a person reads them', async () => {
+    await db.putEntries(CASES);
+    const archive = await buildArchive(archiveOptions(byId(await db.listEntries())));
+    const files = await readZip(archive.bytes);
+
+    const noteFor = (id: string) => {
+      const file = files.find((each) => each.path.startsWith('notes/') && zipEntryText(each).includes(`title: ${id}`));
+      if (!file) throw new Error(`no note written for ${id}`);
+      return zipEntryText(file);
+    };
+
+    // "John 3:16", not "John 3:16-16" and not a start/end object. The formatter
+    // collapses a range whose ends meet, which is the only place that decision
+    // is made.
+    expect(noteFor('rt-verse')).toContain('John 3:16');
+    expect(noteFor('rt-verse')).not.toContain('3:16-16');
+    expect(noteFor('rt-range')).toContain('John 3:16-18');
+    expect(noteFor('rt-romans')).toContain('Romans 8:31-39');
+  });
+});
+
 describe('the archive itself', () => {
   it('contains every file the spec calls for', async () => {
     const archive = await buildArchive(archiveOptions(ALL_ENTRIES));

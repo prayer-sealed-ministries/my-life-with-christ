@@ -21,6 +21,7 @@ import { ownText, providedText } from './provided-notes';
 import type { Entry, OutlineBook, ScriptureRef, Topic } from '../types';
 import { BOOK_NAMES } from './canon';
 import { normalize, resolveBook, searchBooks } from './book-aliases';
+import { buildIndex, referenceSpan } from './verse-index';
 
 const versification: Record<string, number[]> = versificationData;
 const topics = topicsFile.topics as Topic[];
@@ -117,7 +118,31 @@ export function parseReferenceQuery(query: string): ScriptureRef | null {
   if (endChapter < chapter || endChapter > counts.length) return null;
   if (endVerse < 1 || endVerse > counts[endChapter - 1]) return null;
 
-  return { book, chapterStart: chapter, verseStart: verse, chapterEnd: endChapter, verseEnd: endVerse };
+  const ranged = {
+    book,
+    chapterStart: chapter,
+    verseStart: verse,
+    chapterEnd: endChapter,
+    verseEnd: endVerse,
+  };
+
+  /*
+   * A range that runs backwards is not a reference.
+   *
+   * The bounds checks above are per-endpoint, so "John 3:18-16" passed all of
+   * them: both verses exist in John 3. What it produced was a ref whose end
+   * sits before its start, and every consumer then quietly disagreed about what
+   * that meant — `refLabel` printed "John 3:18-16" as though it were real,
+   * while `anchorOverlaps` compared `aFrom <= qTo && qFrom <= aTo` and matched
+   * nothing at all, so the search said the journal was empty rather than that
+   * the reference could not be read.
+   *
+   * Checked with `referenceSpan`, which is the same function the archive's
+   * stricter parser validates through and the same one the browse model uses,
+   * rather than a second opinion written here. Returning null lets the query
+   * fall through to an ordinary text search, which is the honest answer.
+   */
+  return referenceSpan(buildIndex(counts), ranged) ? ranged : null;
 }
 
 /** Render a ref the way a person would write it. */

@@ -88,6 +88,59 @@ describe('typed scripture references', () => {
     expect(parseReferenceQuery('forgiveness')).toBeNull();
     expect(parseReferenceQuery('')).toBeNull();
   });
+
+  it.each([
+    // One verse, written the way everyone writes it, and read back the same.
+    ['John 3:16', 'John 3:16', 3, 16, 3, 16],
+    // A range, with the hyphen a keyboard gives and the en dash a word
+    // processor substitutes. Both are the same reference.
+    ['John 3:16-18', 'John 3:16-18', 3, 16, 3, 18],
+    ['John 3:16\u201318', 'John 3:16-18', 3, 16, 3, 18],
+    // A numbered book, where the leading digit must not be read as a chapter.
+    ['1 John 4:8', '1 John 4:8', 4, 8, 4, 8],
+    ['Psalm 23:1', 'Psalms 23:1', 23, 1, 23, 1],
+    ['Romans 8:31-39', 'Romans 8:31-39', 8, 31, 8, 39],
+  ])('reads %s as one reference with a start and an end', (typed, label, cs, vs, ce, ve) => {
+    const ref = parseReferenceQuery(typed);
+    expect(ref, typed).not.toBeNull();
+    // The point of the lane, asserted on the stored shape rather than the
+    // label: an exact verse is a range whose ends meet, not a second kind of
+    // thing. Nothing downstream needs to know which one a reader chose.
+    expect([ref!.chapterStart, ref!.verseStart, ref!.chapterEnd, ref!.verseEnd]).toEqual([
+      cs,
+      vs,
+      ce,
+      ve,
+    ]);
+    expect(refLabel(ref!)).toBe(label);
+  });
+
+  it('refuses a range that runs backwards', () => {
+    /*
+     * Both endpoints exist in John 3, so every per-endpoint bounds check passed
+     * and this used to come back as a ref with its end before its start.
+     *
+     * That is worse than a rejection, because the consumers then disagreed:
+     * `refLabel` printed "John 3:18-16" as though it were a real reference,
+     * while `anchorOverlaps` compares `aFrom <= qTo && qFrom <= aTo` and so
+     * matched nothing — the search reported an empty journal rather than a
+     * reference it could not read.
+     */
+    expect(parseReferenceQuery('John 3:18-16')).toBeNull();
+    expect(parseReferenceQuery('Romans 8:39-31')).toBeNull();
+    // Across chapters too, where the endpoints are also individually fine.
+    expect(parseReferenceQuery('John 4:2-3:16')).toBeNull();
+  });
+
+  it('still reads a range that runs forwards across a chapter break', () => {
+    // The guard above must not cost the cross-chapter case, which the model has
+    // always supported and the archive's parser accepts.
+    const ref = parseReferenceQuery('John 3:16-4:2');
+    expect(ref).not.toBeNull();
+    expect([ref!.chapterStart, ref!.verseStart, ref!.chapterEnd, ref!.verseEnd]).toEqual([
+      3, 16, 4, 2,
+    ]);
+  });
 });
 
 describe('topic aliases — nobody types the label we picked', () => {

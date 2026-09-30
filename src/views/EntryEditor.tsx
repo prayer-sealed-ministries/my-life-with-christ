@@ -40,7 +40,7 @@ import {
   type RecentDetails,
 } from '../lib/recent-details';
 import { newId } from '../storage/semantics';
-import { refToString } from '../lib/bible';
+import { refToString, versification } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import {
   findPassages,
@@ -70,6 +70,7 @@ import type {
   EntryAnchor,
   EntryKind,
   EntryLink,
+  ScriptureRef,
 } from '../types';
 
 /** The dropdown, built from the canonical list so it cannot fall behind it. */
@@ -592,6 +593,10 @@ export default function EntryEditor({
   const passagePickerId = useId();
   const bookPickerId = useId();
   const sectionPickerId = useId();
+  const chapterPickerId = useId();
+  const versePickerId = useId();
+  const verseEndPickerId = useId();
+  const browseModeName = useId();
   const reasonId = useId();
   const focusKindId = useId();
   const providedId = useId();
@@ -610,6 +615,7 @@ export default function EntryEditor({
   const passageResultsRef = useRef<HTMLUListElement>(null);
   const bookPickerRef = useRef<HTMLSelectElement>(null);
   const sectionPickerRef = useRef<HTMLSelectElement>(null);
+  const versePickerRef = useRef<HTMLSelectElement>(null);
   const linksListRef = useRef<HTMLUListElement>(null);
   const deleteRef = useRef<HTMLButtonElement>(null);
   /**
@@ -651,6 +657,20 @@ export default function EntryEditor({
   /** Book chosen in the browse picker, and the section chosen within it. */
   const [browseBook, setBrowseBook] = useState('');
   const [browseSegmentId, setBrowseSegmentId] = useState('');
+  /*
+   * Which kind of reference the browse controls are choosing.
+   *
+   * Passage by default, because that is what this picker did before and what a
+   * sermon usually names. Verse is the same reference either way — one
+   * `ScriptureRef` with a start and an end, formatted as "John 3:16" when they
+   * meet — so this decides which controls are on screen and nothing else. There
+   * is no second kind of anchor and nothing downstream asks which one was used.
+   */
+  const [browseMode, setBrowseMode] = useState<'passage' | 'verse'>('passage');
+  const [browseChapter, setBrowseChapter] = useState('');
+  const [browseVerse, setBrowseVerse] = useState('');
+  /** Empty means "just the one verse", which is the common case. */
+  const [browseVerseEnd, setBrowseVerseEnd] = useState('');
 
   /*
    * The divisions, asked for only by the parts of this editor that are about
@@ -667,7 +687,11 @@ export default function EntryEditor({
    */
   const needsSections =
     passageQuery.length > 0 ||
-    browseBook !== '' ||
+    // Passage mode only. Choosing a verse needs verse COUNTS, which ship in the
+    // startup chunk under both data profiles; the section headings are three
+    // quarters of a megabyte fetched on demand, and pulling them to populate a
+    // list of numbers would undo what src/app/sections.ts exists for.
+    (browseMode === 'passage' && browseBook !== '') ||
     (form?.anchors.some(
       (anchor) => anchor.kind === 'scripture' && Boolean(anchor.outlineEntryId),
     ) ??
@@ -1180,6 +1204,34 @@ export default function EntryEditor({
     [browseBook, sections],
   );
 
+  /*
+   * The chapters and verses a chosen book actually has.
+   *
+   * Derived from versification rather than validated after the fact, so an
+   * impossible selection cannot be made in the first place: the verse list is
+   * the chosen chapter's, and the end-verse list starts at the chosen verse.
+   * A range that runs backwards, or a verse beyond the chapter, is not a state
+   * these controls can reach — which is a better guarantee than an error
+   * message, and the same one `referenceSpan` enforces on a typed reference.
+   */
+  // Not memoized by hand: at most 176 numbers, and the React Compiler keeps
+  // what it can on its own. A useMemo here was one it could not preserve, which
+  // costs the whole component its optimisation for an array that is cheaper to
+  // build than to cache.
+  const chapterCounts = browseBook ? (versification[browseBook] ?? []) : [];
+  const verseCount = browseChapter ? (chapterCounts[Number(browseChapter) - 1] ?? 0) : 0;
+  const verseOptions = Array.from({ length: verseCount }, (_, index) => index + 1);
+  const endVerseOptions = browseVerse
+    ? verseOptions.filter((verse) => verse >= Number(browseVerse))
+    : [];
+
+  /** Forget a selection the new book or chapter cannot hold. */
+  const resetVerseChoice = () => {
+    setBrowseChapter('');
+    setBrowseVerse('');
+    setBrowseVerseEnd('');
+  };
+
   /**
    * Attach the passage a result row names.
    *
@@ -1201,6 +1253,27 @@ export default function EntryEditor({
     // goes back to the field that found it rather than falling to <body>.
     setPassageQuery('');
     passageSearchRef.current?.focus();
+    setMessage(already ? `${label} is already attached.` : `${label} added.`);
+  };
+
+  /**
+   * Attach a plain scripture range.
+   *
+   * No `outlineEntryId`, because a verse chosen by number is not a division
+   * anybody named — and the stored shape is otherwise identical to what
+   * `addPassage` writes, which is the point: one reference model, two ways of
+   * arriving at it.
+   *
+   * The announcement is shared with `addPassage` for the same reason it exists
+   * there. Focus is left to the caller: the two ways in have different controls
+   * to hand it back to.
+   */
+  const addScriptureRef = (ref: ScriptureRef) => {
+    const anchor: EntryAnchor = { kind: 'scripture', ...ref };
+    const label = anchorLabel(anchor, sections);
+    const already = form?.anchors.some((existing) => anchorKey(existing) === anchorKey(anchor));
+
+    addAnchor(anchor);
     setMessage(already ? `${label} is already attached.` : `${label} added.`);
   };
 
@@ -1875,6 +1948,46 @@ export default function EntryEditor({
                 <legend className="text-sm font-medium text-ink-soft">
                   Or find it by book
                 </legend>
+
+                {/* Two radios rather than a segmented control or a pair of
+                    tabs. The choice has to be announced as a choice, the
+                    selected one must not be told apart by colour alone, and a
+                    native radio gives arrow-key movement and a real checked
+                    state for free — all of which a styled div would have to
+                    reimplement and would get subtly wrong on a screen reader.
+                    The label text is the whole target, so it is comfortably
+                    past 44px without a minimum height anywhere. */}
+                <div role="radiogroup" aria-label="What to add" className="mt-2 flex flex-wrap gap-4">
+                  {([
+                    ['passage', 'A passage'],
+                    ['verse', 'A verse'],
+                  ] as const).map(([value, label]) => (
+                    <label
+                      key={value}
+                      htmlFor={`${browseModeName}-${value}`}
+                      className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink"
+                    >
+                      <input
+                        id={`${browseModeName}-${value}`}
+                        type="radio"
+                        name={browseModeName}
+                        value={value}
+                        checked={browseMode === value}
+                        onChange={() => {
+                          setBrowseMode(value);
+                          // Neither half's selection means anything in the
+                          // other, and a stale one would be added by a button
+                          // the reader thinks is describing what they can see.
+                          setBrowseSegmentId('');
+                          resetVerseChoice();
+                        }}
+                        className="size-4 accent-current focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+
                 <div className="mt-2 flex flex-wrap items-end gap-3">
                   <div className="min-w-0 flex-1 basis-40">
                     <label htmlFor={bookPickerId} className={LABEL_CLASS}>
@@ -1890,6 +2003,10 @@ export default function EntryEditor({
                         // standing it would either name nothing or, worse, name
                         // a real division in a book nobody chose.
                         setBrowseSegmentId('');
+                        // Same for a chapter and verse: Psalm 119 has 176
+                        // verses and Jude has 25, so a number carried across
+                        // books is how an impossible reference gets saved.
+                        resetVerseChoice();
                       }}
                       className={CONTROL_CLASS}
                     >
@@ -1908,56 +2025,170 @@ export default function EntryEditor({
                     </select>
                   </div>
 
-                  <div className="min-w-0 flex-1 basis-56">
-                    <label htmlFor={sectionPickerId} className={LABEL_CLASS}>
-                      Passage
-                    </label>
-                    <select
-                      id={sectionPickerId}
-                      ref={sectionPickerRef}
-                      value={browseSegmentId}
-                      disabled={!browseBook}
-                      onChange={(event) => setBrowseSegmentId(event.target.value)}
-                      className={CONTROL_CLASS}
-                    >
-                      <option value="">
-                        {browseBook ? 'Choose a passage…' : 'Choose a book first'}
-                      </option>
-                      {browseSegments.map((segment) => {
-                        // An <option> is plain text, so the title and reference
-                        // share one line here rather than stacking as they do on
-                        // a result row.
-                        const title = sections ? sections.segmentTitle(segment) : segment.ref;
-                        const reference = refToString(
-                          segmentRef(segment, browseBook),
-                          BOOK_NAMES[browseBook] ?? browseBook,
-                        );
-                        return (
-                          <option key={segment.id} value={segment.id}>
-                            {title && title !== reference ? `${title} — ${reference}` : reference}
+                  {browseMode === 'passage' ? (
+                    <>
+                      <div className="min-w-0 flex-1 basis-56">
+                        <label htmlFor={sectionPickerId} className={LABEL_CLASS}>
+                          Passage
+                        </label>
+                        <select
+                          id={sectionPickerId}
+                          ref={sectionPickerRef}
+                          value={browseSegmentId}
+                          disabled={!browseBook}
+                          onChange={(event) => setBrowseSegmentId(event.target.value)}
+                          className={CONTROL_CLASS}
+                        >
+                          <option value="">
+                            {browseBook ? 'Choose a passage…' : 'Choose a book first'}
                           </option>
-                        );
-                      })}
-                    </select>
-                  </div>
+                          {browseSegments.map((segment) => {
+                            // An <option> is plain text, so the title and reference
+                            // share one line here rather than stacking as they do on
+                            // a result row.
+                            const title = sections ? sections.segmentTitle(segment) : segment.ref;
+                            const reference = refToString(
+                              segmentRef(segment, browseBook),
+                              BOOK_NAMES[browseBook] ?? browseBook,
+                            );
+                            return (
+                              <option key={segment.id} value={segment.id}>
+                                {title && title !== reference ? `${title} — ${reference}` : reference}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
 
-                  <Button
-                    disabled={!browseSegmentId}
-                    onClick={() => {
-                      const segment = browseSegments.find((row) => row.id === browseSegmentId);
-                      if (!segment) return;
-                      if (!sections) return;
-                      addPassage(toPassageMatch(segment, browseBook, sections.segmentTitle));
-                      // Adding clears the choice, which disables this very
-                      // button, and a disabled element cannot hold focus. The
-                      // book stays chosen: picking two passages from one sermon
-                      // is the common case, not the rare one.
-                      setBrowseSegmentId('');
-                      sectionPickerRef.current?.focus();
-                    }}
-                  >
-                    Add passage
-                  </Button>
+                      <Button
+                        disabled={!browseSegmentId}
+                        onClick={() => {
+                          const segment = browseSegments.find((row) => row.id === browseSegmentId);
+                          if (!segment) return;
+                          if (!sections) return;
+                          addPassage(toPassageMatch(segment, browseBook, sections.segmentTitle));
+                          // Adding clears the choice, which disables this very
+                          // button, and a disabled element cannot hold focus. The
+                          // book stays chosen: picking two passages from one sermon
+                          // is the common case, not the rare one.
+                          setBrowseSegmentId('');
+                          sectionPickerRef.current?.focus();
+                        }}
+                      >
+                        Add passage
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Three short selects rather than one long list. A book
+                          is at most 150 chapters and a chapter at most 176
+                          verses, and both are numbers a reader already knows —
+                          the native control is the compact layout here, and on
+                          a phone it opens the platform's own picker. */}
+                      <div className="min-w-0 basis-28">
+                        <label htmlFor={chapterPickerId} className={LABEL_CLASS}>
+                          Chapter
+                        </label>
+                        <select
+                          id={chapterPickerId}
+                          value={browseChapter}
+                          disabled={!browseBook}
+                          onChange={(event) => {
+                            setBrowseChapter(event.target.value);
+                            // Verse 40 exists in John 3 and not in John 2.
+                            setBrowseVerse('');
+                            setBrowseVerseEnd('');
+                          }}
+                          className={CONTROL_CLASS}
+                        >
+                          <option value="">{browseBook ? '—' : 'Book first'}</option>
+                          {chapterCounts.map((_, index) => (
+                            <option key={index + 1} value={String(index + 1)}>
+                              {index + 1}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="min-w-0 basis-28">
+                        <label htmlFor={versePickerId} className={LABEL_CLASS}>
+                          Verse
+                        </label>
+                        <select
+                          id={versePickerId}
+                          ref={versePickerRef}
+                          value={browseVerse}
+                          disabled={!browseChapter}
+                          onChange={(event) => {
+                            setBrowseVerse(event.target.value);
+                            // The end list begins at the new start, so a stale
+                            // end that now precedes it must go rather than be
+                            // silently reinterpreted.
+                            setBrowseVerseEnd('');
+                          }}
+                          className={CONTROL_CLASS}
+                        >
+                          <option value="">{browseChapter ? '—' : 'Chapter first'}</option>
+                          {verseOptions.map((verse) => (
+                            <option key={verse} value={String(verse)}>
+                              {verse}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="min-w-0 basis-32">
+                        <label htmlFor={verseEndPickerId} className={LABEL_CLASS}>
+                          To verse
+                        </label>
+                        <select
+                          id={verseEndPickerId}
+                          value={browseVerseEnd}
+                          disabled={!browseVerse}
+                          onChange={(event) => setBrowseVerseEnd(event.target.value)}
+                          className={CONTROL_CLASS}
+                        >
+                          {/* Optional, and named as what it does rather than
+                              left blank: one verse is the ordinary case. */}
+                          <option value="">
+                            {browseVerse ? 'Just this verse' : 'Verse first'}
+                          </option>
+                          {endVerseOptions.map((verse) => (
+                            <option key={verse} value={String(verse)}>
+                              {verse}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <Button
+                        disabled={!browseVerse}
+                        onClick={() => {
+                          const chapter = Number(browseChapter);
+                          const from = Number(browseVerse);
+                          const to = browseVerseEnd ? Number(browseVerseEnd) : from;
+                          // One ScriptureRef, exactly as a passage produces:
+                          // start and end, equal when it is a single verse.
+                          // Nothing downstream is told which control made it.
+                          addScriptureRef({
+                            book: browseBook,
+                            chapterStart: chapter,
+                            verseStart: from,
+                            chapterEnd: chapter,
+                            verseEnd: to,
+                          });
+                          // The book and chapter stay: a reader adding John
+                          // 3:16 is more likely to want 3:17 next than to move
+                          // to Habakkuk.
+                          setBrowseVerse('');
+                          setBrowseVerseEnd('');
+                          versePickerRef.current?.focus();
+                        }}
+                      >
+                        Add verse
+                      </Button>
+                    </>
+                  )}
                 </div>
               </fieldset>
         </section>

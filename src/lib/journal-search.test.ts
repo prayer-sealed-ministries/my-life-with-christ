@@ -578,3 +578,150 @@ describe('suggestions when nothing was found', () => {
     expect(spellingSuggestions('eschatologcal', corpus)).toEqual([]);
   });
 });
+
+describe('one reference model: a verse, a range and a passage answer the same question', () => {
+  /*
+   * The promise of the verse picker: an exact verse is not a second kind of
+   * reference, it is a range whose ends meet. So "John 3:16" has to reach every
+   * entry whose Scripture covers John 3:16, however that entry came to be
+   * tagged — containment, never a stored string compared for equality.
+   *
+   * Tested on `entriesAnchoredTo` rather than through `searchJournal`, and that
+   * is not a shortcut. An anchor's LABEL is itself a searchable text field, so
+   * the word "John" in the query matches every entry anchored anywhere in John
+   * regardless of what the reference arm decides. Two earlier drafts of this
+   * block were written against `searchJournal` and both reported four matches
+   * whatever the overlap did — they were measuring the text search. The
+   * end-to-end behaviour is covered below, where the corpus cannot confound it.
+   */
+  const at = (chapterStart: number, verseStart: number, chapterEnd: number, verseEnd: number) => ({
+    kind: 'scripture' as const,
+    book: 'john',
+    chapterStart,
+    verseStart,
+    chapterEnd,
+    verseEnd,
+  });
+
+  const corpus = [
+    entry({ id: 'r-exact', anchors: [at(3, 16, 3, 16)] }),
+    entry({ id: 'r-range', anchors: [at(3, 16, 3, 18)] }),
+    entry({ id: 'r-passage', anchors: [at(3, 1, 3, 21)] }),
+    entry({ id: 'r-elsewhere', anchors: [at(4, 1, 4, 26)] }),
+  ];
+
+  const covering = (query: string) =>
+    entriesAnchoredTo(corpus, parseReferenceQuery(query)!)
+      .map((each) => each.id)
+      .sort();
+
+  it('an exact verse reaches the verse, the range around it and the passage holding it', () => {
+    expect(covering('John 3:16')).toEqual(['r-exact', 'r-passage', 'r-range']);
+  });
+
+  it('leaves out a reference in the same book that does not overlap', () => {
+    // John 4 is a different conversation. Same book, so this is the case a
+    // book-level check would get wrong.
+    expect(covering('John 3:16')).not.toContain('r-elsewhere');
+    expect(covering('John 4:7')).toEqual(['r-elsewhere']);
+  });
+
+  it('reaches a range from a verse inside it that no entry names', () => {
+    // Nothing is tagged John 3:17. The range and the passage cover it; the
+    // single verse does not. This is the whole difference between containment
+    // and matching what was stored.
+    expect(covering('John 3:17')).toEqual(['r-passage', 'r-range']);
+  });
+
+  it('reaches all three from the whole chapter, and the other one from its own', () => {
+    expect(covering('John 3')).toEqual(['r-exact', 'r-passage', 'r-range']);
+    expect(covering('John 4')).toEqual(['r-elsewhere']);
+  });
+
+  it('touches the boundaries exactly', () => {
+    // First and last verse of the range, and the verse either side of it.
+    expect(covering('John 3:18')).toEqual(['r-passage', 'r-range']);
+    expect(covering('John 3:15')).toEqual(['r-passage']);
+    expect(covering('John 3:19')).toEqual(['r-passage']);
+    // The passage's own ends.
+    expect(covering('John 3:1')).toEqual(['r-passage']);
+    expect(covering('John 3:21')).toEqual(['r-passage']);
+    expect(covering('John 3:22')).toEqual([]);
+  });
+});
+
+describe('searching a typed reference, end to end', () => {
+  /*
+   * The corpus deliberately puts the entry that must NOT match in another book,
+   * so the exclusion cannot be produced by the text arm matching the book name
+   * and then be mistaken for the reference arm working.
+   */
+  const johnAt = (verseStart: number, verseEnd: number) => ({
+    kind: 'scripture' as const,
+    book: 'john',
+    chapterStart: 3,
+    verseStart,
+    chapterEnd: 3,
+    verseEnd,
+  });
+
+  const corpus = [
+    entry({ id: 's-exact', anchors: [johnAt(16, 16)] }),
+    entry({ id: 's-range', anchors: [johnAt(16, 18)] }),
+    entry({ id: 's-passage', anchors: [johnAt(1, 21)] }),
+    entry({
+      id: 's-romans',
+      anchors: [
+        { kind: 'scripture', book: 'romans', chapterStart: 8, verseStart: 31, chapterEnd: 8, verseEnd: 39 },
+      ],
+    }),
+  ];
+
+  it('John 3:16 finds the verse, the range and the passage, and not Romans', () => {
+    expect(ids(searchJournal('John 3:16', corpus)).sort()).toEqual([
+      's-exact',
+      's-passage',
+      's-range',
+    ]);
+  });
+
+  it('Romans 8:31-39 finds only the entry anchored there', () => {
+    expect(ids(searchJournal('Romans 8:31-39', corpus)).sort()).toEqual(['s-romans']);
+  });
+
+  it('an exact verse inside the Romans range still finds it', () => {
+    expect(ids(searchJournal('Romans 8:35', corpus)).sort()).toEqual(['s-romans']);
+  });
+});
+describe('passage history gathers a verse and the passage that holds it', () => {
+  const at = (chapterStart: number, verseStart: number, chapterEnd: number, verseEnd: number) => ({
+    kind: 'scripture' as const,
+    book: 'john',
+    chapterStart,
+    verseStart,
+    chapterEnd,
+    verseEnd,
+  });
+
+  it('shows an exact-verse entry when reading a passage that contains it', () => {
+    const corpus = [
+      entry({ id: 'h-verse', anchors: [at(3, 16, 3, 16)] }),
+      entry({ id: 'h-range', anchors: [at(3, 16, 3, 18)] }),
+      entry({ id: 'h-other', anchors: [at(4, 1, 4, 26)] }),
+    ];
+    const passage = parseReferenceQuery('John 3:1-21')!;
+
+    expect(entriesAnchoredTo(corpus, passage).map((e) => e.id)).toEqual(['h-verse', 'h-range']);
+  });
+
+  it('shows the range when reading a single verse inside it', () => {
+    const corpus = [
+      entry({ id: 'h-verse', anchors: [at(3, 16, 3, 16)] }),
+      entry({ id: 'h-range', anchors: [at(3, 16, 3, 18)] }),
+    ];
+    // John 3:17 is inside the range and is not the exact verse.
+    const one = parseReferenceQuery('John 3:17')!;
+
+    expect(entriesAnchoredTo(corpus, one).map((e) => e.id)).toEqual(['h-range']);
+  });
+});
