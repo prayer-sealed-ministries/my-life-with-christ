@@ -29,7 +29,6 @@ import type { Entry, EntryKind, ScriptureRef } from '../types';
 const KIND_LABELS: Record<EntryKind, string> = {
   sermon: 'Sermon',
   reading: 'Reading',
-  service: 'Service',
   prayer: 'Prayer',
   reflection: 'Reflection',
   letter: 'Letter',

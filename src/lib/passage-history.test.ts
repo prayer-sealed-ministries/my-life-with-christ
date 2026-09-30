@@ -228,7 +228,7 @@ describe('the line quoted back to the reader', () => {
 });
 
 describe('every kind of moment counts', () => {
-  it('includes all six canonical kinds', () => {
+  it('includes all five canonical kinds', () => {
     // A prayer anchored to John 15 is part of a history with John 15, and so
     // is a letter. Nothing here restricts this to sermons and readings.
     const corpus = ENTRY_KINDS.map((kind) =>
@@ -239,7 +239,7 @@ describe('every kind of moment counts', () => {
     expect(found).toHaveLength(ENTRY_KINDS.length);
     expect(ids(found).sort()).toEqual([...ENTRY_KINDS].sort());
     // The floor: a loop over an empty list proves nothing.
-    expect(ENTRY_KINDS.length).toBe(6);
+    expect(ENTRY_KINDS.length).toBe(5);
     for (const kind of ENTRY_KINDS) expect(ENTRY_KIND_LABELS[kind]).toBeTruthy();
   });
 });

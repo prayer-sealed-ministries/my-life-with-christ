@@ -70,7 +70,7 @@ book, or by life topic — and write against any of it.
   point lands. The new-entry form opens with the kind already set, the date
   already today, and the cursor already in the notes box. Everything else folds
   away behind a details panel.
-- **Entry kinds.** Sermon, Bible reading, service, prayer, reflection, letter.
+- **Entry kinds.** Sermon, Bible reading, prayer, reflection, letter.
 - **What an entry is about.** A passage, a topic, or a whole book. A passage
   anchor always stores a resolved Scripture range, so a note keeps its meaning
   even in a build that carries no section titles at all.

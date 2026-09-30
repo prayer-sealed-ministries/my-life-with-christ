@@ -163,7 +163,7 @@ describe('narrowing', () => {
     await show('kestrel', async (db) => db.putEntries(MIXED));
     await ready(4);
     fireEvent.click(screen.getByText(/^Advanced search/));
-    for (const label of ['Sermon', 'Bible reading', 'Service', 'Prayer']) {
+    for (const label of ['Sermon', 'Bible reading', 'Prayer', 'Reflection']) {
       fireEvent.click(screen.getByRole('checkbox', { name: label }));
     }
     await waitFor(() =>

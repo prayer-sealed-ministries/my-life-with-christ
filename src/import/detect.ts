@@ -267,7 +267,7 @@ export function detectDate(text: string): DetectedDate | null {
 /**
  * Hints only, and weak ones.
  *
- * These map onto the six kinds the app already has; no new categories are
+ * These map onto the five kinds the app already has; no new categories are
  * invented. A word has to appear near the start of the note to count — "prayer"
  * in the middle of a sermon note is the subject, not the type.
  */
@@ -275,9 +275,22 @@ const KIND_HINTS: Array<{ kind: EntryKind; words: string[] }> = [
   { kind: 'sermon', words: ['sermon', 'preached', 'preaching', 'message by', 'homily'] },
   { kind: 'prayer', words: ['prayer', 'praying', 'prayed', 'intercession'] },
   { kind: 'reading', words: ['bible study', 'study notes', 'devotional', 'quiet time', 'reading'] },
-  { kind: 'service', words: ['service', 'worship', 'liturgy', 'communion'] },
   { kind: 'letter', words: ['letter to', 'dear '] },
 ];
+
+/*
+ * There is no row for `service`, `worship`, `liturgy` or `communion`.
+ *
+ * There was, while `service` was a kind. Those words did not move to `sermon`
+ * when it went. `sermon` is tested first, so anything added to it wins outright,
+ * and "worship" or "communion" is at least as likely to head a prayer or a
+ * reflection as a sermon note — the list would have become confidently wrong
+ * instead of usefully quiet.
+ *
+ * So a note headed "Morning service" now falls through to `reflection` and is
+ * marked unconfident, which flags it for review rather than presenting a guess
+ * as a finding. The reader picks, on a screen that already exists for it.
+ */
 
 /** How far into a note a type word still describes the note. */
 const HINT_WINDOW = 400;

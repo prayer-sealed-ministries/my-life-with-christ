@@ -161,6 +161,63 @@ describe('forward migration never drops a field', () => {
     expect(warnings.join(' ')).toMatch(/newer version/);
   });
 
+  it('reads a retired kind as the kind that carries its meaning, and says so', () => {
+    /*
+     * `service` was an entry kind until 2026-09-30. Every archive exported
+     * before then can still say it, and an archive is the artefact this whole
+     * product promises — so it has to keep reading, and it has to land somewhere
+     * that means what the writer meant.
+     *
+     * The generic fallback for a kind this build does not know is `reflection`,
+     * which would be wrong here: this entry carries a speaker, a place, and
+     * notes on what was taught. Reading it as thinking-on-paper would file
+     * somebody's Easter morning under the wrong heading in their own book.
+     */
+    const { entries, warnings } = migrateExport({
+      format: 'journey-export',
+      version: 1,
+      entries: [
+        {
+          ...SERMON,
+          id: 'easter',
+          kind: 'service',
+          title: 'Easter morning',
+          speaker: 'Pastor James Whitfield',
+          place: 'First Baptist, Tallahassee, FL',
+          notes: 'Full church. The children did the reading.',
+        },
+      ],
+    });
+
+    expect(entries[0].kind).toBe('sermon');
+    // A coercion that did not announce itself is the thing the round-trip tests
+    // exist to prevent: the file changed on the way in.
+    expect(warnings.join(' ')).toMatch(/no longer offered/);
+    expect(warnings.join(' ')).toMatch(/"service"/);
+    expect(warnings.join(' ')).toMatch(/sermon/);
+
+    // And only the kind moved. Everything the writer actually wrote is theirs.
+    expect(entries[0].title).toBe('Easter morning');
+    expect(entries[0].speaker).toBe('Pastor James Whitfield');
+    expect(entries[0].place).toBe('First Baptist, Tallahassee, FL');
+    expect(entries[0].notes).toBe('Full church. The children did the reading.');
+  });
+
+  it('still reads a kind it has never heard of as a reflection, separately', () => {
+    // Retired and unrecognised are different answers and must stay legible as
+    // two things: one is a rename this app performed, the other is a file from
+    // somewhere else. A single warning for both would hide the rename.
+    const { entries, warnings } = migrateExport({
+      format: 'journey-export',
+      version: 1,
+      entries: [{ ...SERMON, id: 'odd', kind: 'liturgy' }],
+    });
+
+    expect(entries[0].kind).toBe('reflection');
+    expect(warnings.join(' ')).toMatch(/unknown kind "liturgy"/);
+    expect(warnings.join(' ')).not.toMatch(/no longer offered/);
+  });
+
   it('migrates the old string-array anchor format forward', () => {
     const legacy = {
       format: 'journey-export',

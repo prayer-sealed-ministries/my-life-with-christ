@@ -379,7 +379,16 @@ function headerBlock(entry: Entry, ctx: ExportContext): string {
   const speaker = oneLine(entry.speaker ?? '');
   const series = oneLine(entry.sermonSeries ?? '');
 
-  const facts: string[] = [KIND_LABELS[entry.kind]];
+  // `?? entry.kind`, as book.ts and indexes.ts already did; this was the third
+  // call site and it had been missed.
+  //
+  // A row can carry a kind this build has no label for: one the app retired
+  // (`service`, until 2026-09-30) or one a newer version wrote. `join` renders
+  // an undefined element as nothing rather than as "undefined", so the bare
+  // lookup did not shout — it opened the note's facts line with a dangling
+  // separator, " · 12 April 2026 · at First Baptist", and the kind simply was
+  // not there. The raw word is a poor label and an honest one.
+  const facts: string[] = [KIND_LABELS[entry.kind] ?? entry.kind];
   if (date) facts.push(formatEventDate(date));
   if (place) facts.push(`at ${place}`);
   // Labelled, because a bare name on a line of facts is a guess in fifty years.

@@ -65,15 +65,15 @@ const EMPTY_KINDS: EntryKind[] = [];
 /*
  * There is deliberately no list of kinds here.
  *
- * There used to be, and it had drifted: it offered four of the six, called
+ * There used to be, and it had drifted: it offered four of the kinds, called
  * `sermon` "Sermons" where every other surface says "Sermon", and carried an
  * "All" pseudo-kind that is not a kind at all. A reader who had written a
- * Service or a Letter could not narrow to it, and nothing failed — a filter
- * list missing an option looks exactly like a filter list.
+ * Letter could not narrow to it, and nothing failed — a filter list missing an
+ * option looks exactly like a filter list.
  *
  * ENTRY_KINDS and ENTRY_KIND_LABELS in src/lib/entry-kinds.ts are the one
  * definition, shared with the editor, Home and the route parser. Adding a
- * seventh kind is a type error there until it is listed, and it then appears
+ * sixth kind is a type error there until it is listed, and it then appears
  * here for free.
  */
 

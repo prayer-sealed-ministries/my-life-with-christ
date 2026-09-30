@@ -149,9 +149,12 @@ test('C — a kind filter does not change what a result says it matched', async 
 test('D — the filter is visible when it is the reason nothing came back', async ({ page }) => {
   await searchFor(page, TERM);
   await openAdvanced(page);
-  await page.getByRole('checkbox', { name: 'Service' }).check();
+  // A kind nothing in this corpus carries. "Bible reading" is also the one label
+  // that differs from its stored value (`reading`), so a filter that echoed the
+  // raw kind back at the reader would fail here rather than read plausibly.
+  await page.getByRole('checkbox', { name: 'Bible reading' }).check();
 
-  await expect(page.getByText('No matches in Service.')).toBeVisible();
+  await expect(page.getByText('No matches in Bible reading.')).toBeVisible();
   // And it does not pretend the words are nowhere in the journal.
   await expect(page.getByText('2 entries of other kinds match.')).toBeVisible();
 });

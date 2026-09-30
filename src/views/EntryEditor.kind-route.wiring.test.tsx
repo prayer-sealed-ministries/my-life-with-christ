@@ -81,7 +81,7 @@ describe('what a blank entry opens as', () => {
   });
 
   it('is whatever the route asked for — every kind, not just the two on Home', async () => {
-    // Driven over the whole list so a seventh kind cannot be added to the model
+    // Driven over the whole list so a sixth kind cannot be added to the model
     // and silently left unreachable by a link.
     for (const kind of ENTRY_KINDS) {
       await open(`#/entry/new?kind=${kind}`);
@@ -153,6 +153,75 @@ describe('an entry that already exists', () => {
       expect((await db.getEntry(existing.id))!.notes).toBe('Already written, revised.');
     });
     expect((await db.getEntry(existing.id))!.kind, 'saving re-kinded it').toBe('reflection');
+  }, 20_000);
+
+  it('shows a real kind for a row saved as one this build retired', async () => {
+    /*
+     * `service` was a kind until 2026-09-30, and nothing rewrites stored rows on
+     * upgrade — so a row can still say it.
+     *
+     * Reading the select alone does NOT test this, which is why this comment is
+     * longer than the test. Removing the resolution and running it passed: a
+     * `<select>` whose value matches no option falls back to the first, so it
+     * reads "Sermon" either way and the assertion was measuring the option order.
+     * The defect is that the state behind the control still says `service`, so
+     * the editor takes its not-a-sermon branches while the control says Sermon.
+     *
+     * The prominent church-note import is that branch, made visible. It is the
+     * assertion that actually distinguishes the two states, and the reason this
+     * test reaches into the import affordance at all.
+     *
+     * `putEntries` writes verbatim, which is what makes this stageable;
+     * `createEntry` would have defaulted the kind away. The cast is the point —
+     * the value is one the current type cannot express, which is exactly the
+     * situation a stored row puts the editor in.
+     */
+    await db.putEntries([
+      {
+        id: 'old-service',
+        kind: 'service' as unknown as (typeof ENTRY_KINDS)[number],
+        title: 'Easter morning',
+        date: '2024-03-31',
+        anchors: [],
+        scriptureRefs: [],
+        notes: 'Full church. The children did the reading.',
+        reflection: '',
+        links: [],
+        tags: [],
+        forDescendants: false,
+        visibility: 'private',
+        createdAt: '2024-03-31T10:00:00.000Z',
+        updatedAt: '2024-03-31T10:00:00.000Z',
+      },
+    ]);
+
+    window.location.hash = '#/entry/old-service';
+    renderApp();
+    await notesBox();
+
+    expect(kindField().value).toBe('sermon');
+    expect(ENTRY_KIND_LABELS.sermon).toBe('Sermon');
+
+    // The one that actually distinguishes a resolved kind from an unresolved
+    // one: a sermon gets the prominent church-note import, and every other kind
+    // gets the quiet neutral route. A control reading "Sermon" above the quiet
+    // control is the editor disagreeing with itself.
+    expect(
+      screen.getByRole('button', { name: 'Import church notes' }),
+      'the control said Sermon and the editor behaved as something else',
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Import notes/ })).toBeNull();
+
+    // The words are untouched, which is the part that would actually be a loss.
+    expect(screen.getByLabelText('Notes', { exact: true })).toHaveValue(
+      'Full church. The children did the reading.',
+    );
+
+    // And nothing was written behind the reader's back. The row still says what
+    // it said until they save it themselves — the canonical copy the dirty check
+    // compares against comes through the same resolution, so the editor does not
+    // claim unsaved changes either.
+    expect((await db.getEntry('old-service'))!.kind).toBe('service');
   }, 20_000);
 });
 

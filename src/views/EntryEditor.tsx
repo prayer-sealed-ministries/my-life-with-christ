@@ -49,7 +49,7 @@ import {
   type PassageSearchResult,
   type PassageMatch,
 } from '../lib/passage-search';
-import { ENTRY_KINDS, ENTRY_KIND_LABELS } from '../lib/entry-kinds';
+import { ENTRY_KINDS, ENTRY_KIND_LABELS, resolveEntryKind } from '../lib/entry-kinds';
 import { formatDay } from '../lib/dates';
 import { describeProvenance } from '../lib/provided-notes';
 import { SermonNotesImport } from './SermonNotesImport';
@@ -117,7 +117,26 @@ const blankForm = (kind: EntryKind = 'sermon'): FormState => ({
 });
 
 const formFromEntry = (entry: Entry): FormState => ({
-  kind: entry.kind,
+  /*
+   * A row can be older than this build. `service` was a kind once, and an entry
+   * saved as one still says so in the database — nothing rewrites stored rows on
+   * upgrade.
+   *
+   * Left alone the control does not go blank, which is what made this worth
+   * checking rather than assuming: `<select>` matches no option and falls back
+   * to the first one, so it reads "Sermon" quite convincingly. The state behind
+   * it still says `service`, so the editor takes every not-a-sermon branch —
+   * the reader is shown a control saying Sermon above an editor behaving as
+   * something else, with the quiet import instead of the prominent one and no
+   * way to see why. Saving would keep `service`, and the entry stays invisible
+   * to every kind filter.
+   *
+   * Resolving it here makes the state agree with the word on the screen. The
+   * canonical copy used for dirty-tracking comes through this same function, so
+   * the entry does not claim unsaved changes; the row is corrected the next time
+   * it is saved for a reason of the reader's own, never behind their back.
+   */
+  kind: resolveEntryKind(entry.kind) ?? 'reflection',
   title: entry.title,
   date: entry.date,
   place: entry.place ?? '',

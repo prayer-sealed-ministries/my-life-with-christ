@@ -120,7 +120,17 @@ describe('detectKind', () => {
     expect(detectKind('Sunday sermon', 'Pastor preached on grace.').kind).toBe('sermon');
     expect(detectKind('Prayer list', 'Praying for the Millers.').kind).toBe('prayer');
     expect(detectKind('Bible study', 'Study notes on Romans.').kind).toBe('reading');
-    expect(detectKind('Morning service', 'Worship and communion.').kind).toBe('service');
+    expect(detectKind('A letter to Ruth', 'Dear Ruth,').kind).toBe('letter');
+  });
+
+  it('does not guess a kind for a service, now that there is no such kind', () => {
+    // `service` was a kind and is not any more, and its hint words did not move
+    // to `sermon`: see the note beside KIND_HINTS. A note headed this way is
+    // handed back unconfident so the reader decides, which is the honest answer
+    // and the one the review step is built around.
+    const found = detectKind('Morning service', 'Worship and communion.');
+    expect(found.kind).toBe('reflection');
+    expect(found.confident).toBe(false);
   });
 
   it('falls back to reflection, and says it is not sure', () => {

@@ -9,6 +9,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { ENTRY_KINDS } from './entry-kinds';
+
 import {
   FIELD_LABELS,
   type MatchField,
@@ -399,15 +401,13 @@ describe('Scripture', () => {
  * matches" from "nothing of that kind matches".
  */
 describe('narrowing by entry kind', () => {
-  // One word in all six, so only the filter can distinguish them.
-  const corpus = [
-    entry({ id: 'k-sermon', kind: 'sermon', notes: 'A word about mercy.' }),
-    entry({ id: 'k-reading', kind: 'reading', notes: 'A word about mercy.' }),
-    entry({ id: 'k-service', kind: 'service', notes: 'A word about mercy.' }),
-    entry({ id: 'k-prayer', kind: 'prayer', notes: 'A word about mercy.' }),
-    entry({ id: 'k-reflection', kind: 'reflection', notes: 'A word about mercy.' }),
-    entry({ id: 'k-letter', kind: 'letter', notes: 'A word about mercy.' }),
-  ];
+  // One word in every kind, so only the filter can distinguish them. Built from
+  // ENTRY_KINDS rather than typed out: a hand-written list here went stale the
+  // moment the set changed, and a filter test that silently stops covering a
+  // kind looks exactly like a filter test that covers them all.
+  const corpus = ENTRY_KINDS.map((kind) =>
+    entry({ id: `k-${kind}`, kind, notes: 'A word about mercy.' }),
+  );
 
   it('searches every kind when nothing is selected', () => {
     expect(ids(searchJournal('mercy', corpus)).sort()).toEqual(
@@ -415,7 +415,12 @@ describe('narrowing by entry kind', () => {
     );
     // Absent and empty must mean the same thing. The view sends an empty array
     // when no box is ticked, and "no kinds selected" can never mean "no kinds".
-    expect(ids(searchJournal('mercy', corpus, { kinds: [] }))).toHaveLength(6);
+    expect(ids(searchJournal('mercy', corpus, { kinds: [] }))).toHaveLength(
+      ENTRY_KINDS.length,
+    );
+    // The floor: a corpus built from an empty list would satisfy every
+    // assertion above it.
+    expect(ENTRY_KINDS.length).toBe(5);
   });
 
   it('narrows to one kind', () => {

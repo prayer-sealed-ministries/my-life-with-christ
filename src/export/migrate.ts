@@ -20,7 +20,7 @@ import type {
   Visibility,
 } from '../types';
 
-import { ENTRY_KINDS } from '../lib/entry-kinds';
+import { ENTRY_KINDS, resolveEntryKind } from '../lib/entry-kinds';
 
 export const CURRENT_VERSION = 1;
 
@@ -109,6 +109,34 @@ function migrateSource(raw: unknown): EntrySource | undefined {
 
 /** The kinds this build understands. One list, in src/lib/entry-kinds.ts. */
 const KINDS: readonly EntryKind[] = ENTRY_KINDS;
+
+/**
+ * What kind is this, given a build that may not have written it?
+ *
+ * Three answers, and each one says so. A kind this build knows is kept. A kind
+ * this app retired becomes the kind that carries the same meaning — see
+ * RETIRED_ENTRY_KINDS, which the editor reads too, so a restored archive and a
+ * reopened row cannot disagree. Anything else is writing of an unknown type,
+ * which is what `reflection` has always meant here.
+ *
+ * Every coercion warns. An archive that quietly changed on the way in is the
+ * thing the round-trip tests exist to prevent.
+ */
+function readKind(raw: unknown, id: string, warnings: string[]): EntryKind {
+  if (KINDS.includes(raw as EntryKind)) return raw as EntryKind;
+  if (raw === undefined) return 'reflection';
+
+  const retired = resolveEntryKind(raw);
+  if (retired) {
+    warnings.push(
+      `Entry ${id}: kind ${JSON.stringify(raw)} is no longer offered, read as "${retired}".`,
+    );
+    return retired;
+  }
+
+  warnings.push(`Entry ${id}: unknown kind ${JSON.stringify(raw)} read as "reflection".`);
+  return 'reflection';
+}
 
 export interface MigrationContext {
   /**
@@ -243,10 +271,7 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
     if (unmapped !== undefined) unmappedAnchors.push(unmapped);
   }
 
-  const kind = KINDS.includes(value.kind as EntryKind) ? (value.kind as EntryKind) : 'reflection';
-  if (value.kind !== undefined && kind !== value.kind) {
-    warnings.push(`Entry ${id}: unknown kind ${JSON.stringify(value.kind)} read as "reflection".`);
-  }
+  const kind = readKind(value.kind, id, warnings);
 
   // Anything this build does not know about, kept verbatim.
   const unmigrated: Record<string, unknown> = {

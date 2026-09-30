@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ENTRY_KINDS } from '../lib/entry-kinds';
 import { renderCsv, renderExportNote, renderReadme, renderSchema } from './readme';
 import { buildNoteFilenames } from './context';
 import type { ExportContext } from './context';
@@ -623,6 +624,30 @@ describe('renderSchema', () => {
       if (typeof node.description !== 'string' || node.description.length < 12) missing.push(name);
     });
     expect(missing).toEqual([]);
+  });
+
+  it('declares exactly the kinds this build can write, and explains the one it cannot', () => {
+    // The schema is the archive's own account of itself — what a stranger with a
+    // text editor reads in 2060. It listed the kinds twice, by hand, tied to
+    // nothing: a kind removed from the app but left in here would have the
+    // archive declaring a value the app can no longer produce, and every other
+    // test would still pass.
+    const entry = resolveRef(schema, '#/$defs/entry');
+    const kind = (entry.properties as Node).kind as Node;
+    expect(kind.enum).toEqual([...ENTRY_KINDS]);
+    expect(kind.enum).not.toContain('service');
+
+    // The filter enum is the second copy. Same list, or a restored archive
+    // disagrees with itself about what a kind is.
+    const filters = resolveRef(schema, '#/$defs/exportFilter');
+    const kinds = (filters.properties as Node).kinds as Node;
+    expect((kinds.items as Node).enum).toEqual([...ENTRY_KINDS]);
+
+    // And the prose still accounts for `service`, because journals written while
+    // it existed say it. Dropping the word from the schema would leave a reader
+    // holding a file with a kind the schema calls invalid.
+    expect(String(kind.description)).toContain('service');
+    expect(String(kind.description)).toContain('sermon');
   });
 
   it('mirrors the Entry type: same fields, same required set', () => {

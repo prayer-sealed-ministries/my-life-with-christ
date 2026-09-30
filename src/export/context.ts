@@ -115,7 +115,6 @@ export function buildNoteFilenames(entries: Entry[]): Map<string, string> {
 export const KIND_LABELS: Record<EntryKind, string> = {
   sermon: 'Sermon',
   reading: 'Reading',
-  service: 'Service',
   prayer: 'Prayer',
   reflection: 'Reflection',
   letter: 'Letter',

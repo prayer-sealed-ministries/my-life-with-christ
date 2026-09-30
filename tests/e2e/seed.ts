@@ -82,7 +82,7 @@ export const SEED_ENTRIES: Entry[] = [
     createdAt: iso('2024-05-19'), updatedAt: iso('2024-05-19'),
   },
   {
-    id: 'seed-06', kind: 'service', title: 'Easter morning', date: '2024-03-31',
+    id: 'seed-06', kind: 'sermon', title: 'Easter morning', date: '2024-03-31',
     place: 'First Baptist, Tallahassee, FL', speaker: 'Pastor James Whitfield',
     anchors: [{ kind: 'scripture', book: 'john', chapterStart: 20, verseStart: 1, chapterEnd: 20, verseEnd: 18 }],
     scriptureRefs: ['John 20:1-18'],

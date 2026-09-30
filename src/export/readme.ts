@@ -13,6 +13,7 @@
  * costs nothing to carry and is worth everything if the reader has no context.
  */
 
+import { ENTRY_KINDS } from '../lib/entry-kinds';
 import { describeProvenance } from '../lib/provided-notes';
 import type { Entry, EntryAnchor, EntryKind } from '../types';
 import type { ExportContext } from './context';
@@ -808,13 +809,15 @@ export function renderSchema(): string {
           },
           kind: {
             type: 'string',
-            enum: ['sermon', 'reading', 'service', 'prayer', 'reflection', 'letter'],
+            enum: [...ENTRY_KINDS],
             description:
               'What kind of entry this is. "sermon": notes taken while somebody ' +
               'preached. "reading": the writer reading scripture on their own. ' +
-              '"service": a whole service or gathering. "prayer": a prayer ' +
-              'written down. "reflection": thinking on paper. "letter": written ' +
-              'to a person, often to whoever would read it later.',
+              '"prayer": a prayer written down. "reflection": thinking on ' +
+              'paper. "letter": written to a person, often to whoever would ' +
+              'read it later. Journals written before 2026-09-30 may also ' +
+              'carry "service", a kind this app no longer offers; read it as ' +
+              'a sermon.',
           },
           title: {
             type: 'string',
@@ -1209,7 +1212,7 @@ export function renderSchema(): string {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['sermon', 'reading', 'service', 'prayer', 'reflection', 'letter'],
+              enum: [...ENTRY_KINDS],
             },
             description: 'Only these kinds of entry were kept.',
           },

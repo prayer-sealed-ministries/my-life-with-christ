@@ -24,7 +24,6 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 const KINDS = [
   { value: 'sermon', label: 'Sermon' },
   { value: 'reading', label: 'Bible reading' },
-  { value: 'service', label: 'Service' },
   { value: 'prayer', label: 'Prayer' },
   { value: 'reflection', label: 'Reflection' },
   { value: 'letter', label: 'Letter' },

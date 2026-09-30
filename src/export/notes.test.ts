@@ -677,6 +677,36 @@ describe('a future version wrote fields this build does not know', () => {
   it('says nothing about _unmigrated when there is nothing to say', () => {
     expect(parseFrontMatter(renderNote(entry(), context()))).not.toHaveProperty('_unmigrated');
   });
+
+  it('still names the kind when this build has no label for it', () => {
+    /*
+     * A row can carry a kind this build has no label for: one the app retired
+     * (`service`, until 2026-09-30) or one a newer version wrote.
+     *
+     * The symptom is quieter than it looks, which is why this asserts the line
+     * and not the word: `join` renders an undefined element as nothing, so the
+     * note did not say "undefined" — it opened with a dangling separator and no
+     * kind at all. Asserting `not.toContain('undefined')` passed against the
+     * bug, which is how this test was caught being decoration.
+     */
+    const note = renderNote(
+      entry({ kind: 'service' as Entry['kind'], title: 'Easter morning', place: 'First Baptist' }),
+      context(),
+    );
+
+    const facts = note.split('\n').find((line) => line.includes('April')) ?? '';
+    expect(facts, 'the facts line was not found at all').not.toBe('');
+    expect(facts.startsWith(' · '), `facts line opened with a dangling separator: ${facts}`).toBe(
+      false,
+    );
+    // The raw word, which at least tells a stranger in 2060 what was written.
+    expect(facts).toContain('service');
+    expect(note).not.toContain('undefined');
+
+    // And the record itself keeps it verbatim: front matter is not edited to
+    // suit a label table.
+    expect(parseFrontMatter(note).kind).toBe('service');
+  });
 });
 
 describe('under the refs-only profile', () => {

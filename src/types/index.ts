@@ -180,7 +180,28 @@ export interface BibleBook {
 // The entry: the core object
 // ---------------------------------------------------------------------------
 
-export type EntryKind = 'sermon' | 'reading' | 'service' | 'prayer' | 'reflection' | 'letter';
+/**
+ * What sort of entry this is: five kinds, each a different thing a person did.
+ *
+ * `sermon` somebody else was teaching and you wrote it down. `reading` you were
+ * in the text on your own. `prayer` you prayed and kept it. `reflection` you
+ * thought on paper. `letter` you wrote to a person, often to whoever reads this
+ * after you.
+ *
+ * There was a sixth, `service`, meaning "a whole service or gathering". It was
+ * removed deliberately. Nothing in the app ever told a reader what it was for —
+ * the kind chooser is a bare list of words — and it rendered the identical
+ * editor to `sermon` with the identical fields, so the only way to tell the two
+ * apart was to already know. Sitting in one service writing one entry, the
+ * choice was a tax at the exact moment the product is built to be fast. A
+ * whole-service note is a sermon note: `place` already records which church and
+ * `speaker` who preached. An order of service still imports, through the
+ * optional Import notes route on any kind.
+ *
+ * Adding a kind means earning it: a job none of these five does, that a reader
+ * can tell from the chooser without being told.
+ */
+export type EntryKind = 'sermon' | 'reading' | 'prayer' | 'reflection' | 'letter';
 
 export type Visibility = 'private' | 'shared';
 

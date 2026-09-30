@@ -160,7 +160,7 @@ describe('advanced search filters in the hash', () => {
   it('round-trips every kind through the hash', () => {
     // The floor: a loop over an empty list proves nothing, and a kind that
     // cannot survive a link is a kind the reader cannot bookmark.
-    expect(ENTRY_KINDS.length).toBe(6);
+    expect(ENTRY_KINDS.length).toBe(5);
     for (const kind of ENTRY_KINDS) {
       const route: Route = { name: 'search', query: 'x', kinds: [kind] };
       expect(parseHash(href(route))).toEqual(route);
