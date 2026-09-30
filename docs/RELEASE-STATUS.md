@@ -55,24 +55,52 @@ Neither is a failure, and neither was faked by automation.
 
 Read from the packaged candidate with `aapt2 dump permissions`, and traced to
 origin in `android/app/build/outputs/logs/manifest-merger-debug-report.txt`.
-These four are the whole set.
+Three remain after the INTERNET removal below.
 
 | Permission | Introduced by | Why present | App uses it directly? | User-facing disclosure | Removable? |
 | --- | --- | --- | --- | --- | --- |
-| `INTERNET` | **Our own manifest**, line 124 | Part of the Capacitor Android template. Capacitor's own library manifest declares no permissions, so this is ours alone. | **No.** There is no `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon` in `src/`, and no HTTP or socket code in the native sources. | Yes — listed in the privacy policy, stating plainly that no network requests are made. | **Possibly, but do not do it casually.** Capacitor serves the app over a local scheme handler; whether removal breaks the WebView needs a build-and-device test. That is a runtime change, not a docs change. Raised, not actioned. |
+| ~~`INTERNET`~~ | ~~our own manifest~~ | **REMOVED.** Was Capacitor template boilerplate; Capacitor's own library manifest declares no permissions, so it was ours alone. | No | n/a | **Removed and proved.** See below. |
 | `USE_BIOMETRIC` | `androidx.biometric:1.1.0` | Pulled in by `@capacitor-community/sqlite`, which offers biometric-protected encrypted databases. | **No.** App Lock uses `KeyguardManager.createConfirmDeviceCredentialIntent`, not `BiometricPrompt`, precisely because minSdk is 24. | Yes — disclosed as unused, and why. | Only by removing or shading the SQLite plugin's dependency. Not worth destabilising the storage layer for a normal-level permission. |
 | `USE_FINGERPRINT` | `androidx.biometric:1.1.0` | Same dependency, legacy counterpart. | **No.** | Yes, same row. | Same as above. |
 | `…DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `androidx.core:1.17.0` (also `androidx.emoji2:1.3.0`) | A signature-level permission AndroidX defines for its own internal non-exported receivers. Not a user-visible capability. | No | No — it is not a user-facing permission. | No, and should not be. |
 
 **Concerning or unnecessary?** None is dangerous-level; none touches location,
-contacts, storage, camera or microphone. Two observations worth recording:
+contacts, storage, camera or microphone.
 
-1. `USE_BIOMETRIC` / `USE_FINGERPRINT` are **dependency-derived and
-   pre-existing** — verified, not assumed: they are identical in the APK
-   currently installed on the A17 and in the current candidate, so App Lock
-   introduced neither.
-2. `INTERNET` is declared by us for a feature we do not have. It is the one
-   permission worth a deliberate decision before release.
+`USE_BIOMETRIC` / `USE_FINGERPRINT` are **dependency-derived and pre-existing**
+— verified, not assumed: they are identical in the APK currently installed on
+the phone and in the current candidate, so App Lock introduced neither. Removing
+them would mean dependency surgery on the SQLite plugin, which is not worth
+destabilising the storage layer for two normal-level permissions. Recorded as a
+future cleanup opportunity, not this lane's work.
+
+### INTERNET removal — the evidence
+
+It was removed only after proving the packaged app does not need it, on an
+API 35 emulator:
+
+| Check | Result without INTERNET |
+| --- | --- |
+| App launches | Yes — `Status: ok`, 1832 ms |
+| WebView serves `https://localhost` from assets | Yes, no `net::ERR_*` of any kind |
+| 700 KB lazily imported Scripture chunk | **Fetched** — the case most likely to fail |
+| Scripture renders (all 66 books, outline counts) | Yes |
+| Editor | Yes |
+| Fast Capture via the canonical native action | Yes — `Status: ok`, 1236 ms, Notes focused |
+| App Lock bridge (`getState`) | Yes — the gate only renders children once it resolves |
+| `npm run verify:apk` | PASS |
+| WebView / chunk-load / fatal errors in logcat | **Zero** |
+
+External links are unaffected: a note's link is a plain `<a href>` that
+Capacitor's `shouldOverrideUrlLoading` hands to the OS browser, which has its
+own network access. Nothing is ever loaded into this app's WebView from the
+network.
+
+> **Residual risk, stated plainly.** This was verified on an API 35 emulator.
+> It was **not** verified on the physical phone, which was out of scope for
+> that lane and currently runs the older build that still declares INTERNET.
+> Re-verify at the first install of a no-INTERNET build onto real hardware —
+> this is now a step in `docs/SIGNING-MIGRATION-RUNBOOK.md`.
 
 ### Related: FileProvider scope
 
@@ -130,28 +158,20 @@ exists is exactly the guess that costs a version number.
 
 Neither was acted on, because both change behaviour or user-facing copy.
 
-### 1. Android Auto Backup includes the journal
+### 1. Android Auto Backup includes the journal — RESOLVED
 
 `android:allowBackup="true"`, and the backup rules exclude only the App Lock
 preferences. The journal database is therefore inside Android's system backup
 and can reach the device owner's Google account backup with no action in the
 app.
 
-This sits awkwardly beside the in-app Data & Backup copy:
+**Decision taken: keep Auto Backup, correct the copy.** Silently removing a
+real recovery path for a lost or replaced phone, purely to preserve a sentence,
+would have been the wrong trade. Every absolute "nowhere else" claim in the
+product has been revised to describe Auto Backup conditionally, without
+implying this app arranges it or that a backup definitely exists. The App Lock
+PIN is stated as excluded.
 
-> "Everything you have written lives on this device and nowhere else… No copy
-> exists anywhere else until you export one."
+### 2. `INTERNET` permission — RESOLVED
 
-With device backup switched on, that is not strictly true. Two coherent
-resolutions, both the owner's call:
-
-- **Exclude the database from backup too.** Makes the copy true. Costs the
-  reader a silent restore onto a replacement phone.
-- **Keep backup and correct the copy.** Keeps the safety net; requires saying
-  so plainly.
-
-The privacy policy as written describes the behaviour as it actually is.
-
-### 2. `INTERNET` permission for an app that makes no requests
-
-See the permission table. Worth a decision; needs a device test either way.
+Removed, with the evidence above.

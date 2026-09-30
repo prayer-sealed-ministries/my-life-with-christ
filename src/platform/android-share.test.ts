@@ -93,16 +93,23 @@ describe('it offers to open exactly what it can read', () => {
 });
 
 describe('no new permission was taken for any of this', () => {
-  it('asks for INTERNET and nothing else', () => {
+  it('declares no permission of its own at all', () => {
     /*
-     * This reads the SOURCE manifest, which is what this project declares.
+     * This reads the SOURCE manifest, which is what this project declares —
+     * and it now declares nothing.
      *
-     * The packaged APK carries three more, and none of them is ours: the
-     * manifest merger pulls USE_BIOMETRIC and USE_FINGERPRINT from
+     * INTERNET used to be here, inherited from the Capacitor template, and was
+     * removed once the packaged app was proved not to need it: on an API 35
+     * emulator without it the app launched, the WebView served the assets, the
+     * lazily imported Scripture chunk fetched, and Fast Capture worked, with no
+     * net::ERR of any kind.
+     *
+     * The packaged APK still carries three permissions, and none of them is
+     * ours: the manifest merger pulls USE_BIOMETRIC and USE_FINGERPRINT from
      * androidx.biometric (a transitive dependency of the SQLite plugin) and
      * DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION from androidx.core. Verified
      * against the built APK with `aapt2 dump permissions` and traced through
-     * the merger report; all three pre-date this lane.
+     * the merger report.
      *
      * Nothing was added for sharing, and nothing here touches storage — which
      * is the claim that matters, because a share grants read access to one
@@ -114,7 +121,7 @@ describe('no new permission was taken for any of this', () => {
     // A share grants read access to one document for the life of the activity.
     // Reading the device's storage to accept a handout would be taking far
     // more than the task requires.
-    expect(permissions).toEqual(['android.permission.INTERNET']);
+    expect(permissions).toEqual([]);
     for (const denied of [
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.WRITE_EXTERNAL_STORAGE',

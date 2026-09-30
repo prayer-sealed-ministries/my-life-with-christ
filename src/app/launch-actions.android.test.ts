@@ -155,9 +155,13 @@ describe('what an outside intent may reach', () => {
     const permissions = [...manifest.querySelectorAll('uses-permission')].map((node) =>
       attr(node, 'name'),
     );
-    // INTERNET is what Capacitor needs to serve the local webview. Nothing was
-    // added for shortcuts, and nothing here reaches a network.
-    expect(permissions).toEqual(['android.permission.INTERNET']);
+    // Nothing was added for shortcuts, and nothing here reaches a network.
+    //
+    // INTERNET was here once, on the assumption that Capacitor needed it to
+    // serve the local webview. It does not: proved on an API 35 emulator by
+    // removing it and watching the app launch, the assets serve, the lazily
+    // imported Scripture chunk fetch and Fast Capture work, with no net::ERR.
+    expect(permissions).toEqual([]);
   });
 
   it('keeps singleTask, so a second tap reaches the running app', () => {

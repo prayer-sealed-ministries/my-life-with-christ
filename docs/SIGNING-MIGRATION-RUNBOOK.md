@@ -174,9 +174,17 @@ device is attached — an emulator present during this phase is how a mistyped
 ### 10. Install the release-signed build
 
 Verified first, as `docs/RELEASE-ANDROID.md` requires: `aapt2 dump badging`,
-permissions unchanged, no `debuggable`, no `testOnly`, and
+permissions as expected, no `debuggable`, no `testOnly`, and
 `apksigner verify --print-certs` showing **the expected new certificate** —
 compared against the value written down in step 2.
+
+**Re-verify the INTERNET removal here.** It was proved on an API 35 emulator,
+not on real hardware, and the phone currently runs an older build that still
+declares the permission. On the first install of a no-INTERNET build onto the
+physical device, confirm the app launches, Scripture renders (that exercises
+the lazily imported chunk, the case most likely to fail), and Fast Capture
+reaches a focused Notes field. The evidence table is in
+`docs/RELEASE-STATUS.md`.
 
 ### 11. Restore a verified archive
 

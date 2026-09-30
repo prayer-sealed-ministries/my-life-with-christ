@@ -63,7 +63,7 @@ describe('HomeView', () => {
     // They are held by `Shell.header.test.tsx` and by the e2e suite, which see
     // the real header; this view is responsible for what it still says.
     expect(screen.queryByText('Your walk, remembered.')).toBeNull();
-    expect(screen.getByText(/stays on this device/i)).toBeInTheDocument();
+    expect(screen.getByText(/is stored on this device/i)).toBeInTheDocument();
     expect(screen.getByText(/no account/i)).toBeInTheDocument();
   });
 

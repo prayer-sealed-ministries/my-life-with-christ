@@ -121,5 +121,5 @@
 
     <!-- Permissions -->
 
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- EXPERIMENT: INTERNET removed to test whether the packaged app needs it. -->
 </manifest>

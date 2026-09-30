@@ -88,7 +88,8 @@ function Introduction() {
             <em>My Journey With Christ</em>: a record you can keep, print and pass on.
           </p>
           <p className="measure mt-4 leading-relaxed text-ink-muted">
-            Everything you write stays on this device. There is no account and nothing is uploaded.
+            Everything you write is stored on this device. There is no account, and this app
+              uploads nothing.
             Because of that, the{' '}
             <Link
               to={{ name: 'data' }}

@@ -163,6 +163,11 @@ export default function AppLockSettings() {
             App Lock protects access through this app on this device. It does not encrypt the
             journal database and does not replace your device&rsquo;s own screen lock.
           </p>
+          <p className="measure text-sm leading-relaxed text-ink-soft">
+            Your PIN stays on this device. It is never included in Android&rsquo;s backup, so
+            restoring your journal onto another phone will not bring App Lock with it — you would
+            turn it on again there.
+          </p>
         </div>
 
         <p className="text-sm font-medium text-ink">{enabled ? 'On' : 'Off'}</p>

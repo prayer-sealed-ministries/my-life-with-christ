@@ -77,16 +77,17 @@ export function FirstVisitNotice() {
         </h2>
         <ul className="mt-3 space-y-2 text-sm leading-relaxed">
           <li>
-            <strong>There is no server and no account.</strong> Nothing you write is uploaded, and
-            nobody else can read it — not even whoever runs this site.
+            <strong>There is no server and no account.</strong> This app uploads nothing, and
+            nobody who runs this site can read what you write.
           </li>
           <li>
             <strong>Your notes live on this device.</strong> They will not appear on your other
-            devices, and nothing is uploaded anywhere.
+            devices.
           </li>
           <li>
-            <strong>Clearing this app&rsquo;s data will destroy them permanently.</strong> There is no
-            copy anywhere else to restore from.
+            <strong>Clearing this app&rsquo;s data will destroy them permanently.</strong>{' '}
+            Android&rsquo;s own backup may hold a copy if you have it switched on, but that is not
+            something to rely on.
           </li>
           <li>
             <strong>So export early, and often.</strong> Export gives you a file you own — plain

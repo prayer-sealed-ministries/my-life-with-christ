@@ -2,7 +2,8 @@
   MAINTENANCE NOTE — NOT PART OF THE POLICY THE READER SEES.
 
   Source-review date: 2026-09-29
-  Source commit audited: d751f54
+  Source commit audited: d751f54, revised at 7fee391+ (backup-copy
+  truthfulness and INTERNET removal).
   Audited by reading current source, not previous reports. Scope: Android
   manifest and backup rules, Capacitor configuration, the native bridge
   (JourneyDocumentsPlugin, AppLockPlugin, SermonNoteWidget, SharedDocument),
@@ -10,6 +11,12 @@
   and every network-capable API in src/.
 
   Findings that shaped this policy:
+    - INTERNET was REMOVED from the manifest after proving on an API 35
+      emulator that the packaged app does not need it: the app launched,
+      the WebView served https://localhost from assets, the 700KB lazily
+      imported Scripture chunk fetched, Scripture rendered, the editor and
+      Fast Capture worked, the App Lock bridge resolved, and verify:apk
+      passed — with zero WebView or chunk-load failures.
     - No fetch/XMLHttpRequest/WebSocket/sendBeacon anywhere in src/.
     - No HTTP, socket or URL-opening code in android/app/src/main/java/.
     - No analytics, advertising, crash-reporting, attribution or
@@ -21,16 +28,17 @@
       The journal database is therefore inside Android's own backup. This
       is disclosed below and is the one path where journal data can leave
       the device without an in-app action.
-    - Permissions: INTERNET (declared in our manifest, no outbound request
-      code exists); USE_BIOMETRIC and USE_FINGERPRINT (added by
-      androidx.biometric:1.1.0, pulled in by @capacitor-community/sqlite,
-      for an encrypted-database feature this app does not use).
+    - Remaining permissions: USE_BIOMETRIC and USE_FINGERPRINT, added by
+      androidx.biometric:1.1.0, pulled in by @capacitor-community/sqlite for
+      an encrypted-database feature this app does not use. Dependency-derived
+      and unchanged from the build already installed.
 
-  Open item: the in-app Data & Backup copy says "No copy exists anywhere
-  else until you export one." Android Auto Backup makes that not strictly
-  true when the device owner has backup switched on. Either the copy or the
-  backup rules should change; both are product decisions and neither was
-  altered in the lane that wrote this file. See docs/RELEASE-STATUS.md.
+  Resolved since first written: the in-app copy used to claim "No copy
+  exists anywhere else until you export one", which Android Auto Backup
+  made untrue. The decision was to KEEP Auto Backup (it is a real safety
+  net for a lost phone) and correct the wording instead. Every absolute
+  "nowhere else" claim in the product has been revised; Auto Backup is now
+  described conditionally, and the App Lock PIN is stated as excluded.
 
   Not published. GitHub Pages is disabled and no live policy URL exists.
 -->
@@ -173,8 +181,10 @@ you.
 
 | Permission | Why |
 | --- | --- |
-| Internet | Declared by the app's framework. The app makes no network requests; nothing about your journal is transmitted. |
 | Use biometric / Use fingerprint | Comes from a database component the app includes. The app does not offer fingerprint or face unlock and does not use these. |
+
+The app does **not** request internet access. It has no network permission at
+all, which is why it cannot send your journal anywhere even in principle.
 
 The app does not request access to your location, contacts, calendar, photos,
 microphone, camera, or your files at large.

@@ -51,7 +51,12 @@ export default function AboutView() {
         </h2>
         <ul className="measure space-y-2 text-sm leading-relaxed text-ink-soft">
           <li>No account. There is nothing to sign up for and nothing to sign in to.</li>
-          <li>Nothing is uploaded. What you write stays on this device.</li>
+          <li>This app uploads nothing. What you write is stored on this device.</li>
+            <li>
+              Android&rsquo;s own backup, if you have it switched on for this app, may include what
+              the app stores. That copy is yours and goes to your own account, not to anyone here.
+              Your App Lock PIN is never part of it.
+            </li>
           <li>
             Your writing is saved locally as you type, so an interruption does not erase your
             draft.

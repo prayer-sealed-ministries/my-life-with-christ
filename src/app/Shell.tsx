@@ -295,7 +295,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
       {focused ? null : (
         <footer className="mx-auto max-w-3xl border-t border-line px-5 pb-12 pt-6 text-xs text-ink-muted">
           <p>
-            Everything here stays on this device.{' '}
+            Everything here is stored on this device.{' '}
             <Link to={{ name: 'data' }} className="underline focus-visible:outline-2">
               The copy on this device is not a backup — export your journal
             </Link>

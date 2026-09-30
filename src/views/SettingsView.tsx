@@ -209,9 +209,14 @@ export default function SettingsView() {
           Privacy
         </h2>
         <p className="measure text-sm leading-relaxed text-ink-soft">
-          What you write stays on this device. There is no account, nothing is uploaded, and the
-          app works with no network at all. If you save an export to a cloud folder, that is your
-          choice and your copy — not something this app requires or arranges.
+          What you write is stored on this device. There is no account, this app uploads
+            nothing, and it works with no network at all. If you save an export to a cloud folder,
+            that is your choice and your copy — not something this app requires or arranges.
+          </p>
+          <p className="measure text-sm leading-relaxed text-ink-soft">
+            Android&rsquo;s own backup is separate: if it is switched on for this app, Android may
+            include what the app stores in your device backup. That is Android&rsquo;s feature, not
+            this app&rsquo;s, and your App Lock PIN is never included in it.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           More detail is in{' '}

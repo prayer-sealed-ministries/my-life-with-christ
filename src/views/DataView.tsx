@@ -89,7 +89,7 @@ function anchorsResolve(entry: Entry): boolean {
  * that matters: is my journal backed up or not?
  */
 function lastExportedWords(iso: string | undefined, now: Date): string {
-  if (!iso) return 'Never exported. Nothing here has ever left this device.';
+  if (!iso) return 'Never exported. There is no copy of your own yet.';
 
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return 'Last exported: the date on record cannot be read.';
@@ -418,9 +418,11 @@ export default function DataView() {
           Warning: the copy on this device is not a backup.
         </p>
         <p className="mt-2 text-sm leading-relaxed">
-          Everything you have written lives on this device and nowhere else. Clearing this
-          app&rsquo;s data, removing it, or losing the device takes your journal with it. No copy
-          exists anywhere else until you export one.
+          Everything you have written lives on this device. Clearing this app&rsquo;s data,
+          removing it, or losing the device takes your journal with it. If Android&rsquo;s backup
+          is switched on for this app, Android may include what it stores in your device backup —
+          that is Android&rsquo;s own feature, not something this app arranges, and not something
+          to rely on. An export is the copy you control.
         </p>
         <p className="mt-2 text-sm leading-relaxed">{lastExportedWords(settings.lastExportAt, new Date())}</p>
       </div>
