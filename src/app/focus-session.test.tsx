@@ -33,11 +33,11 @@ import { href } from './router';
 let counter = 0;
 let db: DexieStorageProvider;
 
-function renderApp() {
+function renderApp(provider: DexieStorageProvider = db) {
   return render(
     <PlatformProvider>
       <ThemeProvider>
-        <StorageContextProvider provider={db}>
+        <StorageContextProvider provider={provider}>
           <RouterProvider>
             <NoticeProvider>
               <FocusProvider>
@@ -70,6 +70,85 @@ async function enterFocusMode() {
 function invokeFastCapture() {
   const route = routeForLaunchAction(actionFromLaunchUrl(launchUrlFor('sermon-fast-capture')));
   window.location.replace(href(route!));
+}
+
+/**
+ * A storage provider whose entry reads can be held open.
+ *
+ * The window this file's flake lived in is the post-save reload: the editor
+ * remounts under a new key and fetches the row back. How wide that window is
+ * depends on a Dexie read racing worker contention, which is not something a
+ * test should be at the mercy of in either direction — a narrow window hides
+ * the bug, a wide one fails the assertion.
+ *
+ * So the width is chosen here instead of waited for, the way
+ * EntryEditor.focus-race.test.tsx pins its animation frame. Holding the read
+ * makes the slow case certain rather than lucky.
+ */
+function heldReads(inner: DexieStorageProvider) {
+  let holding = false;
+  let release: (() => void) | null = null;
+
+  const proxy = new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop === 'getEntry') {
+        return async (id: string) => {
+          if (holding) await new Promise<void>((resolve) => (release = resolve));
+          return target.getEntry(id);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as DexieStorageProvider;
+
+  return {
+    provider: proxy,
+    hold: () => {
+      holding = true;
+    },
+    /** Let the held read finish. Safe to call when nothing is held. */
+    release: () => {
+      holding = false;
+      release?.();
+      release = null;
+    },
+  };
+}
+
+/**
+ * The save has landed AND the editor it remounted into has finished loading.
+ *
+ * Both halves, because either alone is a lie about where the app is.
+ *
+ * `window.location.hash` is written synchronously inside `location.replace`, so
+ * it is already the saved address before React has been told anything. And the
+ * heading says "Edit entry" while the remounted editor is still a spinner
+ * fetching the row back out of storage — `EntryEditor` returns
+ * `<Spinner label="Opening the entry" />` until its form exists, and that markup
+ * carries no focus bar.
+ *
+ * That window is what this file used to read. Asserting focus mode straight
+ * after the hash changed reported it as GONE while the provider had never let
+ * go of it: the chrome was simply not on screen yet. It failed about once in 16
+ * full-suite runs and never once in 30 runs of this file alone, because the
+ * width of the window is the speed of a Dexie read under worker contention.
+ *
+ * The notes box is the first thing that exists only once the form is loaded, so
+ * waiting for it with the saved text is waiting for the actual invariant.
+ */
+async function savedEditorReady(id: string, text: string) {
+  await waitFor(() => expect(window.location.hash).toBe(`#/entry/${id}`));
+  await waitFor(() => {
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Edit entry' }),
+      'still on the pre-save editor',
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByLabelText('Notes', { exact: true }) as HTMLTextAreaElement).value,
+      'the remounted editor has not loaded the entry yet',
+    ).toBe(text);
+  });
 }
 
 /** Is the notes box where the cursor is? */
@@ -157,6 +236,48 @@ describe('a new Fast Capture never inherits focus mode', () => {
     expect(inFocusMode(), 'focus came back for a session that never asked').toBe(false);
   });
 
+  it('G — recovering a draft does not inherit focus from the editor before it', async () => {
+    /*
+     * "Continue writing" on Home opens `#/entry/new?draft=<id>`, which is its
+     * own editor session key — `new:::<id>` — and so must start plain however
+     * the reader arrived at it.
+     *
+     * Worth a test of its own because the draft route is the one editor address
+     * that carries an id while still being a NEW entry, which is exactly the
+     * shape `isSameEditorSession` treats specially. A rule that read "was new,
+     * is now identified" too loosely would hand focus straight to it.
+     */
+    window.location.hash = '#/entry/new?kind=prayer';
+    renderApp();
+    await notes();
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Half a prayer.' } });
+    await waitFor(async () => expect((await db.listDrafts()).length).toBe(1));
+    const [draft] = await db.listDrafts();
+
+    // Somewhere else entirely, and in focus mode there.
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'The original notes.' });
+    window.location.replace(`#/entry/${entry.id}`);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+        'The original notes.',
+      ),
+    );
+    await enterFocusMode();
+
+    window.location.replace(href({ name: 'newEntry', draft: draft.id }));
+
+    // Waiting for the draft's own words, not for the address: during the load
+    // the editor is a spinner with no focus bar, and asserting "not focused"
+    // there would pass without testing anything.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe('Half a prayer.'),
+    );
+    expect(
+      inFocusMode(),
+      'the recovered draft inherited focus mode from another editor',
+    ).toBe(false);
+  });
+
   it('F — and ordinary navigation between saved entries does not pick it up', async () => {
     const first = await db.createEntry({ title: 'One', notes: 'First.' });
     const second = await db.createEntry({ title: 'Two', notes: 'Second.' });
@@ -215,7 +336,7 @@ describe('the session that did ask for it keeps it', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(async () => expect((await db.listEntries()).length).toBe(1));
     const [saved] = await db.listEntries();
-    await waitFor(() => expect(window.location.hash).toBe(`#/entry/${saved.id}`));
+    await savedEditorReady(saved.id, 'Saved in focus.');
     expect(inFocusMode(), 'the save itself ended focus mode').toBe(true);
 
     // Now the widget, for a genuinely new sermon.
@@ -243,8 +364,55 @@ describe('the session that did ask for it keeps it', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(async () => expect((await db.listEntries()).length).toBe(1));
     const [saved] = await db.listEntries();
-    await waitFor(() => expect(window.location.hash).toBe(`#/entry/${saved.id}`));
+    await savedEditorReady(saved.id, 'Worth keeping.');
 
     expect(inFocusMode(), 'saving ended focus mode mid-sermon').toBe(true);
+  });
+
+  it('keeps it across a save whose reload is slow, and shows it again when it lands', async () => {
+    /*
+     * The same promise as the test above, with the timing pinned instead of
+     * hoped for — and the reason that one was intermittent.
+     *
+     * Saving remounts the editor, which then has to read the row back. Until it
+     * has, the view is `<Spinner label="Opening the entry" />` and there is no
+     * focus bar in the markup at all. Reading the chrome in that window says
+     * focus mode is gone when the provider has not let go of anything, which is
+     * what failed about once in 16 full-suite runs.
+     *
+     * Holding the read makes that window certain. Two assertions, because they
+     * are different facts: the chrome is legitimately absent mid-load, and the
+     * session is still owned — proven by it coming back on its own, with
+     * nothing having asked for focus a second time.
+     */
+    const gate = heldReads(db);
+    window.location.hash = '#/entry/new?kind=sermon';
+    renderApp(gate.provider);
+    await notes();
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Held open.' } });
+    await enterFocusMode();
+
+    gate.hold();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect((await db.listEntries()).length).toBe(1));
+    const [saved] = await db.listEntries();
+
+    // Mid-flight: the entry exists, the address has moved, the editor is a
+    // spinner. This is the instant the old assertion used to read.
+    await waitFor(() => expect(window.location.hash).toBe(`#/entry/${saved.id}`));
+    // `role="status"` rather than the words: Spinner renders `{label}…`, so the
+    // text is split across nodes and an exact match never finds it.
+    expect((await screen.findByRole('status')).textContent).toContain('Opening the entry');
+    expect(
+      inFocusMode(),
+      'the focus bar cannot be on screen while the editor is still a spinner',
+    ).toBe(false);
+
+    gate.release();
+
+    // And it returns by itself. Nothing re-entered focus mode; the session was
+    // never given up.
+    await savedEditorReady(saved.id, 'Held open.');
+    expect(inFocusMode(), 'the slow reload lost the focus session').toBe(true);
   });
 });
