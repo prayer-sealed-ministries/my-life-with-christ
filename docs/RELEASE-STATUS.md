@@ -5,14 +5,51 @@ on a person, and what must not be started yet.
 
 | | |
 | --- | --- |
-| Source-review date | 2026-09-29 |
-| Source commit audited | `d751f54` |
+| Source-review date | 2026-09-29, re-audited 2026-09-30 |
+| Source commit audited | `d751f54`, re-audited at `fa35995` |
 | Package | `com.myjourneywithchrist.lifewithchrist` |
-| Version | versionCode **1**, versionName **1.0** |
+| Version | versionCode **1**, versionName **1.0** (template default; never uploaded) |
+| Target / min SDK | targetSdk **36**, minSdk **24** — verified in the packaged artefact |
+| Release artefact | `app-release-unsigned.apk` — **unsigned**, because no `signingConfig` exists |
 
 > **The release is not ready, and the reason is one line:**
 > **EXTERNAL BACKUP OF CURRENT DEBUG KEY REQUIRED BEFORE SIGNING MIGRATION.**
 > Nothing below changes that.
+
+---
+
+## What changed since the 2026-09-29 audit
+
+Feature work completed and frozen since `d751f54`, each verified present in
+`fa35995` by reading the source rather than the commit message:
+
+| Commit | Lane |
+| --- | --- |
+| `af428fa` | Timeline shows the newest entries first |
+| `9975bb2` | Contextual church-note import by entry kind |
+| `50f7464` | `service` entry kind removed |
+| `bf24aaa` | Focus-session test race removed |
+| `faf2e9d` | Exact verse / verse range / passage selection |
+| `94d6b02` | Picker-selected Scripture references now share |
+| `fa35995` | App Lock gate test race removed |
+
+Nothing in that list changes the permission set, the signing position or the
+blockers below. The release artefact was rebuilt and re-verified at `fa35995`.
+
+## Google Play requirements, checked against Google's own documentation
+
+Read 2026-09-30, not from memory, because two of these move with policy:
+
+| Requirement | Google's current position | Where we stand |
+| --- | --- | --- |
+| Target API level | New apps and updates must target **API 36** as of the 31 August 2026 deadline, which has passed. | **PASS.** targetSdk 36 in the packaged artefact. |
+| Privacy policy | "All apps must post a privacy policy link in the designated field within Play Console, and a privacy policy link or text within the app itself." Apps collecting no personal data **still must submit one**. The URL must be "active, publicly accessible and non-geofenced", and must carry developer contact information. | **BLOCKED twice.** No public URL exists, and the policy's contact line is still a placeholder. The in-app half is met in substance: Settings and Help both carry privacy text. |
+| Data safety section | "Apps that are active on internal testing tracks are exempt from inclusion in Google Play's Data safety section." | Worksheet complete regardless (`docs/GOOGLE-PLAY-DATA-SAFETY.md`); **not a blocker for internal testing**. |
+| Internal testing | Up to 100 testers by email list. "You can start an internal test before completing app setup." Internal tests "might not be subject to standard Play policy or security reviews". | Store listing, screenshots and content rating are **not** gating for this track. |
+
+The practical consequence: for the *internal testing* track specifically, the
+remaining gates are the signing identity, the Play history question, and the
+privacy policy URL and contact — not the full store listing.
 
 ---
 
@@ -28,7 +65,14 @@ on a person, and what must not be started yet.
 | A17 in-place debug-signed update | `install -r`, no uninstall, no clear. `firstInstallTime` unchanged → genuine update. Signer unchanged `ac3d886c…`. |
 | Real A17 data preservation | 6 entries and 2 drafts **byte-identical** before vs after the update, and again after all acceptance work. Drafts remained drafts. |
 | logcat privacy fix | Capacitor bridge payload logging disabled (`loggingBehavior: 'none'`). Confirmed on the physical A17: **zero** synthetic markers and zero payload lines across 13,253 log lines. Commit `1c251eb`. |
+| Release artefact re-verified at `fa35995` | `assembleRelease` produces `app-release-unsigned.apk`. `aapt2 dump badging`: targetSdk 36, versionCode 1, versionName 1.0, **no `application-debuggable`**, no `testOnly`. `npm run verify:apk` PASS on 13 assertions. Packaged permissions exactly three, INTERNET absent. Only native library is `libsqlcipher.so` from the SQLite plugin; no GMS, Firebase, analytics or ads SDK in the tree. No OCR dependency, no hardcoded or master PIN. `verify:startup` PASS with the startup chunk at 451,385 bytes against a 700,000 ceiling. |
 | Existing entries/drafts preservation | Three verified archives in `~/Documents/mlwc-backups/`, all PASS, all 6 entries / 2 drafts. |
+
+### NON-BLOCKING KNOWN ISSUE
+
+| Item | Status |
+| --- | --- |
+| Suite-wide 1-second Testing Library `findBy` timeout under extreme CPU contention | Not tied to any feature. Measured during the focus-session lane: 5 failures in 59 runs of the *pristine* file and 6 in 60 of the *fixed* one, at identical load — the same rate on both sides, which is what rules the code out. It appears as `Unable to find a label with the text of: Notes` in whichever test happens to be running. **Not a product-release blocker.** Deliberately not "fixed" by raising timeouts globally, which would hide real failures everywhere. |
 
 ### DEFERRED — human physical interaction required
 
@@ -48,6 +92,33 @@ Neither is a failure, and neither was faked by automation.
 | Play Console prior package/version history | Unresolved locally; see below. Only the Console can settle it. |
 | Privacy-policy contact information | `[PRIVACY CONTACT TO BE PROVIDED]` in `docs/PRIVACY-POLICY.md`. |
 | Play Console entry / submission | Not started. Nothing has been uploaded. |
+
+---
+
+## Privacy policy — the publishing gap
+
+Play requires a privacy policy at a URL that is "active, publicly accessible and
+non-geofenced", and the policy must name developer contact information. We have
+the policy (`docs/PRIVACY-POLICY.md`) and no URL, and the contact line is still
+`[PRIVACY CONTACT TO BE PROVIDED]`. Both are human decisions; neither is
+invented here.
+
+Checked on 2026-09-30: `mylifewithchrist.com` resolves (3.33.130.190,
+15.197.148.33) and answers HTTPS 200. The app already carries that wordmark in
+its footer and About page. Whether the owner controls the DNS is not something
+this repository can establish.
+
+The options, smallest blast radius first:
+
+| Option | What it costs | What it entangles |
+| --- | --- | --- |
+| A static page on `mylifewithchrist.com` | One HTML file, rendered from the Markdown. | Nothing in this repository. The app has **no runtime dependency** on that domain and must keep none — see `docs/ADR-NATIVE-APP-ARCHITECTURE.md`. |
+| A separate minimal repository published to GitHub Pages | A second repo, one page, a stable URL. | Nothing here either. Keeps the policy's availability independent of this repo's publication decision. |
+| GitHub Pages on **this** repository | Appears free, and is not. | `pages.yml` deploy is `workflow_dispatch`-gated precisely because publishing is a decision the owner makes, and it would publish **the whole application**, not a page. That is a data-licensing decision under `DATA-LICENSE.md`, not a hosting convenience. |
+
+The third is listed to be ruled out rather than to be chosen. Publication of the
+app is still deferred, and attaching the privacy policy to it would couple a
+Play requirement to a decision nobody has taken.
 
 ---
 
