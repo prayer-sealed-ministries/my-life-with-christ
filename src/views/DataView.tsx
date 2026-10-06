@@ -14,7 +14,7 @@
  * applies them.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   DATA_PROFILE,
@@ -102,6 +102,19 @@ function lastExportedWords(iso: string | undefined, now: Date): string {
   const months = Math.max(1, Math.round(days / 30));
   return `Last exported ${days} days ago — ${months === 1 ? 'about a month' : `about ${months} months`}. Worth doing again now.`;
 }
+
+/**
+ * Debug-only tooling. The import sits behind the build-time constant rather
+ * than only the render, because a statically imported module survives
+ * tree-shaking: the first attempt rendered nothing in a release build and
+ * still shipped the component's code. With the import guarded, a release build
+ * drops the module from the graph entirely.
+ */
+const SyntheticCleanup = __DEBUG_TOOLS__
+  ? lazy(async () => ({
+      default: (await import('../debug/SyntheticCleanup')).SyntheticCleanup,
+    }))
+  : null;
 
 export default function DataView() {
   // The archive carries division ids, and an import resolves them, so this
@@ -860,6 +873,12 @@ export default function DataView() {
           </Card>
         ) : null}
       </section>
+
+      {SyntheticCleanup ? (
+        <Suspense fallback={null}>
+          <SyntheticCleanup />
+        </Suspense>
+      ) : null}
 
       {/* Not legally required for either source. Given because a record that
           outlives its software should say where its words came from. */}

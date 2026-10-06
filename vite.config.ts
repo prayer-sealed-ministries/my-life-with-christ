@@ -17,7 +17,15 @@ export default defineConfig({
   plugins: [guardPublicDir(), react(), tailwindcss(), dataProfile(), buildId()],
   // The version comes from package.json and nowhere else. Writing it in a
   // second place is how a version string starts lying.
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    /**
+     * Debug-only tooling, off unless asked for. A literal `false` here
+     * lets the bundler drop the guarded code entirely, so a release
+     * build does not carry a one-tap delete anywhere near a journal.
+     */
+    __DEBUG_TOOLS__: JSON.stringify(process.env.DEBUG_TOOLS === '1'),
+  },
   build: {
     // One book of scripture per chunk, so a chapter read never pulls the Bible.
     chunkSizeWarningLimit: 700,

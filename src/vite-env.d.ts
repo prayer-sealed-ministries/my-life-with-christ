@@ -3,6 +3,9 @@
 /** Injected from package.json by vite.config.ts. */
 declare const __APP_VERSION__: string;
 
+/** Injected from vite.config.ts; true only when DEBUG_TOOLS=1 was set. */
+declare const __DEBUG_TOOLS__: boolean;
+
 /** Injected by scripts/vite-plugin-data-profile.mjs. */
 declare const __DATA_PROFILE__: 'public' | 'refs-only';
 
