@@ -26,13 +26,18 @@ public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "JourneyDocuments"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "saveDocument", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "pickDocument", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "pickDocument", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareDocument", returnType: CAPPluginReturnPromise)
     ]
 
     /// The in-flight call, so the delegate can resolve it.
     private var pendingCall: CAPPluginCall?
     /// Where a staged export currently lives, so it can be cleaned up.
     private var stagedURL: URL?
+    /// Where a staged share currently lives. Separate from `stagedURL`: an
+    /// export and a share can be staged at once, and one finishing must not
+    /// delete the other's file out from under the system.
+    private var sharedURL: URL?
 
     // MARK: - Save
 
@@ -110,6 +115,100 @@ public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
         return types.isEmpty ? [UTType.item] : types
     }
 
+    // MARK: - Share
+
+    /**
+     * Hand one prepared page to the system share sheet.
+     *
+     * The third verb, and the last this file should ever grow. Where
+     * `saveDocument` asks "where do you want to keep this", a share asks "who
+     * do you want to send this to" — different questions, so a different
+     * controller, and the application still never learns the answer to either.
+     *
+     * One item, built above this line and already filtered by what the reader
+     * ticked. Nothing here reads the journal, opens a database, or knows what a
+     * reflection is; it receives bytes and a filename.
+     *
+     * `shared` means what `Sharer` says it means: "`shared: false` is an
+     * ordinary outcome, not an error". iOS tells us whether the sheet completed,
+     * so this reports it honestly rather than claiming success for a sheet the
+     * reader dismissed — which is the one place this implementation is
+     * deliberately better informed than Android's, where the platform never
+     * says.
+     */
+    @objc func shareDocument(_ call: CAPPluginCall) {
+        let title = call.getString("title") ?? ""
+        let text = call.getString("text")
+        let name = call.getString("name")
+        let mimeType = call.getString("mimeType")
+        let base64 = call.getString("base64")
+
+        let item: ShareItem
+
+        if let name, !name.isEmpty, let base64, !base64.isEmpty,
+           let data = Data(base64Encoded: base64) {
+            // A file. Staged under the caches directory for the same reason an
+            // export is: it is a hand-off buffer the system may reclaim, it is
+            // not the reader's copy, and it is not in Documents where a backup
+            // would sweep it up.
+            let staged = FileManager.default.temporaryDirectory
+                .appendingPathComponent("share", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
+                // At most one share in flight. Anything older is from a sheet
+                // that has already closed.
+                try? cleanDirectory(staged)
+                let fileURL = staged.appendingPathComponent(name)
+                try data.write(to: fileURL, options: .atomic)
+                self.sharedURL = fileURL
+                item = ShareItem(url: fileURL, subject: title, mimeType: mimeType)
+            } catch {
+                call.reject("That page could not be prepared for sharing.")
+                return
+            }
+        } else if let text, !text.isEmpty {
+            item = ShareItem(text: text, subject: title)
+        } else {
+            call.reject("There was nothing to share.")
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard let presenter = self.bridge?.viewController else {
+                self.discardShared()
+                call.reject("There is no window to share from.")
+                return
+            }
+
+            let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+            sheet.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+                // The copy the system took is its own now; ours is a buffer and
+                // goes whether the reader sent it or changed their mind.
+                self?.discardShared()
+                call.resolve(["shared": completed])
+            }
+
+            // An iPad presents this as a popover and raises if it has no anchor
+            // to point at. iPhone ignores all of it.
+            if let popover = sheet.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(
+                    x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+
+            presenter.present(sheet, animated: true)
+        }
+    }
+
+    /// Drop the staged share copy once the sheet has finished with it.
+    fileprivate func discardShared() {
+        if let url = sharedURL {
+            try? FileManager.default.removeItem(at: url)
+            sharedURL = nil
+        }
+    }
+
     // MARK: - Staging hygiene
 
     private func cleanDirectory(_ directory: URL) throws {
@@ -181,5 +280,78 @@ extension JourneyDocumentsPlugin: UIDocumentPickerDelegate {
         } else {
             call.resolve(["cancelled": true])
         }
+    }
+}
+
+/**
+ * One thing to share, and what the system should call it.
+ *
+ * A bare `URL` or `String` in the activity items array would share correctly
+ * and arrive with no subject, so a mailed entry would have an empty subject
+ * line. `UIActivityItemSource` is the public way to supply one, and it keeps
+ * the item itself unchanged — a file URL is still a file URL, so the filename
+ * and the type travel with it rather than being described separately.
+ *
+ * Deliberately dumb. It holds what it was handed and answers three questions
+ * about it. It does not read the file, inspect the text, or know that either
+ * came from a journal.
+ */
+final class ShareItem: NSObject, UIActivityItemSource {
+    private let item: Any
+    private let subject: String
+    private let mimeType: String?
+
+    init(url: URL, subject: String, mimeType: String?) {
+        self.item = url
+        self.subject = subject
+        self.mimeType = mimeType
+    }
+
+    init(text: String, subject: String) {
+        self.item = text
+        self.subject = subject
+        self.mimeType = nil
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any {
+        // The placeholder only tells the sheet what KIND of thing is coming, so
+        // it can decide which activities to offer before the real item is asked
+        // for. Returning the item itself is correct and cheap here: both a file
+        // URL and a short string are already in hand.
+        item
+    }
+
+    func activityViewController(
+        _ controller: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        item
+    }
+
+    func activityViewController(
+        _ controller: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        subject
+    }
+
+    /**
+     * The type, stated rather than guessed.
+     *
+     * iOS infers a type from the file extension and usually gets it right. The
+     * caller already knows it, so saying so removes the inference — and for the
+     * text case there is no extension to infer from at all.
+     */
+    func activityViewController(
+        _ controller: UIActivityViewController,
+        dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        if let mimeType, let type = UTType(mimeType: mimeType) {
+            return type.identifier
+        }
+        if let url = item as? URL, let type = UTType(filenameExtension: url.pathExtension) {
+            return type.identifier
+        }
+        return UTType.plainText.identifier
     }
 }
