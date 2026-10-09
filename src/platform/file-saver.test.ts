@@ -13,6 +13,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { exportEverything } from '../export/download';
+import { DexieStorageProvider } from '../storage/db';
+import type { DataProfile, OutlineBook, Topic } from '../types';
+
 const saveDocument = vi.fn();
 const pickDocument = vi.fn();
 
@@ -33,6 +37,14 @@ const file = {
   bytes: new Uint8Array([1, 2, 3]),
   mimeType: 'application/zip',
 };
+
+const archiveInputs: { outlineBooks: OutlineBook[]; topics: Topic[]; profile: DataProfile } = {
+  outlineBooks: [],
+  topics: [],
+  profile: 'refs-only',
+};
+
+let database = 0;
 
 beforeEach(() => {
   saveDocument.mockReset();
@@ -80,6 +92,35 @@ describe('the native saver reports what the operating system did', () => {
     expect(options.name).toBe(file.suggestedName);
     expect(options.mimeType).toBe('application/zip');
     expect(options.base64, 'the archive bytes were not handed over').toBeTruthy();
+  });
+
+  it('carries a native close failure through to backup metadata without false success', async () => {
+    const previousExport = '2026-01-01T00:00:00.000Z';
+    const previousDismissal = '2026-02-01T00:00:00.000Z';
+    const storage = new DexieStorageProvider(`native-close-failure-${(database += 1)}`);
+    await storage.updateSettings({
+      lastExportAt: previousExport,
+      reminderDismissedAt: previousDismissal,
+      backupReminderDays: 7,
+    });
+    // Android rejects the bridge call when opening, writing, flushing or
+    // closing the provider stream fails. The adapter must carry that answer
+    // all the way to exportEverything rather than turning it into a backup.
+    saveDocument.mockRejectedValue(new Error('The archive could not be saved.'));
+    const { nativeFileSaver } = await import('./native');
+
+    const outcome = await exportEverything({
+      storage,
+      files: nativeFileSaver,
+      ...archiveInputs,
+    });
+
+    expect(outcome.save).toEqual({ status: 'failed', reason: 'io' });
+    expect(await storage.getSettings()).toEqual({
+      lastExportAt: previousExport,
+      reminderDismissedAt: previousDismissal,
+      backupReminderDays: 7,
+    });
   });
 });
 

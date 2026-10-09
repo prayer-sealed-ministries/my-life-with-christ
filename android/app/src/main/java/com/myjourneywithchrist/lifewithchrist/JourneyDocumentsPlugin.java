@@ -94,12 +94,36 @@ public class JourneyDocumentsPlugin extends Plugin {
             return;
         }
 
+        DocumentSaveOperation.Completion completion = new DocumentSaveOperation.Completion() {
+            @Override
+            public void saved() {
+                call.resolve(new JSObject().put("saved", true));
+            }
+
+            @Override
+            public void cancelled() {
+                call.resolve(new JSObject().put("saved", false));
+            }
+
+            @Override
+            public void failed(DocumentSaveOperation.Failure failure) {
+                if (failure == DocumentSaveOperation.Failure.NO_STREAM) {
+                    call.reject("That location could not be written to.");
+                } else {
+                    // Provider exceptions can contain paths, account names or
+                    // journal filenames. Keep bridge errors actionable but
+                    // content-free.
+                    call.reject("The archive could not be saved.");
+                }
+            }
+        };
+
         byte[] bytes = pendingBytes;
         pendingBytes = null;
 
         // Backing out is an ordinary outcome, not a failure.
         if (result.getResultCode() != Activity.RESULT_OK) {
-            call.resolve(new JSObject().put("saved", false));
+            DocumentSaveOperation.cancelled(completion);
             return;
         }
 
@@ -114,17 +138,10 @@ public class JourneyDocumentsPlugin extends Plugin {
             return;
         }
 
-        try (OutputStream out = getContext().getContentResolver().openOutputStream(destination)) {
-            if (out == null) {
-                call.reject("That location could not be written to.");
-                return;
-            }
-            out.write(bytes);
-            out.flush();
-            call.resolve(new JSObject().put("saved", true));
-        } catch (Exception error) {
-            call.reject("The archive could not be saved: " + error.getMessage());
-        }
+        DocumentSaveOperation.write(
+                () -> getContext().getContentResolver().openOutputStream(destination),
+                bytes,
+                completion);
     }
 
     @PluginMethod
