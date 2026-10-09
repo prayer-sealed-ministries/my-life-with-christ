@@ -24,7 +24,7 @@
  */
 
 import type { Entry, EntryKind } from '../types';
-import type { AnchorLookup, EntryQuery } from './StorageProvider';
+import type { AnchorLookup, EntryQuery, JournalSnapshot } from './StorageProvider';
 
 /** Stable id. Uses crypto.randomUUID where available. */
 export function newId(): string {
@@ -118,6 +118,7 @@ export function searchableText(entry: Entry): string {
     ...entry.links.map((link) => `${link.label ?? ''} ${link.capturedTitle ?? ''}`),
   ]
     .join('\n')
+    .normalize('NFC')
     .toLowerCase();
 }
 
@@ -140,7 +141,7 @@ export function matches(row: IndexedEntry, query: EntryQuery): boolean {
   const { entry } = row;
 
   if (query.text) {
-    const needle = query.text.trim().toLowerCase();
+    const needle = query.text.trim().normalize('NFC').toLowerCase();
     if (needle && !row.searchText.includes(needle)) return false;
   }
   if (query.from && entry.date < query.from) return false;
@@ -206,5 +207,77 @@ export function entryToCreate(input: Partial<Entry>, now = new Date()): Entry {
  */
 export function applyPatch(existing: Entry, patch: Partial<Entry>, now = new Date()): Entry {
   const { id: _id, createdAt: _createdAt, ...safe } = patch;
-  return { ...existing, ...safe, updatedAt: now.toISOString() };
+  const previous = Date.parse(existing.updatedAt);
+  const requested = now.getTime();
+  // A device clock correction must not make a later local edit look older.
+  // This is presentation/order hygiene only; import conflict decisions do not
+  // use wall-clock time as causality.
+  const timestamp = Number.isFinite(previous)
+    ? new Date(Math.max(requested, previous + 1)).toISOString()
+    : now.toISOString();
+  return { ...existing, ...safe, updatedAt: timestamp };
+}
+
+/** Raised when a caller tries to replace a version it did not read. */
+export class EntryConflictError extends Error {
+  readonly entryId: string;
+
+  constructor(entryId: string) {
+    super('This entry changed after it was opened. Your unsaved version is still available.');
+    this.name = 'EntryConflictError';
+    this.entryId = entryId;
+  }
+}
+
+/** Raised when any record changed between restore planning and its commit. */
+export class JournalConflictError extends Error {
+  constructor() {
+    super('The journal changed while this operation was being prepared. Nothing was imported; review it and try again.');
+    this.name = 'JournalConflictError';
+  }
+}
+
+/** Raised when two editors try to replace the same recovery snapshot. */
+export class DraftConflictError extends Error {
+  readonly draftId: string;
+
+  constructor(draftId: string) {
+    super('This recovery draft changed in another window. Both versions will be kept separately.');
+    this.name = 'DraftConflictError';
+    this.draftId = draftId;
+  }
+}
+
+/** Canonical comparison independent of object-key and collection ordering. */
+export function stableJson(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
+/** Exact canonical comparison used by optimistic concurrency checks. */
+export function sameEntryVersion(a: Entry, b: Entry): boolean {
+  return stableJson(a) === stableJson(b);
+}
+
+export function sameDraftVersion(
+  a: import('../types').EntryDraft,
+  b: import('../types').EntryDraft,
+): boolean {
+  return stableJson(a) === stableJson(b);
+}
+
+/** Compare complete journal snapshots without relying on provider sort order. */
+export function sameJournalSnapshot(a: JournalSnapshot, b: JournalSnapshot): boolean {
+  const byId = <T extends { id: string }>(values: T[]) =>
+    [...values].sort((left, right) => left.id.localeCompare(right.id));
+  return (
+    stableJson(byId(a.entries)) === stableJson(byId(b.entries)) &&
+    stableJson(byId(a.drafts)) === stableJson(byId(b.drafts))
+  );
 }

@@ -43,9 +43,15 @@ import {
   entryToCreate,
   indexed,
   matches,
+  EntryConflictError,
+  DraftConflictError,
+  JournalConflictError,
+  sameDraftVersion,
+  sameJournalSnapshot,
+  sameEntryVersion,
 } from './semantics';
 import { byRecency } from '../lib/drafts';
-import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
+import type { AnchorLookup, EntryQuery, JournalSnapshot, StorageProvider } from './StorageProvider';
 
 /**
  * The logical database name.
@@ -553,6 +559,19 @@ export class SqliteStorageProvider implements StorageProvider {
     }
   }
 
+  /** Write one complete recovery snapshot. Caller owns the transaction. */
+  private async writeDraft(draft: EntryDraft): Promise<void> {
+    await this.write(
+      `INSERT INTO drafts (id, entry_id, created_at, updated_at, data)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           entry_id   = excluded.entry_id,
+           updated_at = excluded.updated_at,
+           data       = excluded.data;`,
+      [draft.id, draft.entryId ?? null, draft.createdAt, draft.updatedAt, JSON.stringify(draft)],
+    );
+  }
+
   private async allEntries(): Promise<Entry[]> {
     const rows = await this.select<{ data: string }>(`SELECT data FROM entries;`);
     return rows.map((row) => JSON.parse(row.data) as Entry);
@@ -590,17 +609,25 @@ export class SqliteStorageProvider implements StorageProvider {
     return entry;
   }
 
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const existing = await this.getEntry(id);
-    if (!existing) throw new Error(`No entry with id ${id}`);
-    const updated = applyPatch(existing, patch);
-    await this.inTransaction(() => this.writeEntry(updated));
-    return updated;
+  async updateEntry(id: string, patch: Partial<Entry>, expected?: Entry): Promise<Entry> {
+    return this.inTransaction(async () => {
+      const rows = await this.select<{ data: string }>(`SELECT data FROM entries WHERE id = ?;`, [id]);
+      if (!rows.length) throw new Error(`No entry with id ${id}`);
+      const existing = JSON.parse(rows[0].data) as Entry;
+      if (expected && !sameEntryVersion(existing, expected)) throw new EntryConflictError(id);
+      const updated = applyPatch(existing, patch);
+      await this.writeEntry(updated);
+      return updated;
+    });
   }
 
   async deleteEntry(id: string): Promise<void> {
-    // The anchor rows go with it, via ON DELETE CASCADE.
-    await this.inTransaction(() => this.write(`DELETE FROM entries WHERE id = ?;`, [id]));
+    // The anchor rows go with it via ON DELETE CASCADE; drafts are deliberately
+    // explicit because historical schemas allowed an orphaned draft.
+    await this.inTransaction(async () => {
+      await this.write(`DELETE FROM drafts WHERE entry_id = ?;`, [id]);
+      await this.write(`DELETE FROM entries WHERE id = ?;`, [id]);
+    });
   }
 
   async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
@@ -632,6 +659,30 @@ export class SqliteStorageProvider implements StorageProvider {
     });
   }
 
+  async mergeJournal(entries: Entry[], drafts: EntryDraft[], expected?: JournalSnapshot): Promise<void> {
+    await this.inTransaction(async () => {
+      if (expected) {
+        const actual = { entries: await this.allEntries(), drafts: await this.listDrafts() };
+        if (!sameJournalSnapshot(actual, expected)) throw new JournalConflictError();
+      }
+      for (const entry of entries) await this.writeEntry(entry);
+      for (const draft of drafts) await this.writeDraft(draft);
+    });
+  }
+
+  async replaceJournal(entries: Entry[], drafts: EntryDraft[], expected?: JournalSnapshot): Promise<void> {
+    await this.inTransaction(async () => {
+      if (expected) {
+        const actual = { entries: await this.allEntries(), drafts: await this.listDrafts() };
+        if (!sameJournalSnapshot(actual, expected)) throw new JournalConflictError();
+      }
+      await this.write(`DELETE FROM entries;`);
+      await this.write(`DELETE FROM drafts;`);
+      for (const entry of entries) await this.writeEntry(entry);
+      for (const draft of drafts) await this.writeDraft(draft);
+    });
+  }
+
   async clearEntries(): Promise<void> {
     // Settings are a different table and are deliberately untouched — a
     // replace-mode import must not forget when the reader last exported.
@@ -640,21 +691,23 @@ export class SqliteStorageProvider implements StorageProvider {
 
   // --- recovery drafts ---------------------------------------------------
 
-  async putDraft(draft: EntryDraft): Promise<void> {
+  async putDraft(draft: EntryDraft, expected?: EntryDraft | null): Promise<void> {
     // One statement inside one transaction: the snapshot lands whole or not at
     // all. A half-applied draft would give back a title from one keystroke and
     // notes from another, which is worse than losing it.
-    await this.inTransaction(() =>
-      this.write(
-        `INSERT INTO drafts (id, entry_id, created_at, updated_at, data)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             entry_id   = excluded.entry_id,
-             updated_at = excluded.updated_at,
-             data       = excluded.data;`,
-        [draft.id, draft.entryId ?? null, draft.createdAt, draft.updatedAt, JSON.stringify(draft)],
-      ),
-    );
+    await this.inTransaction(async () => {
+      if (expected !== undefined) {
+        const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [draft.id]);
+        const current = rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+        if (
+          (expected === null && current) ||
+          (expected !== null && (!current || !sameDraftVersion(current, expected)))
+        ) {
+          throw new DraftConflictError(draft.id);
+        }
+      }
+      await this.writeDraft(draft);
+    });
   }
 
   async getDraft(id: string): Promise<EntryDraft | undefined> {

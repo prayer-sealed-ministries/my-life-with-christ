@@ -25,11 +25,13 @@
  * input, not an older archive, and it is accepted exactly as before.
  */
 
-import type { Entry, ImportMode, ImportPreview, JourneyExport } from '../types';
+import type { Entry, EntryDraft, ImportMode, ImportPreview, JourneyExport } from '../types';
 import type { StorageProvider } from '../storage/StorageProvider';
+import { stableJson } from '../storage/semantics';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
-import { readZip, zipEntryText } from './zip';
+import { readZip, sha256, zipEntryText } from './zip';
 import { verifyArchiveManifest } from './manifest.mjs';
+import { MAX_JOURNAL_FILE_BYTES, journalSizeMessage } from '../lib/journal-limits';
 
 /** Where journey.json lives inside an archive this app wrote. */
 const CANONICAL_PATH = 'data/journey.json';
@@ -79,6 +81,8 @@ export async function parseImport(
   data: Uint8Array | string,
   context: MigrationContext = {},
 ): Promise<ParsedImport> {
+  const byteLength = typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength;
+  if (byteLength > MAX_JOURNAL_FILE_BYTES) throw new Error(journalSizeMessage());
   let text: string;
   let source: ParsedImport['source'];
 
@@ -136,9 +140,9 @@ export async function parseImport(
 /**
  * Work out what an import would do. Writes nothing.
  *
- * Under `merge` the newest `updatedAt` wins, and any id present on both sides
- * where both were edited is reported as a conflict so the user sees it before
- * deciding.
+ * Wall-clock timestamps are deliberately not treated as causality. If the same
+ * id carries different content, merge preserves both versions as a conflict;
+ * replace is the only mode that intentionally chooses the file's version.
  */
 export function previewImport(
   incoming: ParsedImport,
@@ -149,7 +153,7 @@ export function previewImport(
   const mine = new Map(existing.map((entry) => [entry.id, entry]));
 
   let newEntries = 0;
-  let updated = 0;
+  const updated = 0;
   let unchanged = 0;
   const conflicts: ImportPreview['conflicts'] = [];
 
@@ -159,12 +163,10 @@ export function previewImport(
       newEntries += 1;
       continue;
     }
-    if (current.updatedAt === entry.updatedAt) {
+    if (sameEntryContent(current, entry)) {
       unchanged += 1;
       continue;
     }
-    if (entry.updatedAt > current.updatedAt) updated += 1;
-    else unchanged += 1;
 
     conflicts.push({
       id: entry.id,
@@ -182,6 +184,11 @@ export function previewImport(
   }
   if (incoming.filter) {
     warnings.push('This archive was a partial export — it does not contain the whole journal.');
+  }
+  if (mode === 'merge' && conflicts.length > 0) {
+    warnings.push(
+      `${conflicts.length} ${conflicts.length === 1 ? 'entry has' : 'entries have'} different versions. Merge will keep both; it will not guess from device clocks.`,
+    );
   }
 
   const danglingAnchors = isAnchorResolvable
@@ -204,6 +211,8 @@ export function previewImport(
 
 export interface ImportResult {
   imported: number;
+  draftsImported: number;
+  conflictsPreserved: number;
   replaced: boolean;
   preview: ImportPreview;
 }
@@ -217,45 +226,128 @@ export async function applyImport(
   mode: ImportMode = 'merge',
 ): Promise<ImportResult> {
   const existing = await storage.listEntries();
+  const existingDrafts = await storage.listDrafts();
   const preview = previewImport(incoming, existing, mode);
 
   if (mode === 'replace') {
     // One atomic swap rather than clear-then-write. The two-step version could
     // leave a reader with neither journal if the write failed after the delete
     // succeeded, which is reachable from an ordinary restore.
-    await storage.replaceEntries(incoming.entries);
-    await restoreDrafts(incoming, storage);
-    return { imported: incoming.entries.length, replaced: true, preview };
+    await storage.replaceJournal(incoming.entries, incoming.drafts, {
+      entries: existing,
+      drafts: existingDrafts,
+    });
+    return {
+      imported: incoming.entries.length,
+      draftsImported: incoming.drafts.length,
+      conflictsPreserved: 0,
+      replaced: true,
+      preview,
+    };
   }
 
-  // Merge: newest updatedAt wins, per id.
+  // Merge never guesses which different same-id record is newer. The incoming
+  // version receives a deterministic conflict id, so its words survive and
+  // importing the same archive twice does not create another copy.
   const mine = new Map(existing.map((entry) => [entry.id, entry]));
   const toWrite: Entry[] = [];
+  const remappedEntryIds = new Map<string, string>();
+  let conflictsPreserved = 0;
 
   for (const entry of incoming.entries) {
     const current = mine.get(entry.id);
-    if (!current || entry.updatedAt > current.updatedAt) toWrite.push(entry);
+    if (!current) {
+      toWrite.push(entry);
+      continue;
+    }
+    if (sameEntryContent(current, entry)) continue;
+
+    const conflict = await conflictEntry(entry, existing, toWrite);
+    remappedEntryIds.set(entry.id, conflict.id);
+    if (!existing.some((item) => stableJson(item) === stableJson(conflict))) {
+      toWrite.push(conflict);
+    }
+    conflictsPreserved += 1;
   }
 
-  await storage.putEntries(toWrite);
-  await restoreDrafts(incoming, storage);
-  return { imported: toWrite.length, replaced: false, preview };
+  const mergedDrafts: EntryDraft[] = [];
+  const knownDrafts = [...existingDrafts];
+  for (const original of incoming.drafts) {
+    const draft = remappedEntryIds.has(original.entryId ?? '')
+      ? { ...original, entryId: remappedEntryIds.get(original.entryId!) }
+      : original;
+    const current = knownDrafts.find((item) => item.id === draft.id);
+    if (!current) {
+      mergedDrafts.push(draft);
+      knownDrafts.push(draft);
+      continue;
+    }
+    if (stableJson(current) === stableJson(draft)) continue;
+    const conflict = await conflictDraft(draft, knownDrafts);
+    if (!knownDrafts.some((item) => stableJson(item) === stableJson(conflict))) {
+      mergedDrafts.push(conflict);
+      knownDrafts.push(conflict);
+    }
+  }
+
+  await storage.mergeJournal(toWrite, mergedDrafts, {
+    entries: existing,
+    drafts: existingDrafts,
+  });
+  return {
+    imported: toWrite.length,
+    draftsImported: mergedDrafts.length,
+    conflictsPreserved,
+    replaced: false,
+    preview,
+  };
 }
 
-/**
- * Put unfinished writing back as unfinished writing.
- *
- * Restored as drafts, never as entries: an archive made mid-sentence carries
- * the sentence, and importing it must not promote a half-thought into the
- * finished journal. The count reported to the reader stays the entry count for
- * the same reason — drafts are recovered work, not entries received.
- *
- * Failures here are deliberately not fatal. The journal has already been
- * written by the time this runs, and refusing the whole import because an
- * unfinished note would not restore would be the wrong trade.
- */
-async function restoreDrafts(incoming: ParsedImport, storage: StorageProvider): Promise<void> {
-  for (const draft of incoming.drafts) {
-    await storage.putDraft(draft).catch(() => {});
+function sameEntryContent(a: Entry, b: Entry): boolean {
+  const { updatedAt: _a, ...left } = a;
+  const { updatedAt: _b, ...right } = b;
+  return stableJson(left) === stableJson(right);
+}
+
+async function conflictEntry(
+  entry: Entry,
+  existing: Entry[],
+  pending: Entry[],
+): Promise<Entry> {
+  const digest = await sha256(stableJson(entry));
+  const base = `${entry.id}~conflict-${digest.slice(0, 16)}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const id = suffix === 1 ? base : `${base}-${suffix}`;
+    const candidate: Entry = {
+      ...entry,
+      id,
+      _unmigrated: {
+        ...entry._unmigrated,
+        journeyImportConflict: { originalId: entry.id },
+      },
+    };
+    const occupying = [...existing, ...pending].find((item) => item.id === id);
+    if (!occupying || stableJson(occupying) === stableJson(candidate)) return candidate;
+  }
+}
+
+async function conflictDraft(
+  draft: EntryDraft,
+  existing: EntryDraft[],
+): Promise<EntryDraft> {
+  const digest = await sha256(stableJson(draft));
+  const base = `${draft.id}~conflict-${digest.slice(0, 16)}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const id = suffix === 1 ? base : `${base}-${suffix}`;
+    const candidate: EntryDraft = {
+      ...draft,
+      id,
+      _unmigrated: {
+        ...draft._unmigrated,
+        journeyImportConflict: { originalId: draft.id },
+      },
+    };
+    const occupying = existing.find((item) => item.id === id);
+    if (!occupying || stableJson(occupying) === stableJson(candidate)) return candidate;
   }
 }

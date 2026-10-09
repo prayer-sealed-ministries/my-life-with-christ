@@ -215,7 +215,15 @@ export default function ImportView() {
                 // The web binding: convert the browser's File into the shape
                 // every edition uses, then hand it on.
                 const chosen = event.target.files?.[0];
-                if (chosen) void pickedFromDomFile(chosen).then(onFile);
+                if (chosen && chosen.size > MAX_FILE_BYTES) {
+                  setError(
+                    `That file is ${describeBytes(chosen.size)}, larger than the ${describeBytes(MAX_FILE_BYTES)} import limit.`,
+                  );
+                } else if (chosen) {
+                  void pickedFromDomFile(chosen)
+                    .then(onFile)
+                    .catch(() => setError('That file could not be read. Check its access and try again.'));
+                }
               }}
               className={`mt-2 ${CONTROL} text-sm file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink`}
             />

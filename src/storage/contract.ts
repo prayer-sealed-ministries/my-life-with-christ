@@ -120,6 +120,13 @@ const entry = (overrides: Partial<Entry> = {}): Entry => ({
   ...overrides,
 });
 
+/** A value neither IndexedDB nor the native JSON bridge can persist. */
+const unwritableEntry = (): Entry => {
+  const poison: Record<string, unknown> = { callable: () => undefined };
+  poison.self = poison;
+  return entry({ id: 'cannot-be-written', _unmigrated: poison });
+};
+
 const scriptureEntry = entry({
   id: 'a1',
   anchors: [
@@ -496,6 +503,65 @@ export const CONTRACT_CASES: ContractCase[] = [
       );
     },
   },
+  {
+    group: 'updating',
+    name: 'refuses a stale acknowledged version instead of overwriting it',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const original = await storage.createEntry({ title: 'Opened in two places', notes: 'original' });
+      const first = await storage.updateEntry(original.id, { notes: 'saved by the first writer' }, original);
+
+      await assert.rejects(
+        () => storage.updateEntry(original.id, { notes: 'stale second writer' }, original),
+        'a stale writer was accepted',
+      );
+      assert.equal(await storage.getEntry(original.id), first, 'the acknowledged first write survived');
+    },
+  },
+  {
+    group: 'updating',
+    name: 'acknowledges exactly one of two overlapping same-version writers',
+    run: async (env) => {
+      const storeId = env.newStoreId();
+      const first = env.create(storeId);
+      const second = env.create(storeId);
+      await first.open();
+      await second.open();
+      const original = await first.createEntry({ title: 'Two writers', notes: 'original' });
+      const [left, right] = await Promise.all([
+        first.getEntry(original.id),
+        second.getEntry(original.id),
+      ]);
+      assertDefined(left, 'the first writer did not read the entry');
+      assertDefined(right, 'the second writer did not read the entry');
+
+      const outcomes = await Promise.allSettled([
+        first.updateEntry(original.id, { notes: 'left' }, left),
+        second.updateEntry(original.id, { notes: 'right' }, right),
+      ]);
+      const fulfilled = outcomes.filter(
+        (outcome): outcome is PromiseFulfilledResult<Entry> => outcome.status === 'fulfilled',
+      );
+      assert.length(fulfilled, 1, 'overlapping writers acknowledged more or fewer than one version');
+      assert.equal(
+        await first.getEntry(original.id),
+        fulfilled[0].value,
+        'the acknowledged winner was not the durable version',
+      );
+    },
+  },
+  {
+    group: 'updating',
+    name: 'moves updatedAt forward even when the device clock moved backward',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const future = entry({ id: 'clock', updatedAt: '2099-01-01T00:00:00.000Z' });
+      await storage.putEntries([future]);
+
+      const updated = await storage.updateEntry(future.id, { notes: 'written after the clock correction' });
+      assert.true(updated.updatedAt > future.updatedAt, 'updatedAt moved backward or stayed equal');
+    },
+  },
 
   // -------------------------------------------------------------------------
   {
@@ -523,6 +589,23 @@ export const CONTRACT_CASES: ContractCase[] = [
         () => storage.deleteEntry('never-existed'),
         'deleting a missing entry',
       );
+    },
+  },
+  {
+    group: 'deleting',
+    name: 'atomically removes drafts belonging to the deleted entry',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'delete-me' }), entry({ id: 'keep-me' })]);
+      await storage.putDraft(draft({ id: 'delete-draft', entryId: 'delete-me' }));
+      await storage.putDraft(draft({ id: 'keep-draft', entryId: 'keep-me' }));
+      await storage.putDraft(draft({ id: 'loose-draft' }));
+
+      await storage.deleteEntry('delete-me');
+
+      assert.undefined(await storage.getDraft('delete-draft'), 'the private recovery copy survived deletion');
+      assertDefined(await storage.getDraft('keep-draft'), 'an unrelated saved-entry draft was deleted');
+      assertDefined(await storage.getDraft('loose-draft'), 'an unrelated loose draft was deleted');
     },
   },
 
@@ -579,6 +662,25 @@ export const CONTRACT_CASES: ContractCase[] = [
       await storage.putEntries(corpus);
       assert.equal(await idsFor(storage, { text: 'grace' }), ['q1', 'q3'], 'free text across fields');
       assert.equal(await idsFor(storage, { text: 'Okonkwo' }), ['q2'], 'free text matches a speaker');
+    },
+  },
+  {
+    group: 'querying',
+    name: 'matches canonically equivalent Unicode in text and queries',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'unicode', title: 'Cafe\u0301 testimony' })]);
+
+      assert.equal(
+        (await storage.listEntries({ text: 'Caf\u00e9' })).map((item) => item.id),
+        ['unicode'],
+        'NFC query did not match NFD stored text',
+      );
+      assert.equal(
+        (await storage.listEntries({ text: 'Cafe\u0301' })).map((item) => item.id),
+        ['unicode'],
+        'NFD query did not match the stored text',
+      );
     },
   },
   {
@@ -975,6 +1077,32 @@ export const CONTRACT_CASES: ContractCase[] = [
   },
   {
     group: 'recovery drafts',
+    name: 'refuses to overwrite a recovery version advanced by another writer',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const original = draft({ id: 'shared-draft', form: draftForm({ notes: 'original' }) });
+      await storage.putDraft(original);
+      const advanced = {
+        ...original,
+        form: draftForm({ notes: 'first writer' }),
+        updatedAt: '2026-03-01T09:01:00.000Z',
+      };
+      await storage.putDraft(advanced, original);
+
+      await assert.rejects(
+        () => storage.putDraft({
+          ...original,
+          form: draftForm({ notes: 'stale writer' }),
+          updatedAt: '2026-03-01T09:02:00.000Z',
+        }, original),
+        'a stale recovery write was accepted',
+      );
+
+      assert.equal(await storage.getDraft(original.id), advanced, 'the acknowledged recovery write was overwritten');
+    },
+  },
+  {
+    group: 'recovery drafts',
     name: 'two unfinished pieces of work do not overwrite each other',
     run: async (env) => {
       const storage = await env.fresh();
@@ -1069,6 +1197,100 @@ export const CONTRACT_CASES: ContractCase[] = [
 
       assert.is((await storage.listEntries()).length, 0, 'the journal was cleared');
       assertDefined(await storage.getDraft('d-keep'), 'unfinished work is not part of a journal wipe');
+    },
+  },
+  {
+    group: 'logical journal transactions',
+    name: 'replace swaps entries and drafts as one exact logical journal',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'old-entry' })]);
+      await storage.putDraft(draft({ id: 'old-draft', entryId: 'old-entry' }));
+
+      const nextEntry = entry({ id: 'next-entry', notes: 'the restored journal' });
+      const nextDraft = draft({ id: 'next-draft', entryId: 'next-entry' });
+      await storage.replaceJournal([nextEntry], [nextDraft]);
+
+      assert.equal(await storage.listEntries(), [nextEntry], 'replace did not install the exact entries');
+      assert.equal(await storage.listDrafts(), [nextDraft], 'replace did not install the exact drafts');
+      assert.undefined(await storage.getEntry('old-entry'), 'an old entry survived replace');
+      assert.undefined(await storage.getDraft('old-draft'), 'an old draft survived replace');
+    },
+  },
+  {
+    group: 'logical journal transactions',
+    name: 'replace rolls back both collections when a later write fails',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const oldEntry = entry({ id: 'old-entry' });
+      const oldDraft = draft({ id: 'old-draft', entryId: oldEntry.id });
+      await storage.putEntries([oldEntry]);
+      await storage.putDraft(oldDraft);
+
+      await assert.rejects(
+        () => storage.replaceJournal([entry({ id: 'started' }), unwritableEntry()], [draft({ id: 'incoming-draft' })]),
+        'replace unexpectedly accepted an unwritable record',
+      );
+
+      assert.equal(await storage.listEntries(), [oldEntry], 'failed replace changed the entries');
+      assert.equal(await storage.listDrafts(), [oldDraft], 'failed replace changed the drafts');
+    },
+  },
+  {
+    group: 'logical journal transactions',
+    name: 'merge rolls back entries and drafts when a later write fails',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const original = entry({ id: 'original' });
+      await storage.putEntries([original]);
+
+      await assert.rejects(
+        () => storage.mergeJournal(
+          [entry({ id: 'would-have-landed' }), unwritableEntry()],
+          [draft({ id: 'would-have-landed-draft' })],
+        ),
+        'merge unexpectedly accepted an unwritable record',
+      );
+
+      assert.equal(await storage.listEntries(), [original], 'failed merge left a partial entry');
+      assert.is((await storage.listDrafts()).length, 0, 'failed merge left a partial draft');
+    },
+  },
+  {
+    group: 'logical journal transactions',
+    name: 'refuses a stale replace snapshot without changing either collection',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const original = entry({ id: 'original' });
+      await storage.putEntries([original]);
+      const expected = { entries: [original], drafts: [] };
+
+      const concurrentDraft = draft({ id: 'typed-while-preview-open' });
+      await storage.putDraft(concurrentDraft);
+      await assert.rejects(
+        () => storage.replaceJournal([entry({ id: 'incoming' })], [], expected),
+        'replace overwrote writing created after its preview',
+      );
+
+      assert.equal(await storage.listEntries(), [original], 'stale replace changed entries');
+      assert.equal(await storage.listDrafts(), [concurrentDraft], 'stale replace erased the newer draft');
+    },
+  },
+  {
+    group: 'logical journal transactions',
+    name: 'refuses a stale merge snapshot without overwriting a concurrent id',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const expected = { entries: [], drafts: [] };
+      const concurrent = entry({ id: 'same-id', notes: 'typed in another writer' });
+      await storage.putEntries([concurrent]);
+
+      await assert.rejects(
+        () => storage.mergeJournal([entry({ id: 'same-id', notes: 'from an import' })], [], expected),
+        'merge overwrote an entry created after its preview',
+      );
+
+      assert.equal(await storage.getEntry('same-id'), concurrent, 'the concurrent entry was overwritten');
     },
   },
 ];

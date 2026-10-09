@@ -177,7 +177,7 @@ describe('archives written before drafts existed', () => {
     ).not.toMatch(/draft/i);
   });
 
-  it('survives a drafts section that is malformed, without refusing the journal', () => {
+  it('rejects a malformed drafts section before any restore can begin', () => {
     const damaged = {
       format: 'journey-export',
       version: 1,
@@ -186,10 +186,48 @@ describe('archives written before drafts existed', () => {
       drafts: [{ id: 'no-form' }, 'not even an object'],
     };
 
-    const result = migrateExport(damaged);
+    expect(() => migrateExport(damaged)).toThrow(/draft/i);
+  });
 
-    expect(result.entries, 'the journal still imported').toHaveLength(1);
-    expect(result.drafts).toEqual([]);
-    expect(result.warnings.join(' ')).toMatch(/draft/i);
+  it.each([
+    ['non-string title', { ...draft(), form: { ...draft().form, title: 7 } }],
+    ['unknown kind', { ...draft(), form: { ...draft().form, kind: 'future-kind' } }],
+    ['malformed link', { ...draft(), form: { ...draft().form, links: [{ url: 7 }] } }],
+    ['malformed anchor', { ...draft(), form: { ...draft().form, anchors: [{ kind: 'scripture', book: 'john', chapterStart: -1 }] } }],
+    ['invalid timestamp', { ...draft(), updatedAt: 'not-a-time' }],
+  ])('rejects a draft with a %s', (_description, malformed) => {
+    expect(() => migrateExport({
+      format: 'journey-export',
+      version: 1,
+      entries: [entry()],
+      drafts: [malformed],
+    })).toThrow(/draft/i);
+  });
+
+  it('preserves supported unknown draft-form extension fields', () => {
+    const extended = draft({
+      form: { ...form(), futureEditorField: { kept: true } } as DraftForm,
+    });
+    const migrated = migrateExport({ version: 1, entries: [], drafts: [extended] });
+
+    expect((migrated.drafts[0].form as DraftForm & { futureEditorField: unknown }).futureEditorField)
+      .toEqual({ kept: true });
+  });
+});
+
+describe('duplicate identifiers are rejected before preview or mutation', () => {
+  it('rejects duplicate entry ids instead of collapsing two writings into one', () => {
+    expect(() => migrateExport({
+      version: 1,
+      entries: [entry({ title: 'First' }), entry({ title: 'Second' })],
+    })).toThrow(/duplicate entry id/i);
+  });
+
+  it('rejects duplicate draft ids instead of overstating the restored count', () => {
+    expect(() => migrateExport({
+      version: 1,
+      entries: [],
+      drafts: [draft({ form: form({ notes: 'First' }) }), draft({ form: form({ notes: 'Second' }) })],
+    })).toThrow(/duplicate draft id/i);
   });
 });

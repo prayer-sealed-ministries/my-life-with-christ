@@ -35,6 +35,10 @@ const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
 
 const MATERIAL_FORMATS = new Set(['txt', 'markdown', 'pdf', 'sermon-notes-json']);
 
+const MAX_ID_CHARS = 512;
+const MAX_DRAFT_TEXT_CHARS = 16 * 1024 * 1024;
+const MAX_DRAFT_LIST_ITEMS = 100_000;
+
 /**
  * Read a block of provided material, or nothing.
  *
@@ -344,37 +348,148 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
  * Read the drafts an archive carried, defensively.
  *
  * Absent is the normal case and is silent: every archive written before this
- * existed has no such key, and treating that as a problem would make old
- * backups look damaged. Anything present but malformed is dropped with a note
- * rather than crashing the import — an unfinished note is not worth refusing
- * somebody's whole journal over.
+ * existed has no such key. Anything present is validated as strictly as an
+ * entry because persisting a draft the editor cannot render can break the
+ * recovery route and hide otherwise-valid writing.
  */
-function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
+function requiredDraftString(
+  value: unknown,
+  field: string,
+  max = MAX_DRAFT_TEXT_CHARS,
+): string {
+  if (typeof value !== 'string') throw new Error(`A draft has an invalid ${field} field.`);
+  if (value.length > max) throw new Error(`A draft's ${field} field is too large to restore safely.`);
+  return value;
+}
+
+function draftStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length > MAX_DRAFT_LIST_ITEMS) {
+    throw new Error(`A draft has an invalid ${field} list.`);
+  }
+  return value.map((item) => requiredDraftString(item, field));
+}
+
+function validDraftAnchor(value: unknown): value is EntryAnchor {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const anchor = value as Record<string, unknown>;
+  if (anchor.kind === 'topic') {
+    return typeof anchor.topicId === 'string' && anchor.topicId.length <= MAX_ID_CHARS;
+  }
+  if (anchor.kind === 'book') {
+    return typeof anchor.book === 'string' && anchor.book.length <= MAX_ID_CHARS;
+  }
+  const coordinate = (candidate: unknown) =>
+    typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate > 0;
+  return (
+    anchor.kind === 'scripture' &&
+    typeof anchor.book === 'string' && anchor.book.length <= MAX_ID_CHARS &&
+    coordinate(anchor.chapterStart) &&
+    coordinate(anchor.verseStart) &&
+    coordinate(anchor.chapterEnd) &&
+    coordinate(anchor.verseEnd) &&
+    (anchor.outlineEntryId === undefined || typeof anchor.outlineEntryId === 'string') &&
+    (anchor.note === undefined || (typeof anchor.note === 'string' && anchor.note.length <= MAX_DRAFT_TEXT_CHARS))
+  );
+}
+
+function readDraftForm(raw: unknown): EntryDraft['form'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('A draft in this archive has no valid form.');
+  }
+  const value = raw as Record<string, unknown>;
+  if (!KINDS.includes(value.kind as EntryKind)) throw new Error('A draft has an invalid kind.');
+  if (typeof value.forDescendants !== 'boolean') {
+    throw new Error('A draft has an invalid forDescendants field.');
+  }
+  if (!Array.isArray(value.links) || value.links.length > MAX_DRAFT_LIST_ITEMS) {
+    throw new Error('A draft has an invalid links list.');
+  }
+  const links = value.links.map((rawLink) => {
+    if (!rawLink || typeof rawLink !== 'object' || Array.isArray(rawLink)) {
+      throw new Error('A draft has an invalid link.');
+    }
+    const link = rawLink as Record<string, unknown>;
+    return {
+      url: requiredDraftString(link.url, 'link URL'),
+      label: requiredDraftString(link.label, 'link label'),
+      capturedTitle: requiredDraftString(link.capturedTitle, 'link title'),
+      ...(link.capturedAt === undefined
+        ? {}
+        : { capturedAt: requiredDraftString(link.capturedAt, 'link timestamp', 128) }),
+    };
+  });
+  if (!Array.isArray(value.anchors) || value.anchors.length > MAX_DRAFT_LIST_ITEMS ||
+      !value.anchors.every(validDraftAnchor)) {
+    throw new Error('A draft has an invalid anchors list.');
+  }
+  // Drafts written before provided notes existed have no sourceMaterial key;
+  // that supported older shape means the same thing as null.
+  const sourceMaterial = value.sourceMaterial ?? null;
+  const migratedMaterial = sourceMaterial === null ? null : migrateSourceMaterial(sourceMaterial);
+  if (sourceMaterial !== null && migratedMaterial === undefined) {
+    throw new Error('A draft has invalid provided notes.');
+  }
+  if (migratedMaterial && migratedMaterial.body.length > MAX_DRAFT_TEXT_CHARS) {
+    throw new Error("A draft's provided notes are too large to restore safely.");
+  }
+
+  const date = requiredDraftString(value.date, 'date', 128);
+  if (date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('A draft has an invalid date.');
+  }
+
+  // Preserve unknown extension fields on the form verbatim after every field
+  // used by the current UI has passed runtime validation.
+  return {
+    ...value,
+    kind: value.kind as EntryKind,
+    title: requiredDraftString(value.title, 'title'),
+    date,
+    place: requiredDraftString(value.place, 'place'),
+    speaker: requiredDraftString(value.speaker, 'speaker'),
+    sermonSeries: requiredDraftString(value.sermonSeries, 'sermon series'),
+    notes: requiredDraftString(value.notes, 'notes'),
+    reflection: requiredDraftString(value.reflection, 'reflection'),
+    prayer: requiredDraftString(value.prayer, 'prayer'),
+    tagsText: requiredDraftString(value.tagsText, 'tags'),
+    links,
+    anchors: value.anchors,
+    forDescendants: value.forDescendants,
+    scriptureRefs: draftStringArray(value.scriptureRefs, 'scripture references'),
+    sourceMaterial: migratedMaterial,
+  } as EntryDraft['form'];
+}
+
+function readDrafts(raw: unknown, _warnings: string[]): EntryDraft[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
-    warnings.push('The "drafts" section was not a list, so unfinished writing was not restored.');
-    return [];
+    throw new Error('This journal has an invalid "drafts" section. Nothing was restored.');
   }
 
   const drafts: EntryDraft[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('A draft in this archive is malformed. Nothing was restored.');
+    }
     const value = item as Record<string, unknown>;
     const id = typeof value.id === 'string' ? value.id : '';
-    const form = value.form;
-    if (!id || !form || typeof form !== 'object') {
-      warnings.push('A draft in this archive was malformed and could not be restored.');
-      continue;
+    if (!id || id.length > MAX_ID_CHARS) throw new Error('A draft has an invalid id. Nothing was restored.');
+    if (value.entryId !== undefined &&
+        (typeof value.entryId !== 'string' || value.entryId.length === 0 || value.entryId.length > MAX_ID_CHARS)) {
+      throw new Error(`Draft ${id} has an invalid entry id. Nothing was restored.`);
+    }
+    const createdAt = requiredDraftString(value.createdAt, 'created timestamp', 128);
+    const updatedAt = requiredDraftString(value.updatedAt, 'updated timestamp', 128);
+    if (!Number.isFinite(Date.parse(createdAt)) || !Number.isFinite(Date.parse(updatedAt))) {
+      throw new Error(`Draft ${id} has an invalid timestamp. Nothing was restored.`);
     }
     drafts.push({
       id,
       ...(typeof value.entryId === 'string' ? { entryId: value.entryId } : {}),
-      // Kept verbatim: a draft's whole purpose is to be exactly what was typed,
-      // and this build must not tidy a snapshot it is only passing through.
-      form: form as EntryDraft['form'],
-      createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
-      updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date(0).toISOString(),
-      ...(value._unmigrated && typeof value._unmigrated === 'object'
+      form: readDraftForm(value.form),
+      createdAt,
+      updatedAt,
+      ...(value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
         ? { _unmigrated: value._unmigrated as Record<string, unknown> }
         : {}),
     });
@@ -405,13 +520,33 @@ export function migrateExport(raw: unknown, context: MigrationContext = {}): Mig
   const entries: Entry[] = [];
   for (const item of envelope.entries) {
     const entry = migrateEntry(item, context, warnings);
-    if (entry) entries.push(entry);
+    if (!entry) throw new Error('This journal contains an entry without a valid id. Nothing was restored.');
+    entries.push(entry);
+  }
+
+  const duplicateEntry = firstDuplicate(entries.map((entry) => entry.id));
+  if (duplicateEntry) {
+    throw new Error(`This journal contains duplicate entry id "${duplicateEntry}". Nothing was restored.`);
+  }
+  const drafts = readDrafts(envelope.drafts, warnings);
+  const duplicateDraft = firstDuplicate(drafts.map((draft) => draft.id));
+  if (duplicateDraft) {
+    throw new Error(`This journal contains duplicate draft id "${duplicateDraft}". Nothing was restored.`);
   }
 
   return {
     entries,
-    drafts: readDrafts(envelope.drafts, warnings),
+    drafts,
     warnings,
     migratedFrom: version !== undefined && version !== CURRENT_VERSION ? version : undefined,
   };
+}
+
+function firstDuplicate(ids: string[]): string | undefined {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) return id;
+    seen.add(id);
+  }
+  return undefined;
 }

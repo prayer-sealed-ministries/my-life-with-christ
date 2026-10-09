@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { DexieStorageProvider } from '../storage/db';
+import { stableJson } from '../storage/semantics';
 import { buildArchive, buildContext, buildJourneyJson, matchesFilter } from './archive';
 import { applyImport, parseImport, previewImport } from './importer';
-import { readZip, zipEntryText } from './zip';
+import { readZip, sha256, zipEntryText } from './zip';
 import { ALL_ENTRIES, AWKWARD, COLLIDER_A, COLLIDER_B, READING, SERMON } from './fixtures';
 import { examinedAtLeast } from '../testing/floor';
 import outlines from '../data/sections.json';
 import topicsFile from '../data/topics.json';
-import type { Entry, OutlineBook, Topic } from '../types';
+import type { DraftForm, Entry, EntryDraft, OutlineBook, Topic } from '../types';
+import type { StorageProvider } from '../storage/StorageProvider';
 
 const outlineBooks = outlines as unknown as OutlineBook[];
 const topics = topicsFile.topics as Topic[];
@@ -24,6 +26,19 @@ const archiveOptions = (entries: Entry[], overrides = {}) => ({
 });
 
 const byId = (entries: Entry[]) => [...entries].sort((a, b) => a.id.localeCompare(b.id));
+
+const draftForm = (notes: string): DraftForm => ({
+  kind: 'sermon', title: '', date: '2026-09-13', place: '', speaker: '', sermonSeries: '',
+  notes, reflection: '', prayer: '', tagsText: '', links: [], anchors: [],
+  forDescendants: false, scriptureRefs: [], sourceMaterial: null,
+});
+const draft = (id: string, notes: string, entryId?: string): EntryDraft => ({
+  id,
+  ...(entryId ? { entryId } : {}),
+  form: draftForm(notes),
+  createdAt: '2026-09-13T10:00:00.000Z',
+  updatedAt: '2026-09-13T10:05:00.000Z',
+});
 
 let db: DexieStorageProvider;
 let counter = 0;
@@ -305,29 +320,70 @@ describe('import safety', () => {
     const preview = previewImport(parsed, await db.listEntries(), 'merge');
     expect(preview.incoming).toBe(2);
     expect(preview.newEntries).toBe(1);
-    expect(preview.updated).toBe(1);
+    expect(preview.updated).toBe(0);
     expect(preview.conflicts).toHaveLength(1);
 
     // Nothing written yet.
     expect(await db.listEntries()).toHaveLength(1);
   });
 
-  it('merges with the newest updatedAt winning', async () => {
+  it('preserves both versions instead of trusting the newer wall clock', async () => {
     await db.putEntries([{ ...SERMON, title: 'Mine', updatedAt: '2026-09-10T00:00:00.000Z' }]);
     const archive = await buildArchive(archiveOptions([{ ...SERMON, title: 'Theirs', updatedAt: '2026-09-11T00:00:00.000Z' }]));
     await applyImport(await parseImport(archive.bytes), db, 'merge');
 
-    const [entry] = await db.listEntries();
-    expect(entry.title).toBe('Theirs');
+    expect((await db.listEntries()).map((entry) => entry.title).sort()).toEqual(['Mine', 'Theirs']);
   });
 
-  it('keeps the local copy when it is newer', async () => {
+  it('preserves both versions when the device clock says the local copy is newer', async () => {
     await db.putEntries([{ ...SERMON, title: 'Mine', updatedAt: '2026-09-12T00:00:00.000Z' }]);
     const archive = await buildArchive(archiveOptions([{ ...SERMON, title: 'Theirs', updatedAt: '2026-09-11T00:00:00.000Z' }]));
     await applyImport(await parseImport(archive.bytes), db, 'merge');
 
-    const [entry] = await db.listEntries();
-    expect(entry.title).toBe('Mine');
+    expect((await db.listEntries()).map((entry) => entry.title).sort()).toEqual(['Mine', 'Theirs']);
+  });
+
+  it('preserves both versions when wall-clock timestamps are equal', async () => {
+    await db.putEntries([{ ...SERMON, title: 'Mine', updatedAt: '2026-09-12T00:00:00.000Z' }]);
+    const archive = await buildArchive(archiveOptions([
+      { ...SERMON, title: 'Theirs', updatedAt: '2026-09-12T00:00:00.000Z' },
+    ]));
+
+    await applyImport(await parseImport(archive.bytes), db, 'merge');
+
+    expect((await db.listEntries()).map((entry) => entry.title).sort()).toEqual(['Mine', 'Theirs']);
+  });
+
+  it('does not duplicate a preserved conflict when the same archive is imported again', async () => {
+    await db.putEntries([{ ...SERMON, title: 'Mine' }]);
+    const parsed = await parseImport(await buildArchive(
+      archiveOptions([{ ...SERMON, title: 'Theirs' }]),
+    ).then((archive) => archive.bytes));
+
+    await applyImport(parsed, db, 'merge');
+    await applyImport(parsed, db, 'merge');
+
+    expect((await db.listEntries()).map((item) => item.title).sort()).toEqual(['Mine', 'Theirs']);
+  });
+
+  it('keeps repeated conflict imports idempotent even when their preferred id is occupied', async () => {
+    const mine = { ...SERMON, title: 'Mine' };
+    const theirs = { ...SERMON, title: 'Theirs' };
+    const digest = await sha256(stableJson(theirs));
+    const occupiedId = `${theirs.id}~conflict-${digest.slice(0, 16)}`;
+    await db.putEntries([mine, { ...READING, id: occupiedId, title: 'Unrelated occupant' }]);
+    const parsed = await parseImport(await buildArchive(
+      archiveOptions([theirs]),
+    ).then((archive) => archive.bytes));
+
+    await applyImport(parsed, db, 'merge');
+    await applyImport(parsed, db, 'merge');
+
+    expect((await db.listEntries()).map((item) => item.title).sort()).toEqual([
+      'Mine',
+      'Theirs',
+      'Unrelated occupant',
+    ]);
   });
 
   it('replace mode clears first, and warns that it will', async () => {
@@ -341,6 +397,62 @@ describe('import safety', () => {
     await applyImport(parsed, db, 'replace');
     const after = await db.listEntries();
     expect(after.map((entry) => entry.id)).toEqual([AWKWARD.id]);
+  });
+
+  it('replace removes every old draft and installs exactly the archive drafts', async () => {
+    await db.putEntries([SERMON]);
+    await db.putDraft(draft('old-draft', 'old private recovery text', SERMON.id));
+    const incomingDraft = draft('incoming-draft', 'restored unfinished text', AWKWARD.id);
+    const archive = await buildArchive(archiveOptions([AWKWARD], { drafts: [incomingDraft] }));
+
+    await applyImport(await parseImport(archive.bytes), db, 'replace');
+
+    expect(await db.listEntries()).toEqual([AWKWARD]);
+    expect(await db.listDrafts()).toEqual([incomingDraft]);
+    expect(await db.getDraft('old-draft')).toBeUndefined();
+  });
+
+  it('aborts a replace if writing appears after the restore snapshot was read', async () => {
+    await db.putEntries([SERMON]);
+    const concurrent = draft('concurrent-draft', 'typed while preview was open', SERMON.id);
+    let firstDraftRead = true;
+    const storage = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'listDrafts' && firstDraftRead) {
+          return async () => {
+            firstDraftRead = false;
+            const observed = await target.listDrafts();
+            await target.putDraft(concurrent);
+            return observed;
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const parsed = await parseImport((await buildArchive(archiveOptions([AWKWARD]))).bytes);
+
+    await expect(applyImport(parsed, storage, 'replace')).rejects.toThrow(/journal changed/i);
+
+    expect(await db.listEntries()).toEqual([SERMON]);
+    expect(await db.listDrafts()).toEqual([concurrent]);
+  });
+
+  it('surfaces a provider restore failure and leaves the original journal untouched', async () => {
+    await db.putEntries([SERMON]);
+    await db.putDraft(draft('old-draft', 'still here', SERMON.id));
+    const storage = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'replaceJournal') return async () => { throw new Error('injected disk failure'); };
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const parsed = await parseImport((await buildArchive(archiveOptions([AWKWARD]))).bytes);
+
+    await expect(applyImport(parsed, storage, 'replace')).rejects.toThrow(/injected disk failure/i);
+    expect(await db.listEntries()).toEqual([SERMON]);
+    expect((await db.listDrafts())[0].form.notes).toBe('still here');
   });
 
   it('refuses a file that is not a journal, with a readable message', async () => {

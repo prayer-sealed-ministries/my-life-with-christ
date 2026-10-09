@@ -14,6 +14,12 @@
 
 import type { Entry, EntryDraft, EntryKind, NewEntry, Settings } from '../types';
 
+/** Exact logical state observed before an atomic journal mutation. */
+export interface JournalSnapshot {
+  entries: Entry[];
+  drafts: EntryDraft[];
+}
+
 /** Narrowing applied to a list or search. */
 export interface EntryQuery {
   /** Matches title, notes, reflection, speaker, place, series, and tags. */
@@ -41,7 +47,17 @@ export interface StorageProvider {
   listEntriesChronological(query?: EntryQuery): Promise<Entry[]>;
 
   createEntry(entry: NewEntry): Promise<Entry>;
-  updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
+  /**
+   * Update one entry in the same transaction that reads its current value.
+   *
+   * `expected` is the exact version the editor loaded. When another tab or
+   * overlapping operation has committed since then, the provider refuses the
+   * write instead of acknowledging an overwrite. Callers that do not carry a
+   * previously-read version may omit it; their read/patch/write still happens
+   * atomically, so disjoint concurrent patches cannot erase one another.
+   */
+  updateEntry(id: string, patch: Partial<Entry>, expected?: Entry): Promise<Entry>;
+  /** Delete an entry and every recovery draft belonging to it, atomically. */
   deleteEntry(id: string): Promise<void>;
 
   /**
@@ -89,6 +105,11 @@ export interface StorageProvider {
    */
   replaceEntries(entries: Entry[]): Promise<void>;
 
+  /** Atomically merge a complete logical journal fragment. */
+  mergeJournal(entries: Entry[], drafts: EntryDraft[], expected?: JournalSnapshot): Promise<void>;
+  /** Atomically replace entries and drafts with an exact logical journal. */
+  replaceJournal(entries: Entry[], drafts: EntryDraft[], expected?: JournalSnapshot): Promise<void>;
+
   /**
    * Work in progress, kept apart from the journal itself.
    *
@@ -101,7 +122,8 @@ export interface StorageProvider {
    * could be half-applied would give back a title from one keystroke and notes
    * from another, which is a worse outcome than losing the draft outright.
    */
-  putDraft(draft: EntryDraft): Promise<void>;
+  /** `expected: null` requires a new id; an object requires that exact prior version. */
+  putDraft(draft: EntryDraft, expected?: EntryDraft | null): Promise<void>;
   getDraft(id: string): Promise<EntryDraft | undefined>;
   /** The draft holding unsaved edits to a saved entry, if there is one. */
   getDraftForEntry(entryId: string): Promise<EntryDraft | undefined>;
