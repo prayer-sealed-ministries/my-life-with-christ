@@ -36,8 +36,9 @@ A full export includes finished entries and every recovery draft. If any
 required read or archive-building step fails, no complete-backup success is
 reported and the backup reminder is not reset.
 
-- Android and iOS report success only after the system document picker confirms
-  that the file was saved.
+- Android reports success only after the selected document provider accepts the
+  complete write and its output stream successfully flushes and closes. iOS
+  reports success only after its document-writing operation completes.
 - Browsers with the File System Access API report success only after the file
   stream is written and closed.
 - Other browsers can only start a download. The app labels that result
@@ -47,6 +48,12 @@ reported and the backup reminder is not reset.
 Exports are ordinary unencrypted ZIP files. Anyone who obtains a file can read
 it. Store it somewhere protected and separate from the device holding the
 working journal.
+
+A completed write and close is the strongest confirmation these platform APIs
+provide to the app. It is not a promise that bytes have already reached
+physical media, that a removable drive will remain healthy, or that a cloud
+document provider has finished synchronizing. Reopen important backups from
+their destination before relying on them.
 
 ## Restore and merge
 

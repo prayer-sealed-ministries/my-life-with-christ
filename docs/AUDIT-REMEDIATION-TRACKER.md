@@ -25,17 +25,30 @@ path were necessarily completed together.
 | LWC-016 | Canonically equivalent Unicode missed | NFC normalization on query and derived search text | shared storage contract | Verified in IndexedDB and Node SQLite | `31d3416` |
 | LWC-017 | Vitest lacked debug constant | Release-safe `__DEBUG_TOOLS__ = false` in Vitest | full default suite; debug asset policy | Verified by test/build gates | `111767f` |
 | LWC-018 | Picker errors looked cancelled | Typed picked/cancelled/failed results across adapters/UI | `file-saver.test.ts` | Verified in adapter tests | `111767f` |
+| LWC-019 | Android resolved backup success before the document-provider stream closed | Success is emitted only after open, write, flush and close all complete; failures remain content-free | `DocumentSaveOperationTest`; `file-saver.test.ts` end-to-end metadata assertion | Verified in JVM and TypeScript fault-injection tests; physical providers remain a release check | `744a8c6` |
 
 ## Native verification limits
 
 The Android unit, lint, and debug-assembly gates pass under JDK 21.0.10. The
-iOS app compiles for an iPhone 17 Pro simulator under Xcode 27.0. The existing
-`ShareUITests` flow remains **not verified**: both the repair branch and the
-untouched audited commit fail at `ShareAcceptanceUITests.swift:134` when Xcode
-reports that the Notes text view lacks keyboard focus. This establishes that
-the failure was not introduced by these repairs, but it does not establish that
-sharing works on a device.
+close-sensitive save operation has JVM coverage for open, write, flush, close,
+null-stream and cancellation outcomes, and its TypeScript path proves that a
+native rejection leaves backup-reminder metadata unchanged. These tests do not
+establish physical-media durability or document-provider/cloud synchrony.
+
+The iOS app compiles for an iPhone 17 Pro simulator under Xcode 27.0. The
+original `ShareUITests` failure was reproduced on the untouched audited commit:
+after Title moved the document, the harness did not dismiss the software
+keyboard and then tapped the centre of Notes behind it. WebKit still reported
+Notes as hittable, but Title retained keyboard focus. The repaired harness
+blurs through a safe page gutter and verifies the element that actually owns
+keyboard focus before typing. On the simulator, Title, Notes and Reflection now
+accept their synthetic markers; the test then reports **skipped**, rather than
+passed, because Prayer and the share controls are below the WKWebView viewport
+that XCUITest cannot scroll. Text, preview and parsed-PDF privacy tests verify
+the three private-content options default off and excluded content is absent,
+but the native system share sheets still require the device procedure.
 
 No physical Android or iOS device was available. Process-kill/relaunch,
 document-provider behavior, Android App Lock lifecycle behavior, and native
-upgrade testing therefore remain release checks rather than claimed passes.
+upgrade and iOS system-sharing tests therefore remain release checks rather
+than claimed passes. See `docs/PHYSICAL-DEVICE-ACCEPTANCE.md`.

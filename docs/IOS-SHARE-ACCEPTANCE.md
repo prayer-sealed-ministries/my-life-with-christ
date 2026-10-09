@@ -1,10 +1,13 @@
 # Share This Entry — manual acceptance on iPhone
 
 Why this is manual: XCUITest cannot scroll the app's web view on a device
-(measured three ways — see `ios/App/ShareUITests/ShareAcceptanceUITests.swift`),
-so everything below the first screenful — Save, **Share this entry**, the share
-surface and the system share sheets — cannot be automated. The automated test
-covers writing the entry; this covers sharing it.
+(measured three ways — see `ios/App/ShareUITests/ShareAcceptanceUITests.swift`).
+The simulator test verifies keyboard ownership and successfully enters the
+Title, Notes and Reflection markers. It then explicitly skips when Prayer is
+below the reachable viewport; Save, **Share this entry**, the share surface and
+the system share sheets are lower still. Unit, view and parsed-PDF tests cover
+the private-content defaults and generated content. This procedure covers the
+native interactions those tests cannot reach.
 
 Use **synthetic content only**. Nothing here should touch a real entry.
 
