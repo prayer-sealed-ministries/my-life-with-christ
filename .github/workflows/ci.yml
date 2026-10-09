@@ -39,7 +39,11 @@ jobs:
       # tracked at all. This runs first on purpose — it is cheap, it fails
       # closed, and everything after it produces artefacts.
       - name: Gate — no licensed or private data is tracked
-        run: npm run verify:no-private-data
+        # Pull-request checkouts are detached merge commits. Even with the full
+        # history fetched, `git log --branches --tags` has no local branch to
+        # walk in that checkout. Give the guard the checked-out history
+        # explicitly so its non-empty measurement floor remains meaningful.
+        run: npm run verify:no-private-data -- HEAD
 
       # The native-policy tests assert against the assets actually copied into
       # the iOS and Android projects, and those are generated, not committed.
