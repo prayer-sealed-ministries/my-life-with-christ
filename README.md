@@ -80,9 +80,9 @@ book, or by life topic — and write against any of it.
 - **Search** covers typed references, topics and their aliases, book names, your
   own journal, and section titles where the build has them. Its empty state
   names every source it searched, and any it could not.
-- **Timeline** shows the journal oldest first — the way it was lived.
+- **Timeline** shows the newest entries first, grouped by year and month.
 - **Import** brings in notes you already have, from `.txt`, `.md`, `.docx` or
-  text-based `.pdf`. Files are read in the browser, you review and correct what
+  text-based `.pdf`. Files are read on the device, you review and correct what
   was found, and nothing is written until you confirm.
 
 Scripture text throughout is the **King James Version**, vendored with the app.
@@ -91,10 +91,12 @@ Scripture text throughout is the **King James Version**, vendored with the app.
 
 ## Your data is yours
 
-**Browser storage is not a backup.** Clearing site data, reinstalling a browser,
-or a failed disk can take all of it. The app says so out loud if you have not
-exported in thirty days. This is stated plainly rather than buried, because it
-is the one way a person could lose everything while believing it was safe.
+**The working copy is not a backup.** The hosted browser edition uses IndexedDB;
+the installed Android and iOS editions use unencrypted SQLite in the app's
+private storage. Clearing site/app data, uninstalling, losing the device, or a
+failed disk can take the working copy. The app says so out loud and offers a
+user-owned export. See [Backup and recovery](docs/BACKUP-AND-RECOVERY.md) for
+the exact save, draft, export and restore guarantees.
 
 Export produces a single zip built to be understood without this application:
 
@@ -138,12 +140,12 @@ lose anything by being read here.
   provided church notes are excluded unless you tick them, every time. Nothing
   is uploaded, nothing is recorded, and there are no share links or accounts.
 
-**This is local-first, not invulnerable.** Data sits in your browser's storage
-on a device you control. Anyone with access to that unlocked device has access
-to the journal. There is no encryption at rest, no passcode, and no protection
-against malware or a shared computer. The honest summary is that your journal is
-exactly as private as the device it lives on — which is the point, and also the
-limit.
+**This is local-first, not invulnerable.** Data sits in local app/browser
+storage on a device you control. SQLite is not encrypted by this application;
+the installed apps rely on the operating-system sandbox and device protection.
+Android can optionally put the UI behind App Lock, but App Lock is access
+control, not database encryption. Anyone who can access an unlocked device or
+its unencrypted export can read the journal.
 
 ---
 
@@ -159,16 +161,16 @@ Assessed against the code, not against intentions.
 | Journal entries | **Done** | create, edit, delete; fast-capture path |
 | Light formatting | **Done** | Markdown editor and renderer, shared by written and imported notes |
 | Search | **Done** | references, topics, books, journal, section titles |
-| Timeline | **Done** | chronological, grouped by year and month |
+| Timeline | **Done** | newest first, grouped by year and month |
 | Export | **Done** | zip archive, printable book, checksummed manifest |
 | Import — own archive | **Done** | lossless round trip, forward migration |
 | Import — outside documents | **Done** | `.txt`, `.md`, `.docx`, text-based `.pdf`; review before commit |
 | Data-profile gate | **Done** | enforced in CI and by a local pre-push hook |
 | Accessibility | **Done** | WCAG 2.1 AA checked in CI against the built site |
 | Light and dark themes | **Done** | including system preference |
-| Offline support | **Not built** | no service worker or installable manifest yet; the app makes no network calls once loaded, which is not the same thing |
-| Sharing | **Not built** | interface only |
-| Native iOS and Android apps | **In progress** | both shells build and launch from bundled assets; they cannot open a journal yet — native storage is Phase 2, and the app refuses rather than falling back to webview storage |
+| Offline support | **Native: done; hosted browser: limited** | installed apps bundle code, Scripture and storage; the hosted site has no service worker, so an uncached route may need a connection |
+| Sharing | **Done** | one saved entry at a time through the device share interface; nothing is uploaded by the app |
+| Native iOS and Android apps | **Implemented** | both use native SQLite and fail closed if it cannot open; device-specific acceptance status is recorded in release documents |
 | OCR for scanned PDFs | **Not built** | scanned files are refused with a clear message rather than silently producing empty notes |
 
 ---
@@ -312,10 +314,10 @@ this project's Gradle 8.14.3, which stops at `Unsupported class file major
 version 70`. That is a single observed pairing, not a general statement about
 JDK 26 — a newer Gradle may well accept it; we have not tested that.
 
-A native build currently stops at a screen saying it cannot open a journal.
-That is correct: native editions require SQLite, which arrives in Phase 2, and
-the app refuses rather than quietly writing the journal into webview storage it
-would later stop reading. See `docs/ADR-NATIVE-APP-ARCHITECTURE.md`.
+Native editions require SQLite and refuse to mount journal views if the native
+database cannot be selected, opened or migrated. They never fall back to
+webview IndexedDB. The hosted browser edition uses IndexedDB and never selects
+native SQLite. See `docs/ADR-NATIVE-APP-ARCHITECTURE.md`.
 
 `CLAUDE.md` holds the operating contract: what is generated, what is
 hand-edited, and the rules that are not open to renegotiation.
@@ -354,9 +356,10 @@ The principles meant to survive that move:
 Pricing is a product decision and is deliberately not recorded in this
 engineering README.
 
-Also intended, and also not built: sharing (a single entry as a read-only file
-or link; small private groups posting notes on the same sermon), offline
-install, and OCR for scanned documents.
+Also intended, and not built: share links or private groups posting notes on
+the same sermon, an installable offline hosted-browser edition, and OCR for
+scanned documents. One-entry device sharing and fully offline installed apps
+already exist.
 
 ---
 
