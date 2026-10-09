@@ -12,11 +12,14 @@
  */
 
 import { webAppLock } from './app-lock';
+import { MAX_JOURNAL_FILE_BYTES, journalSizeMessage } from '../lib/journal-limits';
 import type {
+  AppLifecycle,
   FilePicker,
   FileSaver,
   OutgoingFile,
   PickOptions,
+  PickResult,
   PickedFile,
   Platform,
   Printer,
@@ -25,6 +28,21 @@ import type {
   Sharer,
   UnsavedWorkGuard,
 } from './ports';
+
+/** Flush hooks for a tab that is hidden or enters the back-forward cache. */
+export const webLifecycle: AppLifecycle = {
+  onBackground(callback) {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') callback();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', callback);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', callback);
+    };
+  },
+};
 
 /**
  * Save by download: a blob, an object URL, and a click on a link nobody sees.
@@ -36,27 +54,62 @@ import type {
  */
 export const webFileSaver: FileSaver = {
   async save(file: OutgoingFile): Promise<SaveResult> {
-    const blob = new Blob([file.bytes as BlobPart], { type: file.mimeType });
-    const url = URL.createObjectURL(blob);
+    const picker = (window as Window & {
+      showSaveFilePicker?: (options: {
+        suggestedName: string;
+        types: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<{
+        createWritable(): Promise<{
+          write(data: Uint8Array): Promise<void>;
+          close(): Promise<void>;
+          abort?(): Promise<void>;
+        }>;
+      }>;
+    }).showSaveFilePicker;
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.suggestedName;
-    link.rel = 'noopener';
-    document.body.append(link);
-    link.click();
-    link.remove();
+    if (picker) {
+      try {
+        const handle = await picker.call(window, {
+          suggestedName: file.suggestedName,
+          types: [{ description: 'Journal backup', accept: { [file.mimeType]: ['.zip'] } }],
+        });
+        const writable = await handle.createWritable();
+        try {
+          await writable.write(file.bytes);
+          await writable.close();
+          return { status: 'saved' };
+        } catch {
+          await writable.abort?.().catch(() => undefined);
+          return { status: 'failed', reason: 'io' };
+        }
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === 'AbortError') return { status: 'cancelled' };
+        return { status: 'failed', reason: 'unknown' };
+      }
+    }
 
-    // Give the download a moment to start before releasing the blob.
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    try {
+      const blob = new Blob([file.bytes as BlobPart], { type: file.mimeType });
+      const url = URL.createObjectURL(blob);
 
-    // `saved: true` here means the download was STARTED, not that a file now
-    // exists on disk. A browser gives no completion signal and no cancellation
-    // signal for an anchor download — if the person dismisses the save panel,
-    // nothing tells this page. That limit is real and is not worked around:
-    // inventing a completion API would be a worse lie than the one this whole
-    // change exists to remove. Native, which does know, reports the truth.
-    return { saved: true };
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.suggestedName;
+      link.rel = 'noopener';
+      document.body.append(link);
+      link.click();
+      link.remove();
+
+      // Give the download a moment to start before releasing the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      // An anchor click only STARTS a download. The browser supplies no
+      // completion or cancellation signal, so this result remains explicitly
+      // unverified and cannot reset the backup reminder.
+      return { status: 'initiated-unverified' };
+    } catch {
+      return { status: 'failed', reason: 'unavailable' };
+    }
   },
 };
 
@@ -79,7 +132,7 @@ export const webFilePicker: FilePicker = {
   // The page renders the control here; see `presentsOwnUI` on the port.
   presentsOwnUI: false,
 
-  pick(options: PickOptions = {}): Promise<PickedFile | null> {
+  pick(options: PickOptions = {}): Promise<PickResult> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -88,33 +141,52 @@ export const webFilePicker: FilePicker = {
       document.body.append(input);
 
       let settled = false;
-      const finish = (result: PickedFile | null) => {
+      const finish = (result: PickResult) => {
         if (settled) return;
         settled = true;
         window.removeEventListener('focus', onFocus);
         input.remove();
         resolve(result);
       };
+      const fail = (cause: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('focus', onFocus);
+        input.remove();
+        void cause;
+        resolve({ status: 'failed', reason: 'io' });
+      };
 
       // Returning to the window with nothing chosen means it was dismissed.
       // Deferred a beat: `focus` arrives before `change` when a file WAS picked.
       const onFocus = () => {
         setTimeout(() => {
-          if (!input.files || input.files.length === 0) finish(null);
+          if (!input.files || input.files.length === 0) finish({ status: 'cancelled' });
         }, 300);
       };
 
-      input.addEventListener('cancel', () => finish(null));
+      input.addEventListener('cancel', () => finish({ status: 'cancelled' }));
       input.addEventListener('change', () => {
         const file = input.files?.[0];
         if (!file) {
-          finish(null);
+          finish({ status: 'cancelled' });
+          return;
+        }
+        const maxBytes = Math.min(options.maxBytes ?? MAX_JOURNAL_FILE_BYTES, MAX_JOURNAL_FILE_BYTES);
+        if (file.size > maxBytes) {
+          // Operational failures are distinct from an actual dismissal. This
+          // prevents an oversized or unreadable file from looking like the
+          // person changed their mind.
+          finish({ status: 'failed', reason: 'too-large' });
           return;
         }
         void file
           .arrayBuffer()
-          .then((buffer) => finish({ name: file.name, bytes: new Uint8Array(buffer) }))
-          .catch(() => finish(null));
+          .then((buffer) => finish({
+            status: 'picked',
+            file: { name: file.name, bytes: new Uint8Array(buffer) },
+          }))
+          .catch(fail);
       });
 
       window.addEventListener('focus', onFocus);
@@ -210,6 +282,7 @@ export const webPlatform: Platform = {
   picker: webFilePicker,
   printer: webPrinter,
   unsavedWork: webUnsavedWorkGuard,
+  lifecycle: webLifecycle,
   sharer: webSharer,
   appLock: webAppLock,
 };
@@ -225,5 +298,6 @@ export const webPlatform: Platform = {
  * without an `<input>` existing at all.
  */
 export async function pickedFromDomFile(file: File): Promise<PickedFile> {
+  if (file.size > MAX_JOURNAL_FILE_BYTES) throw new Error(journalSizeMessage());
   return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
 }

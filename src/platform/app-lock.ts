@@ -105,12 +105,26 @@ export const nativeAppLock: AppLock = {
 
   async getState() {
     const state = await AppLockNative.getState();
+    if (
+      typeof state?.enabled !== 'boolean' ||
+      typeof state.timeoutMs !== 'number' ||
+      !Number.isFinite(state.timeoutMs) ||
+      typeof state.failures !== 'number' ||
+      !Number.isFinite(state.failures) ||
+      typeof state.recoveryAvailable !== 'boolean' ||
+      typeof state.elapsedMs !== 'number' ||
+      !Number.isFinite(state.elapsedMs) ||
+      typeof state.bootId !== 'string' ||
+      state.bootId.length === 0
+    ) {
+      throw new Error('App Lock returned an invalid state.');
+    }
     return {
-      enabled: state.enabled === true,
-      timeoutMs: typeof state.timeoutMs === 'number' ? state.timeoutMs : 0,
-      failures: typeof state.failures === 'number' ? state.failures : 0,
+      enabled: state.enabled,
+      timeoutMs: state.timeoutMs,
+      failures: state.failures,
       lastFailureAt: failureAt(state.lastFailureElapsedMs, state.lastFailureBootId),
-      recoveryAvailable: state.recoveryAvailable === true,
+      recoveryAvailable: state.recoveryAvailable,
       now: monotonic(state.elapsedMs, state.bootId),
     };
   },

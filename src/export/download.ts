@@ -13,7 +13,7 @@
  * reaching the export view.
  */
 
-import type { FileSaver, OutgoingFile } from '../platform/ports';
+import type { FileSaver, OutgoingFile, SaveResult } from '../platform/ports';
 import type { StorageProvider } from '../storage/StorageProvider';
 import { buildArchive, matchesFilter, type BuildArchiveOptions, type BuiltArchive } from './archive';
 import type { ExportFilter } from '../types';
@@ -39,8 +39,9 @@ export function outgoingArchive(archive: BuiltArchive): OutgoingFile {
  */
 export interface ExportOutcome {
   archive: BuiltArchive;
-  /** True only when the file reached the user's file system. */
-  saved: boolean;
+  save: SaveResult;
+  /** False only when a verified full save succeeded but reminder bookkeeping failed. */
+  reminderRecorded: boolean;
 }
 
 export interface ExportEverythingOptions
@@ -75,10 +76,10 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
    * backup of the whole journal — and filters describe entries, not drafts, so
    * there is no honest way to narrow them.
    */
-  const drafts = filter ? [] : await storage.listDrafts().catch(() => []);
+  const drafts = filter ? [] : await storage.listDrafts();
 
   const archive = await buildArchive({ ...rest, entries, allEntries, filter, drafts });
-  const { saved } = await files.save(outgoingArchive(archive));
+  const save = await files.save(outgoingArchive(archive));
 
   // Two conditions, and both are about honesty rather than tidiness.
   //
@@ -90,12 +91,19 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
   // dialog looked alike: cancelling recorded a successful export, reset the
   // reminder, and left the journal page saying "Last exported today" over a
   // device that still held the only copy.
-  if (!filter && saved) {
-    await storage.updateSettings({
-      lastExportAt: new Date().toISOString(),
-      reminderDismissedAt: undefined,
-    });
+  let reminderRecorded = true;
+  if (!filter && save.status === 'saved') {
+    try {
+      await storage.updateSettings({
+        lastExportAt: new Date().toISOString(),
+        reminderDismissedAt: undefined,
+      });
+    } catch {
+      // The complete file already exists, so calling the export a failure would
+      // be false. Report the separate bookkeeping failure to the UI instead.
+      reminderRecorded = false;
+    }
   }
 
-  return { archive, saved };
+  return { archive, save, reminderRecorded };
 }

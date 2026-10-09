@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { exportEverything } from './download';
 import type { FileSaver, OutgoingFile, SaveResult } from '../platform/ports';
 import { DexieStorageProvider } from '../storage/db';
+import type { StorageProvider } from '../storage/StorageProvider';
 import type { DataProfile, Entry, OutlineBook, Topic } from '../types';
 
 /**
@@ -45,7 +46,7 @@ function saverThat(saved: boolean) {
   const files: FileSaver = {
     async save(file: OutgoingFile): Promise<SaveResult> {
       handed.push(file);
-      return { saved };
+      return saved ? { status: 'saved' } : { status: 'cancelled' };
     },
   };
   return { files, handed };
@@ -134,9 +135,9 @@ describe('backing out of the save dialog', () => {
     const storage = await journalWith();
     const { files, handed } = saverThat(false);
 
-    const { archive, saved } = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+    const { archive, save } = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
 
-    expect(saved, 'a cancelled save was reported as saved').toBe(false);
+    expect(save.status, 'a cancelled save was reported as saved').toBe('cancelled');
     expect(archive.entryCount).toBe(2);
     expect(handed, 'the saver was never offered the archive').toHaveLength(1);
     expect(handed[0].suggestedName).toMatch(/^journey-export-\d{4}-\d{2}-\d{2}\.zip$/);
@@ -184,6 +185,94 @@ describe('a save the file system accepted', () => {
       (await storage.getSettings()).backupReminderDays,
       'the export overwrote the chosen interval',
     ).toBe(7);
+  });
+
+  it('reports a separately failed reminder update without denying the completed file', async () => {
+    const underlying = await journalWith();
+    const storage = new Proxy(underlying, {
+      get(target, prop, receiver) {
+        if (prop === 'updateSettings') return async () => { throw new Error('disk full'); };
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const { files, handed } = saverThat(true);
+
+    const outcome = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+
+    expect(outcome.save).toEqual({ status: 'saved' });
+    expect(outcome.reminderRecorded).toBe(false);
+    expect(handed).toHaveLength(1);
+    expect((await underlying.getSettings()).lastExportAt).toBeUndefined();
+  });
+});
+
+describe('a complete backup requires every component', () => {
+  it('does not offer a file or update metadata when entries cannot be read', async () => {
+    const underlying = await journalWith({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+    const storage = new Proxy(underlying, {
+      get(target, prop, receiver) {
+        if (prop === 'listEntriesChronological') return async () => { throw new Error('read failed'); };
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const { files, handed } = saverThat(true);
+
+    await expect(exportEverything({ storage, files, ...ARCHIVE_INPUTS })).rejects.toThrow(/read failed/i);
+    expect(handed).toHaveLength(0);
+    expect((await underlying.getSettings()).lastExportAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('does not silently substitute an empty draft collection when drafts cannot be read', async () => {
+    const underlying = await journalWith();
+    const storage = new Proxy(underlying, {
+      get(target, prop, receiver) {
+        if (prop === 'listDrafts') return async () => { throw new Error('draft read failed'); };
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const { files, handed } = saverThat(true);
+
+    await expect(exportEverything({ storage, files, ...ARCHIVE_INPUTS })).rejects.toThrow(/draft read failed/i);
+    expect(handed).toHaveLength(0);
+    expect((await underlying.getSettings()).lastExportAt).toBeUndefined();
+  });
+
+  it('does not offer a partial file or update metadata when archive construction fails', async () => {
+    const underlying = await journalWith();
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const storage = new Proxy(underlying, {
+      get(target, prop, receiver) {
+        if (prop === 'listEntriesChronological') {
+          return async () => [entry({ id: 'bad', _unmigrated: cycle })];
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as StorageProvider;
+    const { files, handed } = saverThat(true);
+
+    await expect(exportEverything({ storage, files, ...ARCHIVE_INPUTS })).rejects.toThrow();
+    expect(handed).toHaveLength(0);
+    expect((await underlying.getSettings()).lastExportAt).toBeUndefined();
+  });
+
+  it.each<SaveResult>([
+    { status: 'initiated-unverified' },
+    { status: 'failed', reason: 'io' },
+  ])('does not reset the reminder for $status delivery', async (result) => {
+    const storage = await journalWith({ reminderDismissedAt: '2026-01-01T00:00:00.000Z' });
+    const files: FileSaver = { save: async () => result };
+
+    const outcome = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+
+    expect(outcome.save).toEqual(result);
+    expect(await storage.getSettings()).toEqual({
+      reminderDismissedAt: '2026-01-01T00:00:00.000Z',
+    });
   });
 });
 

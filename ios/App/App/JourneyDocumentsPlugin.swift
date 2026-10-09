@@ -22,6 +22,8 @@ import UniformTypeIdentifiers
  */
 @objc(JourneyDocumentsPlugin)
 public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
+    /// Matches MAX_JOURNAL_FILE_BYTES in src/lib/journal-limits.ts.
+    private let maxPickedBytes = 256 * 1024 * 1024
     public let identifier = "JourneyDocumentsPlugin"
     public let jsName = "JourneyDocuments"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -113,6 +115,47 @@ public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
         // A picker with no types would show nothing at all, which looks like a
         // broken app rather than a filter that matched nothing.
         return types.isEmpty ? [UTType.item] : types
+    }
+
+    /// Read incrementally so a provider that omits file-size metadata cannot
+    /// allocate an unbounded Data value before the shared importer sees it.
+    private func readPickedDocument(_ url: URL, limit: Int) throws -> Data {
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > limit {
+            throw NSError(
+                domain: "JourneyDocuments",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "That file is larger than the supported import limit."])
+        }
+
+        guard let stream = InputStream(url: url) else {
+            throw NSError(
+                domain: "JourneyDocuments",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "That file could not be opened."])
+        }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        // `hasBytesAvailable` is only a hint and may briefly be false for a
+        // provider-backed stream that has not reached EOF. Keep reading until
+        // `read` returns zero so a slow iCloud/provider file is never silently
+        // truncated and then reported as a successful pick.
+        while true {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read < 0 { throw stream.streamError ?? NSError(domain: "JourneyDocuments", code: 3) }
+            if read == 0 { break }
+            if data.count > limit - read {
+                throw NSError(
+                    domain: "JourneyDocuments",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "That file is larger than the supported import limit."])
+            }
+            data.append(buffer, count: read)
+        }
+        return data
     }
 
     // MARK: - Share
@@ -246,7 +289,7 @@ extension JourneyDocumentsPlugin: UIDocumentPickerDelegate {
         }
 
         guard let url = urls.first else {
-            call.resolve(["cancelled": true])
+            call.reject("The document provider returned no file.")
             return
         }
 
@@ -257,7 +300,9 @@ extension JourneyDocumentsPlugin: UIDocumentPickerDelegate {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            let data = try Data(contentsOf: url)
+            let requestedLimit = call.getInt("maxBytes") ?? maxPickedBytes
+            let limit = max(0, min(requestedLimit, maxPickedBytes))
+            let data = try readPickedDocument(url, limit: limit)
             call.resolve([
                 "cancelled": false,
                 "name": url.lastPathComponent,

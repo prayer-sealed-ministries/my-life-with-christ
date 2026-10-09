@@ -63,7 +63,7 @@ function platformAnswering(saved: boolean, delayMs = 0): Platform {
       async save(): Promise<SaveResult> {
         // A picker the reader takes a moment over, or a machine under load.
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return { saved };
+        return saved ? { status: 'saved' } : { status: 'cancelled' };
       },
     },
   };
@@ -204,6 +204,25 @@ describe('after a save the reader backed out of', () => {
     expect(
       screen.getByText(/Warning: the copy on this device is not a backup/i),
     ).toBeInTheDocument();
+  }, 30_000);
+});
+
+describe('after an unverified browser download fallback', () => {
+  it('says the download is unverified and does not reset the reminder', async () => {
+    renderWith({
+      ...webPlatform,
+      files: { save: async () => ({ status: 'initiated-unverified' }) },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
+
+    const messages = await screen.findAllByText(/started downloading.*cannot confirm/i, undefined, {
+      timeout: 15_000,
+    });
+    expect(messages.length).toBeGreaterThan(0);
+    expect((await db.getSettings()).lastExportAt).toBeUndefined();
+    expect(screen.queryByText('Last exported today.')).toBeNull();
+    expect(screen.queryByText(/^Saved journey-export/)).toBeNull();
   }, 30_000);
 });
 

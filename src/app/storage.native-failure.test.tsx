@@ -73,6 +73,8 @@ function brokenSqlite(): StorageProvider & { calls: string[] } {
     findEntriesForExactAnchor: record('findEntriesForExactAnchor'),
     putEntries: record('putEntries'),
     replaceEntries: record('replaceEntries'),
+    mergeJournal: record('mergeJournal'),
+    replaceJournal: record('replaceJournal'),
     clearEntries: record('clearEntries'),
     putDraft: record('putDraft'),
     getDraft: record('getDraft'),

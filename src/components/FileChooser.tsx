@@ -20,7 +20,7 @@ import { useId, useRef, type ReactNode } from 'react';
 
 import { usePlatform } from '../platform/context';
 import { pickedFromDomFile } from '../platform/web';
-import type { PickedFile } from '../platform/ports';
+import { pickFailureMessage, type PickedFile } from '../platform/ports';
 
 export function FileChooser({
   label,
@@ -29,6 +29,8 @@ export function FileChooser({
   disabled,
   buttonLabel,
   onFile,
+  onError,
+  maxBytes,
 }: {
   /** The control's accessible name. A real <label>, never a placeholder. */
   label: string;
@@ -40,6 +42,9 @@ export function FileChooser({
   buttonLabel: string;
   /** Called with the chosen file, or with null when the person cancelled. */
   onFile: (file: PickedFile | null) => void;
+  /** Called only for an operational failure, never for cancellation. */
+  onError: (message: string) => void;
+  maxBytes?: number;
 }) {
   const { picker } = usePlatform();
   const id = useId();
@@ -65,11 +70,13 @@ export function FileChooser({
           disabled={disabled}
           onClick={() => {
             void picker
-              .pick({ accept })
-              .then((file) => onFile(file))
-              // Cancelling is not a failure, and neither is a picker that could
-              // not open: the journal is untouched either way.
-              .catch(() => onFile(null));
+              .pick({ accept, maxBytes })
+              .then((result) => {
+                if (result.status === 'picked') onFile(result.file);
+                else if (result.status === 'cancelled') onFile(null);
+                else onError(`${pickFailureMessage(result.reason)} Nothing was read.`);
+              })
+              .catch(() => onError('That file picker could not be opened. Try again.'));
           }}
           className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
         >
@@ -87,7 +94,15 @@ export function FileChooser({
             const chosen = event.target.files?.[0];
             // Cleared so choosing the same file twice in a row still fires.
             event.target.value = '';
-            if (chosen) void pickedFromDomFile(chosen).then(onFile);
+            if (chosen && maxBytes !== undefined && chosen.size > maxBytes) {
+              onError('That file is larger than this import supports. Nothing was read.');
+            } else if (chosen) {
+              void pickedFromDomFile(chosen)
+                .then(onFile)
+                .catch((cause) => onError(
+                  cause instanceof Error ? cause.message : 'That file could not be read.',
+                ));
+            }
             else onFile(null);
           }}
           className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"

@@ -94,6 +94,22 @@ describe('a new entry nobody has saved', () => {
     expect(await db.listEntries(), 'a draft is not an entry').toHaveLength(0);
   });
 
+  it('flushes the visible generation immediately when the app backgrounds', async () => {
+    mount(db);
+    await notes();
+    type('Notes', 'Typed immediately before the app went to the background.');
+
+    // pagehide is the web lifecycle signal. The native adapter maps the same
+    // capability to Capacitor appStateChange.
+    window.dispatchEvent(new Event('pagehide'));
+
+    await waitFor(async () => {
+      expect((await db.listDrafts())[0]?.form.notes).toBe(
+        'Typed immediately before the app went to the background.',
+      );
+    });
+  });
+
   it.each([
     ['Title', 'Grace at the door'],
     ['Notes', 'What was said.'],
@@ -197,6 +213,47 @@ describe('an entry that has been saved', () => {
     );
     expect(await reopened.listEntries(), 'one entry, not two').toHaveLength(1);
   });
+
+  it('forks rather than overwriting when another tab advances the same recovery draft', async () => {
+    const entry = await db.createEntry({ title: 'Sunday', notes: 'Saved notes.' });
+    const original = {
+      id: 'shared-recovery',
+      entryId: entry.id,
+      form: {
+        kind: entry.kind,
+        title: entry.title,
+        date: entry.date,
+        place: '', speaker: '', sermonSeries: '', notes: 'First unsaved version.',
+        reflection: '', prayer: '', tagsText: '', links: [], anchors: [],
+        forDescendants: false, scriptureRefs: [], sourceMaterial: null,
+      },
+      createdAt: '2026-03-01T09:00:00.000Z',
+      updatedAt: '2026-03-01T09:01:00.000Z',
+    } satisfies import('../types').EntryDraft;
+    await db.putDraft(original);
+    window.location.hash = `#/entry/${entry.id}`;
+    mount(db, { entryId: entry.id });
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+        'First unsaved version.',
+      ),
+    );
+
+    const otherTab = {
+      ...original,
+      form: { ...original.form, notes: 'Advanced by another tab.' },
+      updatedAt: '2026-03-01T09:02:00.000Z',
+    };
+    await db.putDraft(otherTab, original);
+    type('Notes', 'My different unsaved version.');
+    await settle(db, 2);
+
+    const all = await db.listDrafts();
+    expect(all.map((item) => item.form.notes).sort()).toEqual([
+      'Advanced by another tab.',
+      'My different unsaved version.',
+    ]);
+  });
 });
 
 describe('explicit Save', () => {
@@ -236,6 +293,104 @@ describe('explicit Save', () => {
     const [entry] = await db.listEntries();
     expect(entry.notes, 'Save must flush the pending snapshot first').toBe(
       'First. And the sentence typed just before pressing Save.',
+    );
+  });
+
+  it('keeps text typed while a new entry save is in flight as a durable child draft', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = () => {};
+    const saveStarted = new Promise<void>((resolve) => { started = resolve; });
+    const gated = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'createEntry') {
+          return async (input: Parameters<DexieStorageProvider['createEntry']>[0]) => {
+            started();
+            await held;
+            return target.createEntry(input);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(gated);
+    await notes();
+    type('Notes', 'The version submitted.');
+    await settle(db);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await saveStarted;
+
+    type('Notes', 'The version submitted. Words typed while saving.');
+    release();
+
+    await waitFor(async () => {
+      expect(await db.listEntries()).toHaveLength(1);
+      expect(await db.listDrafts()).toHaveLength(1);
+    });
+    const [saved] = await db.listEntries();
+    const [recovery] = await db.listDrafts();
+    expect(saved.notes).toBe('The version submitted.');
+    expect(recovery.entryId).toBe(saved.id);
+    expect(recovery.form.notes).toBe('The version submitted. Words typed while saving.');
+
+    cleanup();
+    const reopened = await open(storeName);
+    window.location.hash = `#/entry/${saved.id}`;
+    mount(reopened, { entryId: saved.id });
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+        'The version submitted. Words typed while saving.',
+      ),
+    );
+  });
+
+  it('keeps text typed while an existing entry update is in flight without overwriting it', async () => {
+    const original = await db.createEntry({ title: 'Sunday', notes: 'Before Save.' });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started = () => {};
+    const saveStarted = new Promise<void>((resolve) => { started = resolve; });
+    const gated = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'updateEntry') {
+          return async (...args: Parameters<DexieStorageProvider['updateEntry']>) => {
+            started();
+            await held;
+            return target.updateEntry(...args);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as DexieStorageProvider;
+
+    window.location.hash = `#/entry/${original.id}`;
+    mount(gated, { entryId: original.id });
+    await notes();
+    type('Notes', 'Submitted edit.');
+    await settle(db);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await saveStarted;
+
+    type('Notes', 'Submitted edit. A newer sentence.');
+    release();
+
+    await waitFor(async () => {
+      expect((await db.getEntry(original.id))?.notes).toBe('Submitted edit.');
+      expect((await db.getDraftForEntry(original.id))?.form.notes).toBe(
+        'Submitted edit. A newer sentence.',
+      );
+    });
+
+    cleanup();
+    const reopened = await open(storeName);
+    mount(reopened, { entryId: original.id });
+    await waitFor(() =>
+      expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+        'Submitted edit. A newer sentence.',
+      ),
     );
   });
 });

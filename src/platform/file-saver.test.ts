@@ -44,7 +44,7 @@ describe('the native saver reports what the operating system did', () => {
     saveDocument.mockResolvedValue({ saved: true });
     const { nativeFileSaver } = await import('./native');
 
-    await expect(nativeFileSaver.save(file)).resolves.toEqual({ saved: true });
+    await expect(nativeFileSaver.save(file)).resolves.toEqual({ status: 'saved' });
   });
 
   it('passes a cancellation through instead of swallowing it', async () => {
@@ -53,7 +53,7 @@ describe('the native saver reports what the operating system did', () => {
     saveDocument.mockResolvedValue({ saved: false });
     const { nativeFileSaver } = await import('./native');
 
-    await expect(nativeFileSaver.save(file)).resolves.toEqual({ saved: false });
+    await expect(nativeFileSaver.save(file)).resolves.toEqual({ status: 'cancelled' });
   });
 
   it('treats a plugin that says nothing useful as not saved', async () => {
@@ -65,7 +65,7 @@ describe('the native saver reports what the operating system did', () => {
       await expect(
         nativeFileSaver.save(file),
         `${JSON.stringify(answer)} was treated as a successful save`,
-      ).resolves.toEqual({ saved: false });
+      ).resolves.toEqual({ status: 'failed', reason: 'unknown' });
     }
   });
 
@@ -80,6 +80,51 @@ describe('the native saver reports what the operating system did', () => {
     expect(options.name).toBe(file.suggestedName);
     expect(options.mimeType).toBe('application/zip');
     expect(options.base64, 'the archive bytes were not handed over').toBeTruthy();
+  });
+});
+
+describe('the native picker distinguishes cancellation from failure', () => {
+  it('reports an explicit operating-system cancellation', async () => {
+    pickDocument.mockResolvedValue({ cancelled: true });
+    const { nativeFilePicker } = await import('./native');
+
+    await expect(nativeFilePicker.pick()).resolves.toEqual({ status: 'cancelled' });
+  });
+
+  it('reports read, bridge, and permission errors as distinct failures', async () => {
+    const { nativeFilePicker } = await import('./native');
+    pickDocument.mockRejectedValueOnce(new Error('provider read failed'));
+    await expect(nativeFilePicker.pick()).resolves.toEqual({ status: 'failed', reason: 'io' });
+
+    pickDocument.mockRejectedValueOnce(new Error('native bridge unavailable'));
+    await expect(nativeFilePicker.pick()).resolves.toEqual({ status: 'failed', reason: 'unavailable' });
+
+    pickDocument.mockRejectedValueOnce(new Error('permission denied'));
+    await expect(nativeFilePicker.pick()).resolves.toEqual({ status: 'failed', reason: 'permission' });
+
+    pickDocument.mockResolvedValueOnce({ cancelled: false });
+    await expect(nativeFilePicker.pick()).resolves.toEqual({ status: 'failed', reason: 'io' });
+  });
+
+  it('reports the native pre-allocation size limit separately', async () => {
+    pickDocument.mockRejectedValue(new Error('File is larger than the supported 256 MiB limit'));
+    const { nativeFilePicker } = await import('./native');
+
+    await expect(nativeFilePicker.pick()).resolves.toEqual({
+      status: 'failed',
+      reason: 'too-large',
+    });
+  });
+
+  it('returns the selected bytes and forwards the caller limit', async () => {
+    pickDocument.mockResolvedValue({ cancelled: false, name: 'journal.zip', base64: 'AQID' });
+    const { nativeFilePicker } = await import('./native');
+
+    await expect(nativeFilePicker.pick({ maxBytes: 1234 })).resolves.toEqual({
+      status: 'picked',
+      file: { name: 'journal.zip', bytes: new Uint8Array([1, 2, 3]) },
+    });
+    expect(pickDocument).toHaveBeenCalledWith({ mimeTypes: undefined, maxBytes: 1234 });
   });
 });
 
@@ -101,9 +146,92 @@ describe('the web saver still downloads', () => {
     // completion or cancellation signal for an anchor download, and this is
     // the honest limit rather than a pretence: native, which does know, tells
     // the truth, and the web says what it can actually observe.
-    expect(result).toEqual({ saved: true });
+    expect(result).toEqual({ status: 'initiated-unverified' });
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('reports a verified File System Access write only after close completes', async () => {
+    const write = vi.fn(async () => {});
+    const close = vi.fn(async () => {});
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: vi.fn(async () => ({ createWritable: async () => ({ write, close }) })),
+    });
+    const { webFileSaver } = await import('./web');
+
+    await expect(webFileSaver.save(file)).resolves.toEqual({ status: 'saved' });
+    expect(write).toHaveBeenCalledWith(file.bytes);
+    expect(close).toHaveBeenCalledTimes(1);
+    delete (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+
+  it('reports dismissal of the verified browser picker as cancellation', async () => {
+    const abort = new Error('cancelled');
+    abort.name = 'AbortError';
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: vi.fn(async () => { throw abort; }),
+    });
+    const { webFileSaver } = await import('./web');
+
+    await expect(webFileSaver.save(file)).resolves.toEqual({ status: 'cancelled' });
+    delete (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+
+  it('reports a browser write failure without claiming a saved backup', async () => {
+    const abort = vi.fn(async () => {});
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: vi.fn(async () => ({
+        createWritable: async () => ({
+          write: async () => { throw new Error('disk full'); },
+          close: async () => {},
+          abort,
+        }),
+      })),
+    });
+    const { webFileSaver } = await import('./web');
+
+    await expect(webFileSaver.save(file)).resolves.toEqual({ status: 'failed', reason: 'io' });
+    expect(abort).toHaveBeenCalledTimes(1);
+    delete (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+});
+
+describe('the web picker distinguishes dismissal from read failure', () => {
+  it('reports the picker cancel event as cancellation', async () => {
+    const { webFilePicker } = await import('./web');
+    const result = webFilePicker.pick();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    input.dispatchEvent(new Event('cancel'));
+
+    await expect(result).resolves.toEqual({ status: 'cancelled' });
+  });
+
+  it('rejects an oversized file before arrayBuffer is called', async () => {
+    const { webFilePicker } = await import('./web');
+    const file = new File(['12345'], 'too-large.zip');
+    const read = vi.spyOn(file, 'arrayBuffer');
+    const result = webFilePicker.pick({ maxBytes: 4 });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+
+    await expect(result).resolves.toEqual({ status: 'failed', reason: 'too-large' });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('reports a file read error as failure rather than cancellation', async () => {
+    const { webFilePicker } = await import('./web');
+    const file = new File(['content'], 'unreadable.zip');
+    vi.spyOn(file, 'arrayBuffer').mockRejectedValue(new Error('read failed'));
+    const result = webFilePicker.pick();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+
+    await expect(result).resolves.toEqual({ status: 'failed', reason: 'io' });
   });
 });

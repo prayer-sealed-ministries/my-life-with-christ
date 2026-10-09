@@ -62,6 +62,7 @@ export interface JourneyDocumentsPlugin {
    */
   pickDocument(options: {
     mimeTypes?: string[];
+    maxBytes?: number;
   }): Promise<{ cancelled: boolean; name?: string; base64?: string }>;
 
   /**

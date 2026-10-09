@@ -63,6 +63,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   const platform = usePlatform();
   const appLock = lock ?? platform.appLock;
   const source = useMemo(() => appState ?? capacitorAppState(), [appState]);
+  const lifecycleRequired = appLock.supported && Boolean(source.requiresAsyncSetup);
 
   const [phase, setPhase] = useState<LockPhase>('resolving');
   const [enabled, setEnabled] = useState(false);
@@ -70,6 +71,8 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [failures, setFailures] = useState(0);
   const [penaltyMs, setPenaltyMs] = useState(0);
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [retryGeneration, setRetryGeneration] = useState(0);
 
   /**
    * When the app last went away, on the monotonic clock.
@@ -81,6 +84,9 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   const lastFailureAt = useRef<Monotonic | null>(null);
   const timeoutRef = useRef(0);
   const enabledRef = useRef(false);
+  const stateRef = useRef<Awaited<ReturnType<AppLock['getState']>> | null>(null);
+  const lifecycleReady = useRef(!lifecycleRequired);
+  const lifecycleFailed = useRef(false);
 
   const applyState = useCallback(
     (state: Awaited<ReturnType<AppLock['getState']>>, nextPhase?: LockPhase) => {
@@ -112,21 +118,36 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   // The first question this process asks. Until it answers, nothing renders.
   useEffect(() => {
     let cancelled = false;
+    stateRef.current = null;
+    lifecycleReady.current = !lifecycleRequired;
+    lifecycleFailed.current = false;
 
     void appLock
       .getState()
       .then((state) => {
         if (cancelled) return;
-        applyState(state, state.enabled ? 'locked' : 'unlocked');
+        stateRef.current = state;
+        applyState(state, state.enabled || lifecycleFailed.current
+          ? 'locked'
+          : lifecycleReady.current ? 'unlocked' : 'resolving');
         // Keep the app switcher in step with whether the lock is on at all.
-        void appLock.setRecentsPrivacy(state.enabled).catch(() => undefined);
+        void appLock.setRecentsPrivacy(state.enabled).catch(() => {
+          if (!cancelled && state.enabled && appLock.supported) {
+            setLockError('App Lock could not protect the app switcher. Your journal is still hidden.');
+            setPhase('locked');
+          }
+        });
       })
       .catch(() => {
-        // A platform that cannot answer is one without App Lock. Failing
-        // open here is correct precisely because failing closed would brick
-        // an edition that never had the feature; the native side is the only
-        // thing that can say a lock exists, and it just said nothing does.
-        if (!cancelled) applyState(
+        if (cancelled) return;
+        if (appLock.supported) {
+          enabledRef.current = true;
+          setEnabled(true);
+          setLockError('App Lock could not be checked. Your journal is still hidden.');
+          setPhase('locked');
+          return;
+        }
+        applyState(
           {
             enabled: false,
             timeoutMs: 0,
@@ -142,7 +163,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
     return () => {
       cancelled = true;
     };
-  }, [appLock, applyState]);
+  }, [appLock, applyState, lifecycleRequired, retryGeneration]);
 
   // Going away and coming back. The only thing that ever re-locks a running
   // app: there is no timer that can fire while somebody is writing.
@@ -178,8 +199,19 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
           backgroundedAt.current = null;
         })
         .catch(() => setPhase('locked'));
+    }, () => {
+      if (!appLock.supported) return;
+      lifecycleFailed.current = true;
+      enabledRef.current = true;
+      setEnabled(true);
+      setLockError('App Lock could not monitor whether the app was resumed. Your journal is still hidden.');
+      setPhase('locked');
+    }, () => {
+      lifecycleReady.current = true;
+      const state = stateRef.current;
+      if (state && !state.enabled) setPhase('unlocked');
     });
-  }, [appLock, source]);
+  }, [appLock, source, retryGeneration]);
 
   /**
    * Let a penalty expire on its own.
@@ -224,6 +256,11 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   );
 
   const lockNow = useCallback(() => setPhase('locked'), []);
+  const retry = useCallback(() => {
+    setPhase('resolving');
+    setLockError(null);
+    setRetryGeneration((value) => value + 1);
+  }, []);
 
   const value = useMemo<AppLockContextValue>(
     () => ({
@@ -234,8 +271,10 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
       recoveryAvailable,
       penaltyMs,
       failures,
+      lockError,
       unlock,
       refresh,
+      retry,
       lockNow,
     }),
     [
@@ -246,8 +285,10 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
       recoveryAvailable,
       penaltyMs,
       failures,
+      lockError,
       unlock,
       refresh,
+      retry,
       lockNow,
     ],
   );

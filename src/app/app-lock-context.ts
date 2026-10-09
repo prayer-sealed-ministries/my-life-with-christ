@@ -27,9 +27,13 @@ export interface AppLockContextValue {
   /** Milliseconds before another attempt is accepted; 0 when none is owed. */
   penaltyMs: number;
   failures: number;
+  /** Present when native protection could not be verified. */
+  lockError: string | null;
 
   unlock(pin: string): Promise<boolean>;
   refresh(): Promise<void>;
+  /** Retry native state and lifecycle setup without ever opening the gate. */
+  retry(): void;
   /** Re-lock immediately — used after disabling, and by tests. */
   lockNow(): void;
 }

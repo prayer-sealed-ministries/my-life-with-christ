@@ -13,7 +13,13 @@
 
 /** Something that can tell you when the app is foregrounded or backgrounded. */
 export interface AppStateSource {
-  subscribe(onChange: (active: boolean) => void): () => void;
+  /** True when protected content must wait for native listener attachment. */
+  readonly requiresAsyncSetup?: boolean;
+  subscribe(
+    onChange: (active: boolean) => void,
+    onError?: () => void,
+    onReady?: () => void,
+  ): () => void;
 }
 
 /**
@@ -27,7 +33,8 @@ export interface AppStateSource {
  */
 export function capacitorAppState(): AppStateSource {
   return {
-    subscribe(onChange) {
+    requiresAsyncSetup: true,
+    subscribe(onChange, onError, onReady) {
       let detach: (() => void) | null = null;
       let cancelled = false;
 
@@ -37,9 +44,12 @@ export function capacitorAppState(): AppStateSource {
             onChange(isActive);
           });
           if (cancelled) void handle.remove();
-          else detach = () => void handle.remove();
+          else {
+            detach = () => void handle.remove();
+            onReady?.();
+          }
         })
-        .catch(() => undefined);
+        .catch(() => onError?.());
 
       return () => {
         cancelled = true;

@@ -203,6 +203,8 @@ export function SermonNotesImport({
             disabled={busy}
             buttonLabel="Choose a file…"
             onFile={(file) => void onFile(file)}
+            onError={(message) => setError(message)}
+            maxBytes={MAX_SERMON_NOTES_BYTES}
           />
 
           {busy ? <Spinner label="Reading the file" /> : null}

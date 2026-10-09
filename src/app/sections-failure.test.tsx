@@ -133,7 +133,7 @@ describe('a section chunk that will not load', () => {
 
     expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
     // Honest about scope: the reader needs to know their writing is not involved.
-    expect(screen.getByText(/Your journal is safe/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing in your journal was changed/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Try again/i })).toBeInTheDocument();
   });
 

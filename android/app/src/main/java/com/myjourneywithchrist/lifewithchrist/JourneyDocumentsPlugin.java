@@ -52,6 +52,8 @@ import java.util.List;
  */
 @CapacitorPlugin(name = "JourneyDocuments")
 public class JourneyDocumentsPlugin extends Plugin {
+    /** Matches MAX_JOURNAL_FILE_BYTES in src/lib/journal-limits.ts. */
+    private static final long MAX_PICKED_BYTES = 256L * 1024L * 1024L;
 
     /** Bytes waiting for a destination the user has not chosen yet. */
     private byte[] pendingBytes;
@@ -96,14 +98,19 @@ public class JourneyDocumentsPlugin extends Plugin {
         pendingBytes = null;
 
         // Backing out is an ordinary outcome, not a failure.
-        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+        if (result.getResultCode() != Activity.RESULT_OK) {
             call.resolve(new JSObject().put("saved", false));
+            return;
+        }
+
+        if (result.getData() == null) {
+            call.reject("The document provider returned no destination.");
             return;
         }
 
         Uri destination = result.getData().getData();
         if (destination == null || bytes == null) {
-            call.resolve(new JSObject().put("saved", false));
+            call.reject("The document provider could not complete the save.");
             return;
         }
 
@@ -140,14 +147,19 @@ public class JourneyDocumentsPlugin extends Plugin {
             return;
         }
 
-        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+        if (result.getResultCode() != Activity.RESULT_OK) {
             call.resolve(new JSObject().put("cancelled", true));
+            return;
+        }
+
+        if (result.getData() == null) {
+            call.reject("The document provider returned no file.");
             return;
         }
 
         Uri source = result.getData().getData();
         if (source == null) {
-            call.resolve(new JSObject().put("cancelled", true));
+            call.reject("The document provider returned no readable file.");
             return;
         }
 
@@ -160,7 +172,17 @@ public class JourneyDocumentsPlugin extends Plugin {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
             int read;
+            long total = 0;
+            Long requestedLimit = call.getLong("maxBytes");
+            long limit = requestedLimit == null
+                    ? MAX_PICKED_BYTES
+                    : Math.max(0L, Math.min(requestedLimit, MAX_PICKED_BYTES));
             while ((read = in.read(chunk)) != -1) {
+                total += read;
+                if (total > limit) {
+                    call.reject("That file is larger than the supported import limit.");
+                    return;
+                }
                 buffer.write(chunk, 0, read);
             }
 

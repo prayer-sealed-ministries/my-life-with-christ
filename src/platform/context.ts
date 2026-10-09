@@ -35,6 +35,7 @@ export const useFileSaver = () => useContext(PlatformContext).files;
 export const useFilePicker = () => useContext(PlatformContext).picker;
 export const usePrinter = () => useContext(PlatformContext).printer;
 export const useUnsavedWorkGuard = () => useContext(PlatformContext).unsavedWork;
+export const useAppLifecycle = () => useContext(PlatformContext).lifecycle;
 export const useSharer = () => useContext(PlatformContext).sharer;
 
 /**

@@ -14,11 +14,13 @@
 
 import { nativeAppLock, webAppLock } from './app-lock';
 import type {
+  AppLifecycle,
   FilePicker,
   FileSaver,
   OutgoingFile,
   PickOptions,
-  PickedFile,
+  PickFailureReason,
+  PickResult,
   Platform,
   Printer,
   SaveResult,
@@ -26,6 +28,35 @@ import type {
   Sharer,
   UnsavedWorkGuard,
 } from './ports';
+
+function pickerFailure(cause: unknown): PickFailureReason {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  if (/256 MiB|larger than|supported import limit/i.test(message)) return 'too-large';
+  if (/permission|access denied|not allowed|security/i.test(message)) return 'permission';
+  if (/not implemented|unavailable|not available|bridge/i.test(message)) return 'unavailable';
+  return message ? 'io' : 'unknown';
+}
+
+/** Flush hooks run as soon as Capacitor reports the app leaving foreground. */
+export const nativeLifecycle: AppLifecycle = {
+  onBackground(callback) {
+    let cancelled = false;
+    let remove: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(async ({ App }) => {
+        const handle = await App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) callback();
+        });
+        if (cancelled) void handle.remove();
+        else remove = () => void handle.remove();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      remove?.();
+    };
+  },
+};
 import { JourneyDocuments, fromBase64, toBase64 } from './native-documents';
 import { nativePlatform } from './runtime';
 
@@ -48,15 +79,19 @@ export const nativeFileSaver: FileSaver = {
     // only on RESULT_OK; both say `saved: false` when the person backs out.
     // Discarding that — which this adapter used to do — turns a cancellation
     // into a recorded backup.
-    const result = await JourneyDocuments.saveDocument({
-      name: file.suggestedName,
-      mimeType: file.mimeType,
-      base64: toBase64(file.bytes),
-    });
-    // `result?.` and `=== true`, both deliberate: only an explicit yes counts.
-    // A plugin that returns nothing, or something unexpected, must not be able
-    // to claim a backup by omission.
-    return { saved: result?.saved === true };
+    try {
+      const result = await JourneyDocuments.saveDocument({
+        name: file.suggestedName,
+        mimeType: file.mimeType,
+        base64: toBase64(file.bytes),
+      });
+      // `result?.` and `=== true`, both deliberate: only an explicit yes counts.
+      if (result?.saved === true) return { status: 'saved' };
+      if (result?.saved === false) return { status: 'cancelled' };
+      return { status: 'failed', reason: 'unknown' };
+    } catch {
+      return { status: 'failed', reason: 'io' };
+    }
   },
 };
 
@@ -77,13 +112,25 @@ export const nativeFilePicker: FilePicker = {
   // into the sandbox.
   presentsOwnUI: true,
 
-  async pick(options: PickOptions = {}): Promise<PickedFile | null> {
-    const result = await JourneyDocuments.pickDocument({
-      mimeTypes: options.accept?.length ? options.accept : undefined,
-    });
+  async pick(options: PickOptions = {}): Promise<PickResult> {
+    try {
+      const result = await JourneyDocuments.pickDocument({
+        mimeTypes: options.accept?.length ? options.accept : undefined,
+        maxBytes: options.maxBytes,
+      });
 
-    if (result.cancelled || !result.base64) return null;
-    return { name: result.name ?? 'archive.zip', bytes: fromBase64(result.base64) };
+      if (result.cancelled) return { status: 'cancelled' };
+      if (!result.base64) return { status: 'failed', reason: 'io' };
+      return {
+        status: 'picked',
+        file: { name: result.name ?? 'archive.zip', bytes: fromBase64(result.base64) },
+      };
+    } catch (cause) {
+      return {
+        status: 'failed',
+        reason: pickerFailure(cause),
+      };
+    }
   },
 };
 
@@ -178,6 +225,7 @@ export const nativePlatformAdapters: Platform = {
   picker: nativeFilePicker,
   printer: nativePrinter,
   unsavedWork: nativeUnsavedWorkGuard,
+  lifecycle: nativeLifecycle,
   sharer: nativeSharer,
   appLock: appLockForPlatform(),
 };

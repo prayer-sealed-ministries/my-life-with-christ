@@ -26,8 +26,9 @@ import { useSections, type Sections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
 import { useFilePicker, useFileSaver } from '../platform/context';
-import type { PickedFile } from '../platform/ports';
+import { pickFailureMessage, type PickedFile } from '../platform/ports';
 import { pickedFromDomFile } from '../platform/web';
+import { MAX_JOURNAL_FILE_BYTES } from '../lib/journal-limits';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
 import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
@@ -220,7 +221,7 @@ export default function DataView() {
     setExportNothing('');
     setExportError('');
     try {
-      const { archive, saved } = await exportEverything({
+      const { archive, save, reminderRecorded } = await exportEverything({
         storage,
         outlineBooks: sections.outlineBooks,
         topics,
@@ -233,17 +234,30 @@ export default function DataView() {
       // exportEverything records lastExportAt straight to storage. Re-read it
       // through the context — an empty patch changes nothing — so the line
       // below updates without this view keeping a second copy of the truth.
-      if (!filter) await updateSettings({});
+      if (!filter && save.status === 'saved' && reminderRecorded) {
+        await updateSettings({}).catch(() => undefined);
+      }
 
       // Only a save that happened may be announced. Backing out of the file
       // picker used to land here too, so the app said "Saved <filename> — 2
       // entries. Keep it somewhere that is not this device." over a file that
       // was never written.
       setExportNothing(
-        saved ? '' : 'Nothing was saved. Your journal is unchanged — you can export again whenever you like.',
+        save.status === 'cancelled'
+          ? 'Nothing was saved. Your journal is unchanged — you can export again whenever you like.'
+          : save.status === 'initiated-unverified'
+            ? `The browser started downloading ${archive.filename}, but cannot confirm that a file was kept. Check your Downloads before relying on it. Your backup reminder was not reset.`
+            : '',
+      );
+      setExportError(
+        save.status === 'failed'
+          ? 'The file could not be saved. Nothing in your journal was changed.'
+          : save.status === 'saved' && !reminderRecorded
+            ? `Saved ${archive.filename}, but the app could not update its backup reminder. Keep the file; the reminder may still say a backup is due.`
+            : '',
       );
       setExportMessage(
-        !saved
+        save.status !== 'saved'
           ? ''
           : filter
             ? `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}, with ${plural(archive.excludedCount, 'entry', 'entries')} left out. This is not a backup of the whole journal.`
@@ -374,8 +388,8 @@ export default function DataView() {
       touch();
       setImportResult(
         outcome.replaced
-          ? `Replaced your journal from ${fileName}: everything that was here before was deleted, and ${plural(outcome.imported, 'entry', 'entries')} written.`
-          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} left as they were.`,
+          ? `Replaced your journal from ${fileName}: the previous entries and unfinished drafts were replaced atomically by ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')}.`
+          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} already present${outcome.conflictsPreserved ? `, and ${plural(outcome.conflictsPreserved, 'conflicting version', 'conflicting versions')} preserved as separate entries` : ''}.`,
       );
       clearPending();
     } catch (cause) {
@@ -403,12 +417,12 @@ export default function DataView() {
     {
       value: 'merge',
       label: 'Merge (recommended)',
-      detail: 'Keeps what is here. Where the same entry exists on both sides, the newer one wins.',
+      detail: 'Keeps what is here. If the same entry differs, both versions are preserved instead of guessing from device clocks.',
     },
     {
       value: 'replace',
       label: 'Replace — destructive',
-      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, then writes the file's entries. There is no undo.`,
+      detail: `Atomically replaces all ${plural(counted.existing, 'entry', 'entries')} and every unfinished draft with exactly what is in the file. There is no undo.`,
     },
   ];
 
@@ -439,15 +453,6 @@ export default function DataView() {
         </p>
         <p className="mt-2 text-sm leading-relaxed">{lastExportedWords(settings.lastExportAt, new Date())}</p>
       </div>
-
-      {storageError ? (
-        <p
-          role="alert"
-          className="rounded-card border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
-        >
-          {storageError} Export and import cannot run until that is fixed.
-        </p>
-      ) : null}
 
       <section aria-labelledby="export-heading" className="space-y-4">
         <h2 id="export-heading" className="font-serif text-xl font-semibold">
@@ -699,11 +704,16 @@ export default function DataView() {
               disabled={importing || blocked}
               onClick={() => {
                 void picker
-                  .pick({ accept: ['application/zip', 'application/json', '.zip', '.json'] })
-                  .then(onFileChosen)
-                  // Cancelling is not a failure, and neither is a picker that
-                  // could not open: the journal is untouched either way.
-                  .catch(() => onFileChosen(null));
+                  .pick({
+                    accept: ['application/zip', 'application/json', '.zip', '.json'],
+                    maxBytes: MAX_JOURNAL_FILE_BYTES,
+                  })
+                  .then((result) => {
+                    if (result.status === 'picked') void onFileChosen(result.file);
+                    else if (result.status === 'cancelled') void onFileChosen(null);
+                    else setImportError(`${pickFailureMessage(result.reason, 'journal file')} Nothing was changed.`);
+                  })
+                  .catch(() => setImportError('The file picker could not be opened. Nothing was changed.'));
               }}
               className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
             >
@@ -719,7 +729,15 @@ export default function DataView() {
               onChange={(event) => {
                 const chosen = event.target.files?.[0];
                 // The web binding: a DOM File becomes the shape every edition uses.
-                if (chosen) void pickedFromDomFile(chosen).then(onFileChosen);
+                if (chosen && chosen.size > MAX_JOURNAL_FILE_BYTES) {
+                  setImportError('That journal file is larger than the supported 256 MiB limit. Nothing was read or changed.');
+                } else if (chosen) {
+                  void pickedFromDomFile(chosen)
+                    .then(onFileChosen)
+                    .catch((cause) => setImportError(
+                      `${cause instanceof Error ? cause.message : 'That file could not be read.'} Nothing was changed.`,
+                    ));
+                }
                 else void onFileChosen(null);
               }}
               disabled={importing || blocked}
@@ -764,12 +782,12 @@ export default function DataView() {
                 <strong>{preview.newEntries}</strong> new — not in this journal yet.
               </li>
               <li>
-                <strong>{preview.updated}</strong> updated — a newer version of an entry already
-                here.
+                <strong>{preview.updated}</strong> different versions overwritten automatically —
+                merge never does this.
               </li>
               <li>
                 <strong>{preview.unchanged}</strong> unchanged — this journal already has the same
-                or a newer copy.
+                copy.
               </li>
               <li>
                 <strong>{preview.conflicts.length}</strong>{' '}
@@ -796,9 +814,7 @@ export default function DataView() {
                       {conflict.theirsUpdatedAt.slice(0, 10)}.{' '}
                       {mode === 'replace'
                         ? 'Replace keeps the file’s copy.'
-                        : conflict.theirsUpdatedAt > conflict.mineUpdatedAt
-                          ? 'The file’s copy is newer and will win.'
-                          : 'Your copy is newer and will be kept.'}
+                        : 'Merge keeps both versions as separate entries.'}
                     </li>
                   ))}
                   {preview.conflicts.length > 10 ? (

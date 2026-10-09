@@ -254,7 +254,7 @@ function startedAt(iso: string, now = new Date()): string {
 }
 
 export default function HomeView() {
-  const { data: entries, loading } = useStorageQuery<Entry[]>(
+  const { data: entries, loading, error: entriesError } = useStorageQuery<Entry[]>(
     (storage) => storage.listEntries(),
     [],
     [],
@@ -268,7 +268,7 @@ export default function HomeView() {
    * something that had been decided on — this journal's whole promise is that
    * the finished record means something.
    */
-  const { data: drafts } = useStorageQuery<EntryDraft[]>(
+  const { data: drafts, error: draftsError } = useStorageQuery<EntryDraft[]>(
     (storage) => storage.listDrafts(),
     [],
     [],
@@ -385,7 +385,9 @@ export default function HomeView() {
             Unfinished writing
           </h2>
           <Link
-            to={{ name: 'newEntry', draft: continueWith.id }}
+            to={continueWith.entryId && entries.some((entry) => entry.id === continueWith.entryId)
+              ? { name: 'entry', id: continueWith.entryId }
+              : { name: 'newEntry', draft: continueWith.id }}
             className={`flex w-full items-center gap-3.5 p-4 ${cardClasses({
               interactive: true,
             })} active:brightness-95`}
@@ -415,7 +417,7 @@ export default function HomeView() {
 
       {loading ? <Spinner label="Loading your journal" /> : null}
 
-      {!loading ? (
+      {!loading && !entriesError && !draftsError ? (
         <section className="mt-10" aria-labelledby="recent-heading">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <h2 id="recent-heading" className="font-serif text-xl font-semibold tracking-tight">

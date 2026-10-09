@@ -34,6 +34,8 @@ interface StorageValue {
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
   ready: boolean;
   error: string | null;
+  reportReadFailure: () => void;
+  retryReads: () => void;
 }
 
 const StorageContext = createContext<StorageValue | null>(null);
@@ -120,6 +122,15 @@ export function StorageContextProvider({
   }, [storage, kind]);
 
   const touch = useCallback(() => setRevision((value) => value + 1), []);
+  const reportReadFailure = useCallback(() => {
+    setError(
+      'Your journal could not be read just now. Existing writing has not been treated as empty. Try again before exporting, importing, or making destructive changes.',
+    );
+  }, []);
+  const retryReads = useCallback(() => {
+    setError(null);
+    setRevision((value) => value + 1);
+  }, []);
 
   const updateSettings = useCallback(
     async (patch: Partial<Settings>) => {
@@ -130,8 +141,28 @@ export function StorageContextProvider({
   );
 
   const value = useMemo(
-    () => ({ storage: storage as StorageProvider, revision, touch, settings, updateSettings, ready, error }),
-    [storage, revision, touch, settings, updateSettings, ready, error],
+    () => ({
+      storage: storage as StorageProvider,
+      revision,
+      touch,
+      settings,
+      updateSettings,
+      ready,
+      error,
+      reportReadFailure,
+      retryReads,
+    }),
+    [
+      storage,
+      revision,
+      touch,
+      settings,
+      updateSettings,
+      ready,
+      error,
+      reportReadFailure,
+      retryReads,
+    ],
   );
 
   // No provider means no journal, so the journal UI never mounts. Every view
@@ -143,7 +174,26 @@ export function StorageContextProvider({
   // could accept a keystroke it would be unable to save.
   if (openFailure) return <StorageUnavailable reason={openFailure} />;
 
-  return <StorageContext.Provider value={value}>{children}</StorageContext.Provider>;
+  return (
+    <StorageContext.Provider value={value}>
+      {error ? (
+        <div
+          role="alert"
+          className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center gap-3 rounded-card border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+        >
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            className="min-h-11 rounded-control border border-current px-3 py-2 font-medium"
+            onClick={retryReads}
+          >
+            Try reading again
+          </button>
+        </div>
+      ) : null}
+      {children}
+    </StorageContext.Provider>
+  );
 }
 
 export function useStorage(): StorageValue {
@@ -157,10 +207,12 @@ export function useStorageQuery<T>(
   read: (storage: StorageProvider) => Promise<T>,
   deps: unknown[],
   initial: T,
-): { data: T; loading: boolean } {
-  const { storage, revision, ready } = useStorage();
+): { data: T; loading: boolean; error: boolean; stale: boolean } {
+  const { storage, revision, ready, reportReadFailure } = useStorage();
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
+  const [queryError, setQueryError] = useState(false);
+  const [hasGoodData, setHasGoodData] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -173,11 +225,17 @@ export function useStorageQuery<T>(
     });
     read(storage)
       .then((result) => {
-        if (!cancelled) setData(result);
+        if (!cancelled) {
+          setData(result);
+          setHasGoodData(true);
+          setQueryError(false);
+        }
       })
       .catch(() => {
-        // A failed read leaves the previous value in place; the error surfaced
-        // at open time already told the user storage is unavailable.
+        if (!cancelled) {
+          setQueryError(true);
+          reportReadFailure();
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -186,7 +244,7 @@ export function useStorageQuery<T>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storage, revision, ready, ...deps]);
+  }, [storage, revision, ready, reportReadFailure, ...deps]);
 
-  return { data, loading };
+  return { data, loading, error: queryError, stale: queryError && hasGoodData };
 }

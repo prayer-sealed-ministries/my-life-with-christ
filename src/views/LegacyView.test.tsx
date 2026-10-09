@@ -34,6 +34,8 @@ const brokenStorage = (): StorageProvider => {
     findEntriesForExactAnchor: fail,
     putEntries: fail,
     replaceEntries: fail,
+    mergeJournal: fail,
+    replaceJournal: fail,
     clearEntries: fail,
     putDraft: fail,
     getDraft: fail,
@@ -278,7 +280,7 @@ describe('LegacyView', () => {
     expect(notes.className).toMatch(/break-words/);
   });
 
-  it('says the journal could not be read rather than that it is empty', async () => {
+  it('reports an unreadable journal rather than saying that it is empty', async () => {
     render(
       <RouterProvider>
         <StorageContextProvider provider={brokenStorage()}>
@@ -287,7 +289,7 @@ describe('LegacyView', () => {
       </RouterProvider>,
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be (?:opened|read)/i);
     expect(screen.queryByText('There is nothing to print yet')).not.toBeInTheDocument();
     expect(screen.queryByText(/^0 entries/)).not.toBeInTheDocument();
   });

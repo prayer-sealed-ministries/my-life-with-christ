@@ -68,10 +68,10 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
     files: {
       save: async (file) => {
         saved.push(file);
-        return { saved: true };
+        return { status: 'saved' };
       },
     },
-    picker: { pick: async () => null },
+    picker: { pick: async () => ({ status: 'cancelled' as const }) },
     // These tests are about the other ports; a stub that claimed to share
     // would be claiming it for a host that has no share sheet.
     sharer: { canShare: false, share: async () => ({ shared: false }) },
@@ -81,6 +81,7 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
       },
     },
     unsavedWork: { protect: () => () => {} },
+    lifecycle: { onBackground: () => () => {} },
   };
 }
 

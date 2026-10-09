@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RouterProvider } from '../app/router';
 import { StorageContextProvider } from '../app/storage';
+import { PlatformProvider } from '../platform/provider';
+import { webPlatform } from '../platform/web';
 import { DexieStorageProvider } from '../storage/db';
 import type { StorageProvider } from '../storage/StorageProvider';
 import type { Entry, JourneyExport } from '../types';
@@ -46,6 +48,8 @@ const brokenStorage = (): StorageProvider => {
     findEntriesForExactAnchor: fail,
     putEntries: fail,
     replaceEntries: fail,
+    mergeJournal: fail,
+    replaceJournal: fail,
     clearEntries: fail,
     putDraft: fail,
     getDraft: fail,
@@ -109,11 +113,16 @@ let counter = 0;
 
 const renderView = () =>
   render(
-    <RouterProvider>
-      <StorageContextProvider provider={db}>
-        <DataView />
-      </StorageContextProvider>
-    </RouterProvider>,
+    <PlatformProvider platform={{
+      ...webPlatform,
+      files: { save: async () => ({ status: 'saved' as const }) },
+    }}>
+      <RouterProvider>
+        <StorageContextProvider provider={db}>
+          <DataView />
+        </StorageContextProvider>
+      </RouterProvider>
+    </PlatformProvider>,
   );
 
 /** Let the archive reach a download without jsdom's missing blob plumbing. */
@@ -196,7 +205,9 @@ describe('DataView', () => {
       timeout: 15_000,
     });
     expect(reported).toHaveLength(2);
-    expect(click).toHaveBeenCalled();
+    // A confirmed platform save must not fall back to an unverified anchor
+    // click. Browser fallback semantics have their own focused test.
+    expect(click).not.toHaveBeenCalled();
 
     // The export is recorded, so the reminder resets and the line above updates.
     const afterExport = await db.getSettings();
@@ -245,7 +256,7 @@ describe('DataView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Merge 2 entries' }));
 
-    expect(await screen.findAllByText(/Merged journey\.json: 2 entries written/)).toHaveLength(2);
+    expect(await screen.findAllByText(/Merged journey\.json: 2 entries and 0 unfinished drafts written/)).toHaveLength(2);
     await waitFor(async () => expect(await db.listEntries()).toHaveLength(2));
   });
 
@@ -349,7 +360,7 @@ describe('DataView', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: /Replace — destructive/ }));
 
-    expect(screen.getByText(/Deletes all 1 entry in this journal first/)).toBeInTheDocument();
+    expect(screen.getByText(/replaces all 1 entry and every unfinished draft/i)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Delete everything and import 1 entry' }),
     ).toBeInTheDocument();
@@ -406,7 +417,7 @@ describe('DataView', () => {
     // Still uncounted, and the destructive option still tells the truth.
     expect(screen.getByText('Counting your entries…')).toBeInTheDocument();
     expect(
-      screen.getByRole('radio', { name: /Deletes all 1 entry in this journal first/ }),
+      screen.getByRole('radio', { name: /replaces all 1 entry and every unfinished draft/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Deletes all 0 entries/)).not.toBeInTheDocument();
   });
@@ -564,7 +575,7 @@ describe('DataView', () => {
       </RouterProvider>,
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be (opened|read)/i);
     expect(screen.queryByText(/0 entries in this journal/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export everything' })).toBeDisabled();
     expect(screen.getByLabelText('Journal file to read')).toBeDisabled();

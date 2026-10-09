@@ -34,15 +34,15 @@
  * absolutely must learn WHETHER it went, because "you have a backup" is a claim
  * this product is not allowed to make loosely.
  */
-export interface SaveResult {
-  /**
-   * True only when the file reached the user's file system.
-   *
-   * False is an ordinary outcome, not an error: someone who backs out of the
-   * save dialog has changed their mind, not hit a failure.
-   */
-  saved: boolean;
-}
+export type SaveResult =
+  /** The platform confirmed the write completed. */
+  | { status: 'saved' }
+  /** A legacy browser download began, but the browser cannot confirm a file exists. */
+  | { status: 'initiated-unverified' }
+  /** The person dismissed the save UI. */
+  | { status: 'cancelled' }
+  /** The platform could not complete the operation. Content-free by design. */
+  | { status: 'failed'; reason: 'unavailable' | 'permission' | 'io' | 'unknown' };
 
 /**
  * Hand bytes to the user's file system.
@@ -74,15 +74,16 @@ export interface OutgoingFile {
 /**
  * Ask the user for a file and read it.
  *
- * Returns `null` when the user cancels, which is an ordinary outcome and never
- * an error — a cancelled picker must leave the journal untouched.
+ * Returns a distinct cancelled outcome when the user dismisses the picker, and
+ * a content-free failure reason for operational errors. Either outcome must
+ * leave the journal untouched.
  *
  * Reading happens here rather than in the caller because the two platforms
  * differ in what they hand back: a `File` on the web, a URI on native. Callers
  * receive bytes and a name, which is all any of the parsers need.
  */
 export interface FilePicker {
-  pick(options?: PickOptions): Promise<PickedFile | null>;
+  pick(options?: PickOptions): Promise<PickResult>;
 
   /**
    * Does this picker present its own interface?
@@ -108,12 +109,37 @@ export interface PickOptions {
    * validates whatever arrives.
    */
   accept?: string[];
+  /** Refuse before crossing the native bridge or allocating a browser buffer. */
+  maxBytes?: number;
 }
 
 export interface PickedFile {
   /** The user-visible name. Path components are stripped before it is stored. */
   name: string;
   bytes: Uint8Array;
+}
+
+export type PickFailureReason = 'permission' | 'io' | 'too-large' | 'unavailable' | 'unknown';
+
+export type PickResult =
+  | { status: 'picked'; file: PickedFile }
+  | { status: 'cancelled' }
+  | { status: 'failed'; reason: PickFailureReason };
+
+/** Content-free wording for an operational picker failure. */
+export function pickFailureMessage(reason: PickFailureReason, subject = 'file'): string {
+  switch (reason) {
+    case 'permission':
+      return `Permission to read that ${subject} was denied.`;
+    case 'too-large':
+      return `That ${subject} is larger than this import supports.`;
+    case 'unavailable':
+      return 'The device file picker is unavailable.';
+    case 'io':
+      return `That ${subject} could not be read.`;
+    default:
+      return `That ${subject} could not be opened.`;
+  }
 }
 
 /**
@@ -158,6 +184,11 @@ export interface Printer {
  */
 export interface UnsavedWorkGuard {
   protect(hasUnsavedWork: () => boolean): () => void;
+}
+
+/** Best-effort early notice to flush writing before the runtime is suspended. */
+export interface AppLifecycle {
+  onBackground(callback: () => void): () => void;
 }
 
 /**
@@ -218,6 +249,7 @@ export interface Platform {
   picker: FilePicker;
   printer: Printer;
   unsavedWork: UnsavedWorkGuard;
+  lifecycle: AppLifecycle;
   sharer: Sharer;
   /**
    * Optional App Lock. `supported` is false on editions that cannot enforce

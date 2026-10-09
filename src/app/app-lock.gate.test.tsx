@@ -175,9 +175,96 @@ describe('when App Lock is off', () => {
     expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
     expect(screen.queryByText('App locked')).toBeNull();
   });
+
+  it('does not brick a platform where App Lock is unsupported if lifecycle setup fails', async () => {
+    const unsupported: AppLock = { ...fakeLock({ enabled: false }).lock, supported: false };
+    const source: AppStateSource = {
+      requiresAsyncSetup: true,
+      subscribe(_change, onError) {
+        queueMicrotask(() => onError?.());
+        return () => {};
+      },
+    };
+
+    renderGate(unsupported, source);
+
+    expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText('App locked')).toBeNull();
+  });
 });
 
 describe('when App Lock is on', () => {
+  it('fails closed when a supported native lock state cannot be read, and can retry safely', async () => {
+    let attempts = 0;
+    const base = fakeLock({ enabled: false }).lock;
+    const lock: AppLock = {
+      ...base,
+      getState: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('bridge unavailable');
+        return base.getState();
+      },
+    };
+    const seen: { retry: () => void; error: string | null } = { retry: () => {}, error: null };
+    function Probe() {
+      const value = useAppLock();
+      useEffect(() => {
+        seen.retry = value.retry;
+        seen.error = value.lockError;
+      }, [value]);
+      return null;
+    }
+
+    const platform: Platform = { ...webPlatform, appLock: lock };
+    render(
+      <PlatformContext.Provider value={platform}>
+        <AppLockProvider lock={lock} appState={inertAppState()}>
+          <Probe />
+          <AppLockGate lockScreen={<LockScreenStub />}>
+            <PrivateJournal />
+          </AppLockGate>
+        </AppLockProvider>
+      </PlatformContext.Provider>,
+    );
+
+    expect(await screen.findByText('App locked')).toBeInTheDocument();
+    expect(await settledMounts()).toBe(0);
+    await waitFor(() => expect(seen.error).toMatch(/could not be checked/i));
+
+    act(() => seen.retry());
+    expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
+    expect(attempts).toBe(2);
+  });
+
+  it('fails closed when the required native lifecycle listener cannot attach', async () => {
+    const { lock } = fakeLock({ enabled: false });
+    const source: AppStateSource = {
+      requiresAsyncSetup: true,
+      subscribe(_change, onError) {
+        queueMicrotask(() => onError?.());
+        return () => {};
+      },
+    };
+
+    renderGate(lock, source);
+
+    expect(await screen.findByText('App locked')).toBeInTheDocument();
+    expect(await settledMounts()).toBe(0);
+    expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
+  });
+
+  it('fails closed when required app-switcher privacy cannot be enabled', async () => {
+    const { lock } = fakeLock({ enabled: true });
+    renderGate({
+      ...lock,
+      setRecentsPrivacy: async () => { throw new Error('bridge failure'); },
+    });
+
+    expect(await screen.findByText('App locked')).toBeInTheDocument();
+    expect(await settledMounts()).toBe(0);
+    expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
+  });
+
   it('never constructs the journal before it is unlocked', async () => {
     const { lock } = fakeLock({ enabled: true });
     renderGate(lock);
@@ -384,6 +471,45 @@ describe('leaving the app and coming back', () => {
     app.foreground();
 
     expect(await screen.findByText('App locked')).toBeInTheDocument();
+  });
+
+  it('locks when the monotonic clock bridge fails during resume', async () => {
+    const controls = fakeLock({ enabled: true, timeoutMs: 60_000 });
+    const appState = fakeAppState();
+    let failNow = false;
+    const lock: AppLock = {
+      ...controls.lock,
+      now: async () => {
+        if (failNow) throw new Error('bridge failure');
+        return controls.lock.now();
+      },
+    };
+    const seen: { unlock: (pin: string) => Promise<boolean> } = { unlock: async () => false };
+    function Probe() {
+      const { unlock } = useAppLock();
+      useEffect(() => { seen.unlock = unlock; }, [unlock]);
+      return null;
+    }
+    const platform: Platform = { ...webPlatform, appLock: lock };
+    render(
+      <PlatformContext.Provider value={platform}>
+        <AppLockProvider lock={lock} appState={appState.source}>
+          <Probe />
+          <AppLockGate lockScreen={<LockScreenStub />}><PrivateJournal /></AppLockGate>
+        </AppLockProvider>
+      </PlatformContext.Provider>,
+    );
+    await screen.findByText('App locked');
+    await seen.unlock('135792');
+    await screen.findByText(PRIVATE_TEXT);
+
+    appState.background();
+    await act(async () => {});
+    failNow = true;
+    appState.foreground();
+
+    expect(await screen.findByText('App locked')).toBeInTheDocument();
+    expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
   });
 
   it('does not lock a running app that never went away', async () => {

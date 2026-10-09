@@ -63,8 +63,10 @@ function renderSettings(options: {
     recoveryAvailable: options.recoveryAvailable ?? true,
     penaltyMs: 0,
     failures: 0,
+    lockError: null,
     unlock: async () => true,
     refresh: async () => {},
+    retry: () => {},
     lockNow: () => {},
   };
 

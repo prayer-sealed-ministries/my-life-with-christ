@@ -276,8 +276,10 @@ export default function HelpView() {
           Privacy and working offline
         </h2>
         <p className="measure text-sm leading-relaxed text-ink-soft">
-          There is no account, and this app uploads nothing. Scripture, topics and your
-            journal are all on the device, so reading and writing work with no network at all.
+          There is no account, and this app uploads nothing. The installed Android and iOS apps
+          bundle their code and Scripture, so reading and writing work without a network. The
+          hosted browser edition keeps journal data locally but is not an installable offline app;
+          pages that have not already loaded may need a connection.
           </p>
           <p className="measure text-sm leading-relaxed text-ink-soft">
             One thing the app does not control: if Android&rsquo;s backup is switched on for this

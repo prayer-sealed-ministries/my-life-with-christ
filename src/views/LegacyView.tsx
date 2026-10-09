@@ -279,16 +279,6 @@ export default function LegacyView() {
     <div className="space-y-6">
       <h1 className="font-serif text-3xl font-semibold">My Journey With Christ</h1>
 
-      {storageError ? (
-        <p
-          role="alert"
-          className="rounded-control border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
-        >
-          {storageError} Nothing can be gathered or printed until that is fixed — and this page
-          being empty does not mean your journal is.
-        </p>
-      ) : null}
-
       {/* Only once the journal is actually read: "0 entries" during the load,
           or while storage is broken, is a claim about someone's life's work. */}
       {!loading && !storageError ? (
