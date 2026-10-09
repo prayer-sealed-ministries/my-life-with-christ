@@ -51,4 +51,7 @@ but the native system share sheets still require the device procedure.
 No physical Android or iOS device was available. Process-kill/relaunch,
 document-provider behavior, Android App Lock lifecycle behavior, and native
 upgrade and iOS system-sharing tests therefore remain release checks rather
-than claimed passes. See `docs/PHYSICAL-DEVICE-ACCEPTANCE.md`.
+than claimed passes. An available Android emulator was listed by ADB, but even
+`adb shell getprop`/`echo` stopped responding and Gradle's connected-test gate
+timed out fetching device properties; no emulator result is claimed. See
+`docs/PHYSICAL-DEVICE-ACCEPTANCE.md`.
