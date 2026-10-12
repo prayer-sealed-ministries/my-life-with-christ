@@ -276,4 +276,13 @@ describe('CI verifies both profiles', () => {
     // the required check pending rather than failing, which is not a gate.
     expect(ci.jobs['data-gate'].needs).toBeUndefined();
   });
+
+  it('gives the history guard a real range in detached pull-request checkouts', () => {
+    const steps = stepsOf(ci, 'data-gate');
+    const checkout = steps.find((step) => step.uses === 'actions/checkout@v4');
+    const guard = steps.find((step) => /verify:no-private-data/.test(step.run ?? ''));
+
+    expect(checkout?.with?.['fetch-depth']).toBe(0);
+    expect(guard?.run).toMatch(/verify:no-private-data\s+--\s+HEAD/);
+  });
 });

@@ -96,37 +96,46 @@ public class JourneyDocumentsPlugin extends Plugin {
             return;
         }
 
+        DocumentSaveOperation.Completion completion = new DocumentSaveOperation.Completion() {
+            @Override
+            public void saved() {
+                call.resolve(new JSObject().put("saved", true));
+            }
+
+            @Override
+            public void cancelled() {
+                call.resolve(new JSObject().put("saved", false));
+            }
+
+            @Override
+            public void failed(DocumentSaveOperation.Failure failure) {
+                if (failure == DocumentSaveOperation.Failure.NO_STREAM) {
+                    call.reject("That location could not be written to.");
+                } else {
+                    call.reject("The archive could not be saved.");
+                }
+            }
+        };
+
         byte[] bytes = pendingBytes;
         pendingBytes = null;
 
         // Backing out is an ordinary outcome, not a failure.
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
-            call.resolve(new JSObject().put("saved", false));
+            DocumentSaveOperation.cancelled(completion);
             return;
         }
 
         Uri destination = result.getData().getData();
         if (destination == null || bytes == null) {
-            call.resolve(new JSObject().put("saved", false));
+            call.reject("The document provider could not complete the save.");
             return;
         }
 
-        try (OutputStream out = getContext().getContentResolver().openOutputStream(destination)) {
-            if (out == null) {
-                call.reject("That location could not be written to.");
-                return;
-            }
-            out.write(bytes);
-            out.flush();
-        } catch (Exception error) {
-            call.reject("The archive could not be saved: " + error.getMessage());
-            return;
-        }
-
-        // Resolving after the try-with-resources block is significant: close()
-        // can be the operation that commits a remote/document-provider file,
-        // and a close failure must reach the caller before success does.
-        call.resolve(new JSObject().put("saved", true));
+        DocumentSaveOperation.write(
+                () -> getContext().getContentResolver().openOutputStream(destination),
+                bytes,
+                completion);
     }
 
     @PluginMethod

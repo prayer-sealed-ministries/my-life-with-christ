@@ -118,6 +118,7 @@ export function searchableText(entry: Entry): string {
     ...entry.links.map((link) => `${link.label ?? ''} ${link.capturedTitle ?? ''}`),
   ]
     .join('\n')
+    .normalize('NFC')
     .toLowerCase();
 }
 
@@ -140,7 +141,7 @@ export function matches(row: IndexedEntry, query: EntryQuery): boolean {
   const { entry } = row;
 
   if (query.text) {
-    const needle = query.text.trim().toLowerCase();
+    const needle = query.text.trim().normalize('NFC').toLowerCase();
     if (needle && !row.searchText.includes(needle)) return false;
   }
   if (query.from && entry.date < query.from) return false;
@@ -206,5 +207,11 @@ export function entryToCreate(input: Partial<Entry>, now = new Date()): Entry {
  */
 export function applyPatch(existing: Entry, patch: Partial<Entry>, now = new Date()): Entry {
   const { id: _id, createdAt: _createdAt, ...safe } = patch;
-  return { ...existing, ...safe, updatedAt: now.toISOString() };
+  const previous = Date.parse(existing.updatedAt);
+  const requested = now.getTime();
+  // Keep edit ordering monotonic even when the device clock moves backward.
+  const timestamp = Number.isFinite(previous)
+    ? new Date(Math.max(requested, previous + 1)).toISOString()
+    : now.toISOString();
+  return { ...existing, ...safe, updatedAt: timestamp };
 }

@@ -12,7 +12,13 @@
  * everywhere, so a missing CompressionStream costs bytes, never readability.
  */
 
-import { inflateRaw } from '../platform/compression';
+import { readZipLimited } from '../import/zip-limits';
+import {
+  MAX_JOURNAL_ARCHIVE_BYTES,
+  MAX_JOURNAL_ARCHIVE_MEMBERS,
+  MAX_JOURNAL_COMPRESSION_RATIO,
+  MAX_JOURNAL_MEMBER_BYTES,
+} from '../lib/journal-limits';
 
 export interface ZipEntry {
   /** Path within the archive, using forward slashes. */
@@ -230,59 +236,12 @@ export interface ReadZipEntry {
 const decoder = new TextDecoder();
 
 export async function readZip(data: Uint8Array): Promise<ReadZipEntry[]> {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-
-  // The EOCD sits at the end, after an optional trailing comment, so scan back.
-  let eocd = -1;
-  for (let i = data.length - 22; i >= 0 && i >= data.length - 22 - 0xffff; i -= 1) {
-    if (view.getUint32(i, true) === SIGNATURE_EOCD) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error('Not a ZIP archive: no end-of-central-directory record found.');
-
-  const count = view.getUint16(eocd + 10, true);
-  let cursor = view.getUint32(eocd + 16, true);
-
-  const entries: ReadZipEntry[] = [];
-  for (let i = 0; i < count; i += 1) {
-    if (view.getUint32(cursor, true) !== SIGNATURE_CENTRAL) {
-      throw new Error(`Corrupt ZIP: expected a central directory header at byte ${cursor}.`);
-    }
-
-    const method = view.getUint16(cursor + 10, true);
-    const compressedSize = view.getUint32(cursor + 20, true);
-    const nameLength = view.getUint16(cursor + 28, true);
-    const extraLength = view.getUint16(cursor + 30, true);
-    const commentLength = view.getUint16(cursor + 32, true);
-    const localOffset = view.getUint32(cursor + 42, true);
-    const path = decoder.decode(data.subarray(cursor + 46, cursor + 46 + nameLength));
-
-    // The local header repeats the name and extra field, with its own lengths.
-    const localNameLength = view.getUint16(localOffset + 26, true);
-    const localExtraLength = view.getUint16(localOffset + 28, true);
-    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-    const raw = data.subarray(dataStart, dataStart + compressedSize);
-
-    // Directory entries are zero-length and end in a slash; skip them.
-    if (!path.endsWith('/')) {
-      entries.push({ path, bytes: method === METHOD_DEFLATE ? await inflate(raw) : raw.slice() });
-    }
-
-    cursor += 46 + nameLength + extraLength + commentLength;
-  }
-
-  return entries;
-}
-
-async function inflate(data: Uint8Array): Promise<Uint8Array> {
-  // Centralised, so the one runtime assumption that can make an archive
-  // unreadable lives in a single place with its reasoning attached. The
-  // platform's inflate where it exists, a bundled one where it does not — the
-  // supported OS range includes versions with no `DecompressionStream`, and an
-  // archive a person cannot restore is not an archive.
-  return inflateRaw(data);
+  return readZipLimited(data, {
+    maxEntries: MAX_JOURNAL_ARCHIVE_MEMBERS,
+    maxEntryBytes: MAX_JOURNAL_MEMBER_BYTES,
+    maxTotalBytes: MAX_JOURNAL_ARCHIVE_BYTES,
+    maxCompressionRatio: MAX_JOURNAL_COMPRESSION_RATIO,
+  });
 }
 
 /** Read one entry's bytes as UTF-8 text. */

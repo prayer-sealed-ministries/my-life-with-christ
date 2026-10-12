@@ -3,10 +3,12 @@ import XCTest
 /**
  * Physical-device coverage for the editor that feeds Share This Entry.
  *
- * The app is a web view in a native shell, so this drives real HTML through the
- * accessibility tree the way a person drives it with VoiceOver: by label, never
- * by coordinate. It targets the installed app by bundle identifier, so what is
- * exercised is the artefact that was actually signed and installed.
+ * The app is a web view in a native shell, so this drives every form control
+ * through the labelled accessibility tree the way a person drives it with
+ * VoiceOver. The sole coordinate touch is an empty page-gutter tap used to
+ * blur the keyboard; it never selects or verifies application content. The
+ * test targets the installed app by bundle identifier, so what is exercised
+ * is the artefact that was actually signed and installed.
  *
  * WHAT THIS CANNOT REACH, AND WHY IT STOPS WHERE IT DOES
  *
@@ -28,8 +30,8 @@ import XCTest
  * covered by docs/IOS-SHARE-ACCEPTANCE.md instead.
  *
  * So this test asserts everything it can genuinely reach, then skips with that
- * reason rather than reporting a failure nothing can act on. Recorded
- * 2026-10-06.
+ * reason rather than reporting a failure nothing can act on. Rechecked
+ * 2026-10-09.
  *
  * One contrast matters when reading the helpers: the option list iOS presents
  * for a <select> is a NATIVE collection view, and scrolling that works
@@ -77,19 +79,36 @@ final class ShareAcceptanceUITests: XCTestCase {
     /// with no indication that anything was in the way. With the keyboard down,
     /// hittability becomes a truthful oracle again.
     ///
-    /// It is dismissed by tapping the banner's tagline: ordinary page text at
-    /// the top of the document that cannot navigate anywhere, so it is always
-    /// reachable and blurs whatever had focus.
+    /// Prefer the keyboard's own Done control. Focusing Title scrolls the web
+    /// document, and that can move the banner tagline off screen; the previous
+    /// helper then returned without dismissing anything and tapped Notes behind
+    /// the still-open keyboard. XCUITest reported Notes as hittable anyway and
+    /// failed only when typeText discovered Title still owned keyboard focus.
     private func dismissKeyboard() {
-        guard app.keyboards.firstMatch.exists else { return }
+        let keyboard = app.keyboards.firstMatch
+        guard keyboard.exists else { return }
 
-        let tagline = app.staticTexts["Your walk, remembered."]
-        guard tagline.exists && tagline.isHittable else { return }
-        tagline.tap()
+        let done = keyboard.buttons["Done"]
+        if done.exists && done.isHittable {
+            done.tap()
+        } else {
+            let tagline = app.staticTexts["Your walk, remembered."]
+            if tagline.exists && tagline.isHittable {
+                tagline.tap()
+            } else {
+                // The title focus scrolls the tagline away and this keyboard
+                // has no Done key. Tap the right-hand page gutter: it is
+                // outside the form (whose trailing edge is inset 20 points),
+                // remains above the keyboard, and therefore blurs the web
+                // control without activating another field or button.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
+            }
+        }
 
         let gone = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
-        _ = XCTWaiter.wait(for: [gone], timeout: 10)
+            predicate: NSPredicate(format: "exists == false"), object: keyboard)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed,
+                       "the software keyboard could not be dismissed")
     }
 
     /// Anything below the first viewport is unreachable here — see the note at
@@ -129,9 +148,18 @@ final class ShareAcceptanceUITests: XCTestCase {
         dismissKeyboard()
         requireReachable(element, what)
         element.tap()
-        // Focus arrives with the keyboard; typing before it does throws.
-        _ = app.keyboards.firstMatch.waitForExistence(timeout: 10)
-        element.typeText(text)
+        // Focus arrives with the keyboard. Query the element that actually has
+        // it rather than asking a possibly stale WKWebView snapshot to infer
+        // focus during event synthesis.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10),
+                      "the keyboard never appeared for \(what)")
+        let focused = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        XCTAssertTrue(focused.waitForExistence(timeout: 10),
+                      "no accessibility element received keyboard focus for \(what)")
+        XCTAssertEqual(focused.label, element.label,
+                       "keyboard focus went to \(focused.label), not \(what)")
+        focused.typeText(text)
     }
 
     // MARK: - Finding web controls
@@ -290,6 +318,14 @@ final class ShareAcceptanceUITests: XCTestCase {
         let prayerField = app.textViews["Prayer"]
         if !prayerField.waitForExistence(timeout: 5) {
             tapWhenReady(webControl("Details", "the Details disclosure"), "the Details disclosure")
+        }
+        dismissKeyboard()
+        guard prayerField.isHittable else {
+            throw XCTSkip(
+                "Title, Notes, and Reflection accepted text with verified keyboard focus. "
+                + "Prayer exists after opening Details but is below the reachable WKWebView "
+                + "viewport, so the remaining editor/share checks require the physical-device "
+                + "procedure in docs/IOS-SHARE-ACCEPTANCE.md.")
         }
         type(into: prayerField, prayer, "the Prayer field")
 

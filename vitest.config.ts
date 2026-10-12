@@ -10,6 +10,12 @@ import dataProfile from './scripts/vite-plugin-data-profile.mjs';
 // Tests therefore run against the same generated module the app does, and
 // DATA_PROFILE=refs-only exercises the refs-only profile end to end.
 export default defineConfig({
+  define: {
+    // Tests exercise release behaviour unless a case explicitly injects a
+    // debug surface. Keep this in lockstep with vite.config.ts so importing a
+    // routed view can never fail before its assertions run.
+    __DEBUG_TOOLS__: false,
+  },
   plugins: [react(), dataProfile()],
 
   // Keep tests on the same compile-time branch as an ordinary release. Without

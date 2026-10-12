@@ -275,6 +275,9 @@ export default function HomeView() {
   );
   const resumable = drafts.filter(isResumable);
   const continueWith = resumable[0];
+  const continueEntryExists =
+    continueWith?.entryId !== undefined &&
+    entries.some((entry) => entry.id === continueWith.entryId);
 
   const recent = entries.slice(0, RECENT_COUNT);
 
@@ -379,14 +382,14 @@ export default function HomeView() {
         card, not a dashboard — if there are more, they are reachable from the
         timeline like everything else.
       */}
-      {continueWith ? (
+      {continueWith && !loading ? (
         <section className="mt-8" aria-labelledby="continue-heading">
           <h2 id="continue-heading" className="sr-only">
             Unfinished writing
           </h2>
           <Link
             to={
-              continueWith.entryId
+              continueWith.entryId && continueEntryExists
                 ? { name: 'entry', id: continueWith.entryId }
                 : { name: 'newEntry', draft: continueWith.id }
             }

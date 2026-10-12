@@ -45,8 +45,9 @@ export class DecompressionLimit extends ImportError {
 
 const SIGNATURE_EOCD = 0x06054b50;
 const SIGNATURE_CENTRAL = 0x02014b50;
-const METHOD_DEFLATE = 8;
+const SIGNATURE_LOCAL = 0x04034b50;
 const METHOD_STORE = 0;
+const METHOD_DEFLATE = 8;
 
 const decoder = new TextDecoder();
 
@@ -61,6 +62,8 @@ export interface ZipLimitOptions {
   maxEntries?: number;
   maxEntryBytes?: number;
   maxTotalBytes?: number;
+  /** Refuse a member whose declared expansion is implausibly larger than its input. */
+  maxCompressionRatio?: number;
 }
 
 /**
@@ -113,6 +116,7 @@ export async function readZipLimited(
   const maxEntries = options.maxEntries ?? MAX_ZIP_ENTRIES;
   const maxEntryBytes = options.maxEntryBytes ?? MAX_ZIP_ENTRY_BYTES;
   const maxTotalBytes = options.maxTotalBytes ?? MAX_ZIP_TOTAL_BYTES;
+  const maxCompressionRatio = options.maxCompressionRatio ?? 200;
 
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 
@@ -127,16 +131,28 @@ export async function readZipLimited(
     throw new ImportError('That file is not a readable Word document or archive.');
   }
 
+  if (eocd + 22 > data.length) throw new ImportError('That file is damaged and cannot be read.');
+  const countOnDisk = view.getUint16(eocd + 8, true);
   const count = view.getUint16(eocd + 10, true);
+  const centralSize = view.getUint32(eocd + 12, true);
+  const centralOffset = view.getUint32(eocd + 16, true);
+  const commentLength = view.getUint16(eocd + 20, true);
+  if (countOnDisk !== count || eocd + 22 + commentLength > data.length ||
+      centralOffset > data.length || centralSize > data.length - centralOffset ||
+      centralOffset + centralSize > eocd) {
+    throw new ImportError('That file is damaged and cannot be read.');
+  }
   if (count > maxEntries) {
     throw new ImportError(
       `That file contains ${count} parts, far more than a document should. It has not been read.`,
     );
   }
 
-  let cursor = view.getUint32(eocd + 16, true);
+  let cursor = centralOffset;
   const entries: LimitedZipEntry[] = [];
   let inflatedTotal = 0;
+  let declaredTotal = 0;
+  const paths = new Set<string>();
 
   for (let i = 0; i < count; i += 1) {
     // A truncated or hand-edited archive must fail as a message, not as a
@@ -145,15 +161,21 @@ export async function readZipLimited(
       throw new ImportError('That file is damaged and cannot be read.');
     }
 
+    const flags = view.getUint16(cursor + 8, true);
     const method = view.getUint16(cursor + 10, true);
     const compressedSize = view.getUint32(cursor + 20, true);
+    const uncompressedSize = view.getUint32(cursor + 24, true);
     const nameLength = view.getUint16(cursor + 28, true);
     const extraLength = view.getUint16(cursor + 30, true);
     const commentLength = view.getUint16(cursor + 32, true);
     const localOffset = view.getUint32(cursor + 42, true);
+    const headerEnd = cursor + 46 + nameLength + extraLength + commentLength;
+    if (headerEnd > data.length || headerEnd > centralOffset + centralSize) {
+      throw new ImportError('That file is damaged and cannot be read.');
+    }
     const path = decoder.decode(data.subarray(cursor + 46, cursor + 46 + nameLength));
 
-    cursor += 46 + nameLength + extraLength + commentLength;
+    cursor = headerEnd;
 
     // Skip directories, and anything the caller did not ask for. A member that
     // is never inflated cannot cost anything, which is why `only` is the first
@@ -161,13 +183,40 @@ export async function readZipLimited(
     if (path.endsWith('/')) continue;
     if (options.only && !options.only(path)) continue;
 
-    if (localOffset + 30 > data.length) {
+    if (paths.has(path)) throw new ImportError('That archive contains the same path more than once. Nothing was read.');
+    paths.add(path);
+    if ((flags & 0x0001) !== 0) throw new ImportError('Encrypted ZIP members are not supported. Nothing was read.');
+    if (method !== METHOD_STORE && method !== METHOD_DEFLATE) {
+      throw new ImportError('That archive uses an unsupported compression method. Nothing was read.');
+    }
+    if (uncompressedSize > maxEntryBytes) {
+      throw new DecompressionLimit(
+        `One part of that file expands to more than the supported limit. Nothing was read.`,
+        true,
+      );
+    }
+    declaredTotal += uncompressedSize;
+    if (!Number.isSafeInteger(declaredTotal) || declaredTotal > maxTotalBytes) {
+      throw new DecompressionLimit(
+        `That file expands to more than the supported journal limit. Nothing was read.`,
+        true,
+      );
+    }
+    if (uncompressedSize > 0 && (compressedSize === 0 || uncompressedSize / compressedSize > maxCompressionRatio)) {
+      throw new DecompressionLimit(
+        'That archive has an unsafe compression ratio. Nothing was read.',
+        true,
+      );
+    }
+
+    if (localOffset > data.length || localOffset + 30 > data.length ||
+        view.getUint32(localOffset, true) !== SIGNATURE_LOCAL) {
       throw new ImportError('That file is damaged and cannot be read.');
     }
     const localNameLength = view.getUint16(localOffset + 26, true);
     const localExtraLength = view.getUint16(localOffset + 28, true);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-    if (dataStart + compressedSize > data.length) {
+    if (dataStart > data.length || compressedSize > data.length - dataStart) {
       throw new ImportError('That file is damaged and cannot be read.');
     }
     const raw = data.subarray(dataStart, dataStart + compressedSize);
@@ -190,6 +239,9 @@ export async function readZipLimited(
         `That file expands to more than ${describeBytes(maxTotalBytes)} when opened, which is far larger than a document. It has not been read.`,
         false,
       );
+    }
+    if (bytes.byteLength !== uncompressedSize) {
+      throw new ImportError('That file is damaged: a ZIP member has the wrong size. Nothing was read.');
     }
 
     inflatedTotal += bytes.byteLength;

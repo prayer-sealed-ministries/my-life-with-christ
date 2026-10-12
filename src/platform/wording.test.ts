@@ -94,8 +94,11 @@ describe('the backup warnings are true in an installed app as well as a tab', ()
     const prose = await proseOf('src/views/DataView.tsx');
 
     expect(prose).toMatch(/not a backup/i);
-    expect(prose, 'DataView still tells a phone user about their browser').not.toMatch(
-      /\bbrowser\b/i,
+    // Browser-specific save fallback text is now deliberately present on this
+    // shared page. The standing warning itself must still avoid the old,
+    // misleading instruction that a phone user should clear browser data.
+    expect(prose, 'the standing warning still describes phone storage as browser data').not.toMatch(
+      /clearing (?:your|this) browser data/i,
     );
   });
 

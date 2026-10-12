@@ -115,6 +115,25 @@ describe('Continue writing', () => {
     expect(card.getAttribute('href')).toBe('#/entry/new?draft=the-one');
   });
 
+  it('routes a saved-entry draft back to its canonical entry instead of creating a duplicate', async () => {
+    await show(async (db) => {
+      await db.putEntries([entry({ id: 'saved-parent' })]);
+      await db.putDraft(draft({ id: 'saved-draft', entryId: 'saved-parent' }));
+    });
+
+    const card = await screen.findByRole('link', { name: /Continue sermon/i });
+    expect(card.getAttribute('href')).toBe('#/entry/saved-parent');
+  });
+
+  it('keeps an orphaned legacy draft recoverable instead of linking to a missing entry', async () => {
+    await show(async (db) => {
+      await db.putDraft(draft({ id: 'orphan-draft', entryId: 'missing-parent' }));
+    });
+
+    const card = await screen.findByRole('link', { name: /Continue sermon/i });
+    expect(card.getAttribute('href')).toBe('#/entry/new?draft=orphan-draft');
+  });
+
   it('offers the newest, and says how many others there are', async () => {
     await show(async (db) => {
       await db.putDraft(

@@ -57,9 +57,9 @@ export class SectionsBoundary extends Component<Props, State> {
             write needs to know they still can, and that nothing of theirs was
             involved in this. */}
         <p>
-          Part of this app did not load. Your journal is safe and nothing has been
-          changed — this is about the Bible data the page needed, not about
-          anything you have written.
+          Part of this app did not load. Nothing in your journal was changed. If you are using
+          the hosted browser edition, reconnect before trying a page that has not loaded on this
+          device before.
         </p>
         <p className="mt-3">
           <Button onClick={this.retry}>Try again</Button>
