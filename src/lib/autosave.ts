@@ -28,7 +28,11 @@ export interface AutosaveOptions<T> {
 }
 
 export type AutosaveResult =
-  | { status: 'saved' }
+  | {
+      status: 'saved';
+      /** True when a newer snapshot arrived while this write was in flight. */
+      pending: boolean;
+    }
   /** The write threw. The caller still holds the text; nothing was persisted. */
   | { status: 'failed'; error: Error; consecutiveFailures: number };
 
@@ -50,6 +54,7 @@ export class Autosaver<T> {
   private inFlight: Promise<void> = Promise.resolve();
   private retired = false;
   private consecutiveFailures = 0;
+  private lastFailure: Error | null = null;
 
   constructor(options: AutosaveOptions<T>) {
     this.options = {
@@ -87,6 +92,11 @@ export class Autosaver<T> {
     this.cancelTimer = null;
     await this.run();
     await this.inFlight;
+    // Timer-driven autosaves report through onResult and stay retryable. An
+    // explicit durability boundary (Save, background, route leave) also needs
+    // a rejection so its caller cannot continue as though the pending words
+    // reached storage.
+    if (this.pending !== null && this.lastFailure) throw this.lastFailure;
   }
 
   /**
@@ -156,15 +166,18 @@ export class Autosaver<T> {
         if (queued.generation > this.persisted) this.persisted = queued.generation;
         if (this.pending?.generation === queued.generation) this.pending = null;
         this.consecutiveFailures = 0;
-        this.options.onResult?.({ status: 'saved' });
+        this.lastFailure = null;
+        this.options.onResult?.({ status: 'saved', pending: this.pending !== null });
       } catch (cause) {
         // Deliberately leaves `pending` set: the text is not in storage, so the
         // editor must keep treating it as unsaved rather than being told all is
         // well.
         this.consecutiveFailures += 1;
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        this.lastFailure = error;
         this.options.onResult?.({
           status: 'failed',
-          error: cause instanceof Error ? cause : new Error(String(cause)),
+          error,
           consecutiveFailures: this.consecutiveFailures,
         });
       }

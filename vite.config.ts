@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import dataProfile from './scripts/vite-plugin-data-profile.mjs';
 import buildId from './scripts/vite-plugin-build-id.mjs';
 import guardPublicDir from './scripts/vite-plugin-guard-public.mjs';
+import offline from './scripts/vite-plugin-offline.mjs';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
@@ -14,7 +15,7 @@ export default defineConfig({
   base: process.env.BASE_PATH ?? '/',
   // buildId is last: it digests the finished output directory, so every other
   // plugin's contribution has to be on disk before it runs.
-  plugins: [guardPublicDir(), react(), tailwindcss(), dataProfile(), buildId()],
+  plugins: [guardPublicDir(), react(), tailwindcss(), dataProfile(), offline(), buildId()],
   // The version comes from package.json and nowhere else. Writing it in a
   // second place is how a version string starts lying.
   define: {

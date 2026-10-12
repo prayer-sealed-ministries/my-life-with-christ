@@ -25,7 +25,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,11 +54,12 @@ const run = (command, args, env = {}) =>
  * never matched itself. The first version did exactly that and the sync refused
  * its own freshly verified build.
  */
-function fingerprint(directory, exclude) {
+export function fingerprint(directory, exclude) {
   let files = 0;
   let bytes = 0;
+  const hash = createHash('sha256');
   const walk = (at) => {
-    for (const name of readdirSync(at)) {
+    for (const name of readdirSync(at).sort()) {
       if (at === directory && name === exclude) continue;
       const path = join(at, name);
       const info = statSync(path);
@@ -65,16 +67,23 @@ function fingerprint(directory, exclude) {
       else {
         files += 1;
         bytes += info.size;
+        hash.update(path.slice(directory.length + 1));
+        hash.update('\0');
+        hash.update(readFileSync(path));
+        hash.update('\0');
       }
     }
   };
   walk(directory);
-  return { files, bytes };
+  return { files, bytes, sha256: hash.digest('hex') };
 }
 
 function main() {
   console.log(`\nBuilding native web assets with DATA_PROFILE=${NATIVE_PROFILE}\n`);
-  run('npm', ['run', 'build'], { DATA_PROFILE: NATIVE_PROFILE });
+  // Never inherit a developer's DEBUG_TOOLS=1 into something eligible for a
+  // native marker. Vite checks for exactly "1", so an explicit zero is a
+  // release boundary rather than an ambient-shell convention.
+  run('npm', ['run', 'build'], { DATA_PROFILE: NATIVE_PROFILE, DEBUG_TOOLS: '0' });
 
   console.log('\nVerifying the built assets before anything may copy them\n');
   // The same verifier CI runs. If purchased material is present this throws and
@@ -83,6 +92,9 @@ function main() {
 
   const stamp = {
     profile: NATIVE_PROFILE,
+    // Recorded as well as enforced above: the marker describes the security-
+    // relevant build branch whose exact bytes were verified.
+    debugTools: false,
     verifiedAt: new Date().toISOString(),
     ...fingerprint(dist, MARKER),
   };

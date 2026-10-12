@@ -86,8 +86,8 @@ export function FirstVisitNotice() {
           </li>
           <li>
             <strong>Clearing this app&rsquo;s data will destroy them permanently.</strong>{' '}
-            Android&rsquo;s own backup may hold a copy if you have it switched on, but that is not
-            something to rely on.
+            On iOS and Android, the operating system may include the app&rsquo;s data in your own
+            device or cloud backup if backup is enabled, but that is not something to rely on.
           </li>
           <li>
             <strong>So export early, and often.</strong> Export gives you a file you own — plain

@@ -13,7 +13,7 @@
 
 /** Something that can tell you when the app is foregrounded or backgrounded. */
 export interface AppStateSource {
-  subscribe(onChange: (active: boolean) => void): () => void;
+  subscribe(onChange: (active: boolean) => void, onError?: (error: Error) => void): () => void;
 }
 
 /**
@@ -27,7 +27,7 @@ export interface AppStateSource {
  */
 export function capacitorAppState(): AppStateSource {
   return {
-    subscribe(onChange) {
+    subscribe(onChange, onError) {
       let detach: (() => void) | null = null;
       let cancelled = false;
 
@@ -39,7 +39,9 @@ export function capacitorAppState(): AppStateSource {
           if (cancelled) void handle.remove();
           else detach = () => void handle.remove();
         })
-        .catch(() => undefined);
+        .catch((cause: unknown) => {
+          onError?.(cause instanceof Error ? cause : new Error(String(cause)));
+        });
 
       return () => {
         cancelled = true;

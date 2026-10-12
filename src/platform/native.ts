@@ -28,6 +28,7 @@ import type {
 } from './ports';
 import { JourneyDocuments, fromBase64, toBase64 } from './native-documents';
 import { nativePlatform } from './runtime';
+import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from './file-limits';
 
 /**
  * Save by handing the bytes to the OS document interface.
@@ -56,7 +57,7 @@ export const nativeFileSaver: FileSaver = {
     // `result?.` and `=== true`, both deliberate: only an explicit yes counts.
     // A plugin that returns nothing, or something unexpected, must not be able
     // to claim a backup by omission.
-    return { saved: result?.saved === true };
+    return { status: result?.saved === true ? 'committed' : 'cancelled' };
   },
 };
 
@@ -83,7 +84,11 @@ export const nativeFilePicker: FilePicker = {
     });
 
     if (result.cancelled || !result.base64) return null;
-    return { name: result.name ?? 'archive.zip', bytes: fromBase64(result.base64) };
+    const bytes = fromBase64(result.base64);
+    // Defence against an older/mismatched native plugin that lacks the
+    // pre-bridge bound. This is late, but still prevents parsing/inflation.
+    if (bytes.byteLength > MAX_PICKED_FILE_BYTES) throw new Error(pickedFileTooLargeMessage);
+    return { name: result.name ?? 'archive.zip', bytes };
   },
 };
 

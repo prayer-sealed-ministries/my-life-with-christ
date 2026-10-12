@@ -215,7 +215,19 @@ export default function ImportView() {
                 // The web binding: convert the browser's File into the shape
                 // every edition uses, then hand it on.
                 const chosen = event.target.files?.[0];
-                if (chosen) void pickedFromDomFile(chosen).then(onFile);
+                // Clear immediately so the same provider/file can be retried
+                // after a read failure; browsers do not fire change for the
+                // same non-empty input value twice.
+                event.currentTarget.value = '';
+                if (chosen) {
+                  void pickedFromDomFile(chosen)
+                    .then(onFile)
+                    .catch(() => {
+                      setError('That file could not be opened or read. Nothing was changed.');
+                      setStage('choose');
+                      setMessage('');
+                    });
+                }
               }}
               className={`mt-2 ${CONTROL} text-sm file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink`}
             />

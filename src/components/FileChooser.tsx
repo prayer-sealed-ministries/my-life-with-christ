@@ -29,6 +29,7 @@ export function FileChooser({
   disabled,
   buttonLabel,
   onFile,
+  onError,
 }: {
   /** The control's accessible name. A real <label>, never a placeholder. */
   label: string;
@@ -40,6 +41,8 @@ export function FileChooser({
   buttonLabel: string;
   /** Called with the chosen file, or with null when the person cancelled. */
   onFile: (file: PickedFile | null) => void;
+  /** Called when a chosen file or its provider could not be opened or read. */
+  onError: (error: unknown) => void;
 }) {
   const { picker } = usePlatform();
   const id = useId();
@@ -67,9 +70,9 @@ export function FileChooser({
             void picker
               .pick({ accept })
               .then((file) => onFile(file))
-              // Cancelling is not a failure, and neither is a picker that could
-              // not open: the journal is untouched either way.
-              .catch(() => onFile(null));
+              // Cancellation resolves to null. A rejected provider/read is a
+              // different outcome and must stay visible to the person.
+              .catch(onError);
           }}
           className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
         >
@@ -87,7 +90,7 @@ export function FileChooser({
             const chosen = event.target.files?.[0];
             // Cleared so choosing the same file twice in a row still fires.
             event.target.value = '';
-            if (chosen) void pickedFromDomFile(chosen).then(onFile);
+            if (chosen) void pickedFromDomFile(chosen).then(onFile).catch(onError);
             else onFile(null);
           }}
           className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"

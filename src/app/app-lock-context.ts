@@ -21,6 +21,8 @@ export type LockPhase = 'resolving' | 'locked' | 'unlocked';
 export interface AppLockContextValue {
   phase: LockPhase;
   supported: boolean;
+  /** A supported lock whose native state could not be established. */
+  lockError?: string | null;
   enabled: boolean;
   timeoutMs: number;
   recoveryAvailable: boolean;

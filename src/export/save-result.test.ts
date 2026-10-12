@@ -19,9 +19,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { exportEverything } from './download';
+import { parseImport } from './importer';
 import type { FileSaver, OutgoingFile, SaveResult } from '../platform/ports';
 import { DexieStorageProvider } from '../storage/db';
 import type { DataProfile, Entry, OutlineBook, Topic } from '../types';
+import type { StorageProvider } from '../storage/StorageProvider';
 
 /**
  * The archive inputs, at their smallest.
@@ -45,10 +47,15 @@ function saverThat(saved: boolean) {
   const files: FileSaver = {
     async save(file: OutgoingFile): Promise<SaveResult> {
       handed.push(file);
-      return { saved };
+      return { status: saved ? 'committed' : 'cancelled' };
     },
   };
   return { files, handed };
+}
+
+function saverWith(status: SaveResult['status']) {
+  const files: FileSaver = { save: async () => ({ status }) };
+  return files;
 }
 
 function entry(overrides: Partial<Entry> & { id: string }): Entry {
@@ -134,9 +141,9 @@ describe('backing out of the save dialog', () => {
     const storage = await journalWith();
     const { files, handed } = saverThat(false);
 
-    const { archive, saved } = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+    const { archive, delivery } = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
 
-    expect(saved, 'a cancelled save was reported as saved').toBe(false);
+    expect(delivery, 'a cancelled save was reported as saved').toBe('cancelled');
     expect(archive.entryCount).toBe(2);
     expect(handed, 'the saver was never offered the archive').toHaveLength(1);
     expect(handed[0].suggestedName).toMatch(/^journey-export-\d{4}-\d{2}-\d{2}\.zip$/);
@@ -184,6 +191,97 @@ describe('a save the file system accepted', () => {
       (await storage.getSettings()).backupReminderDays,
       'the export overwrote the chosen interval',
     ).toBe(7);
+  });
+
+  it('reports a saved file separately when reminder metadata cannot be written', async () => {
+    const old = '2026-01-01T00:00:00.000Z';
+    const storage = await journalWith({ lastExportAt: old });
+    const { files } = saverThat(true);
+
+    const result = await exportEverything({
+      storage,
+      files,
+      ...ARCHIVE_INPUTS,
+      recordSettings: async () => {
+        throw new Error('settings store is full');
+      },
+    });
+
+    expect(result.delivery).toBe('committed');
+    expect(result.current).toBe(true);
+    expect(result.recorded).toBe(false);
+    expect(result.recordingError).toMatch(/settings store is full/i);
+    expect((await storage.getSettings()).lastExportAt).toBe(old);
+  });
+});
+
+describe('a browser download that was only initiated', () => {
+  it('does not move the durable-backup timestamp', async () => {
+    const old = '2026-01-01T00:00:00.000Z';
+    const storage = await journalWith({ lastExportAt: old });
+
+    const result = await exportEverything({
+      storage,
+      files: saverWith('initiated'),
+      ...ARCHIVE_INPUTS,
+    });
+
+    expect(result.delivery).toBe('initiated');
+    expect((await storage.getSettings()).lastExportAt).toBe(old);
+  });
+});
+
+describe('a complete and current journal snapshot', () => {
+  it('creates no file and records nothing when the atomic snapshot cannot be read', async () => {
+    const storage = await journalWith({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+    const failing = new Proxy(storage, {
+      get(target, prop, receiver) {
+        if (prop === 'readJournalSnapshot') {
+          return async () => {
+            throw new Error('draft store unavailable');
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...args: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    }) as StorageProvider;
+    let saves = 0;
+    const files: FileSaver = {
+      save: async () => {
+        saves += 1;
+        return { status: 'committed' };
+      },
+    };
+
+    await expect(exportEverything({ storage: failing, files, ...ARCHIVE_INPUTS })).rejects.toThrow(
+      /draft store unavailable/i,
+    );
+    expect(saves).toBe(0);
+    expect((await storage.getSettings()).lastExportAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('marks a committed file stale when the journal changes during delivery', async () => {
+    const storage = freshStorage();
+    await storage.open();
+    const original = await storage.createEntry({ notes: 'Snapshot words.' });
+    let handed: OutgoingFile | null = null;
+    const files: FileSaver = {
+      save: async (file) => {
+        handed = file;
+        await storage.updateEntry(original.id, { notes: 'Newer accepted words.' });
+        return { status: 'committed' };
+      },
+    };
+
+    const result = await exportEverything({ storage, files, ...ARCHIVE_INPUTS });
+
+    expect(result.current).toBe(false);
+    expect((await storage.getSettings()).lastExportAt).toBeUndefined();
+    expect((await storage.getEntry(original.id))?.notes).toBe('Newer accepted words.');
+    const archived = await parseImport((handed as unknown as OutgoingFile).bytes);
+    expect(archived.entries[0].notes).toBe('Snapshot words.');
   });
 });
 

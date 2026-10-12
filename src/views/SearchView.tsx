@@ -567,7 +567,7 @@ export default function SearchView({
    * Keyed on `revision` rather than the query, so typing does not re-read
    * storage on every keystroke.
    */
-  const { data: all, loading } = useStorageQuery<Entry[]>(
+  const { data: all, loading, error: journalReadError } = useStorageQuery<Entry[]>(
     (storage) => storage.listEntries(),
     [],
     [],
@@ -653,11 +653,12 @@ export default function SearchView({
    * false negative on exactly the queries the divisions exist to match.
    */
   const scriptureAnswered = sections !== null;
-  const nothingFound = searching && settled && scriptureAnswered && resultCount === 0;
+  const nothingFound =
+    searching && settled && !journalReadError && scriptureAnswered && resultCount === 0;
   const showResults = searching && settled && !nothingFound;
 
   const announcement =
-    searching && settled && scriptureAnswered
+    searching && settled && !journalReadError && scriptureAnswered
       ? `${resultCount} ${resultCount === 1 ? 'result' : 'results'}: ` +
         `${entries.length} in your journal, ${catalogue.topics.length} ${catalogue.topics.length === 1 ? 'topic' : 'topics'}` +
         (hasOutlineTitles
@@ -707,6 +708,16 @@ export default function SearchView({
       ) : null}
 
       <LiveRegion message={announcement} />
+
+      {journalReadError ? (
+        <p
+          role="alert"
+          className="mt-4 rounded-control border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+        >
+          {journalReadError} Your journal entries were not treated as empty. Topics and Scripture
+          results that are available in this app can still appear below.
+        </p>
+      ) : null}
 
       {!searching ? (
         <div className="mt-6">

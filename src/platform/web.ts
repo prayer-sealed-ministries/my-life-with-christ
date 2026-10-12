@@ -12,6 +12,7 @@
  */
 
 import { webAppLock } from './app-lock';
+import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from './file-limits';
 import type {
   FilePicker,
   FileSaver,
@@ -36,6 +37,67 @@ import type {
  */
 export const webFileSaver: FileSaver = {
   async save(file: OutgoingFile): Promise<SaveResult> {
+    const picker = (
+      window as Window & {
+        showSaveFilePicker?: (options: {
+          suggestedName: string;
+          types: Array<{ description: string; accept: Record<string, string[]> }>;
+        }) => Promise<{
+          createWritable(): Promise<{
+            write(data: Blob): Promise<void>;
+            close(): Promise<void>;
+            abort?(reason?: unknown): Promise<void>;
+          }>;
+        }>;
+      }
+    ).showSaveFilePicker;
+
+    if (typeof picker === 'function') {
+      const extension = file.suggestedName.includes('.')
+        ? `.${file.suggestedName.split('.').at(-1)}`
+        : '.zip';
+      let handle: Awaited<ReturnType<typeof picker>>;
+      try {
+        // Browser implementations expose this as a Window method. Calling an
+        // extracted reference loses its receiver and Web IDL methods are
+        // allowed to reject that as an illegal invocation.
+        handle = await picker.call(window, {
+          suggestedName: file.suggestedName,
+          types: [
+            {
+              description: 'Journal archive',
+              accept: { [file.mimeType]: [extension] },
+            },
+          ],
+        });
+      } catch (cause) {
+        // Only dismissal of the picker is a cancellation. An AbortError while
+        // writing is still a failed backup and must reach the caller as one.
+        if (cause instanceof Error && cause.name === 'AbortError') {
+          return { status: 'cancelled' };
+        }
+        throw cause;
+      }
+
+      const writable = await handle.createWritable();
+      try {
+        await writable.write(new Blob([file.bytes as BlobPart], { type: file.mimeType }));
+        // close() is the durability boundary for this API. A close rejection
+        // propagates and therefore can never become a successful backup claim.
+        await writable.close();
+        return { status: 'committed' };
+      } catch (cause) {
+        // A writable may hold a temporary file or lock until aborted. Cleanup
+        // is best-effort and can never replace the original write error.
+        try {
+          await writable.abort?.(cause);
+        } catch {
+          // The write/close failure below is the one the caller can act on.
+        }
+        throw cause;
+      }
+    }
+
     const blob = new Blob([file.bytes as BlobPart], { type: file.mimeType });
     const url = URL.createObjectURL(blob);
 
@@ -50,13 +112,9 @@ export const webFileSaver: FileSaver = {
     // Give the download a moment to start before releasing the blob.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
 
-    // `saved: true` here means the download was STARTED, not that a file now
-    // exists on disk. A browser gives no completion signal and no cancellation
-    // signal for an anchor download — if the person dismisses the save panel,
-    // nothing tells this page. That limit is real and is not worked around:
-    // inventing a completion API would be a worse lie than the one this whole
-    // change exists to remove. Native, which does know, reports the truth.
-    return { saved: true };
+    // An anchor exposes neither completion nor cancellation. Name that limit
+    // in the result so callers cannot turn "clicked" into "backup exists".
+    return { status: 'initiated' };
   },
 };
 
@@ -80,7 +138,7 @@ export const webFilePicker: FilePicker = {
   presentsOwnUI: false,
 
   pick(options: PickOptions = {}): Promise<PickedFile | null> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
       if (options.accept?.length) input.accept = options.accept.join(',');
@@ -111,10 +169,24 @@ export const webFilePicker: FilePicker = {
           finish(null);
           return;
         }
+        if (file.size > MAX_PICKED_FILE_BYTES) {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('focus', onFocus);
+          input.remove();
+          reject(new Error(pickedFileTooLargeMessage));
+          return;
+        }
         void file
           .arrayBuffer()
           .then((buffer) => finish({ name: file.name, bytes: new Uint8Array(buffer) }))
-          .catch(() => finish(null));
+          .catch((cause) => {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener('focus', onFocus);
+            input.remove();
+            reject(cause);
+          });
       });
 
       window.addEventListener('focus', onFocus);
@@ -225,5 +297,6 @@ export const webPlatform: Platform = {
  * without an `<input>` existing at all.
  */
 export async function pickedFromDomFile(file: File): Promise<PickedFile> {
+  if (file.size > MAX_PICKED_FILE_BYTES) throw new Error(pickedFileTooLargeMessage);
   return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
 }

@@ -145,3 +145,19 @@ describe('the launcher shortcut is not mistaken for a document', () => {
     expect(java).toMatch(/scheme/i);
   });
 });
+
+describe('standard Android text shares', () => {
+  it('reads EXTRA_TEXT and carries it through the same take-once payload', () => {
+    const shared = read(
+      'android/app/src/main/java/com/myjourneywithchrist/lifewithchrist/SharedDocument.java',
+    );
+    const plugin = read(
+      'android/app/src/main/java/com/myjourneywithchrist/lifewithchrist/JourneyDocumentsPlugin.java',
+    );
+
+    expect(shared).toMatch(/getCharSequenceExtra\(Intent\.EXTRA_TEXT\)/);
+    expect(shared).toMatch(/static synchronized Pending take\(\)/);
+    expect(plugin).toMatch(/pending\.text\.getBytes\(StandardCharsets\.UTF_8\)/);
+    expect(plugin).toMatch(/"shared-text\.txt"/);
+  });
+});

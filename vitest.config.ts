@@ -12,6 +12,13 @@ import dataProfile from './scripts/vite-plugin-data-profile.mjs';
 export default defineConfig({
   plugins: [react(), dataProfile()],
 
+  // Keep tests on the same compile-time branch as an ordinary release. Without
+  // this, importing DataView throws before its tests can run because Vite's
+  // production-only define does not exist in Vitest.
+  define: {
+    __DEBUG_TOOLS__: false,
+  },
+
   resolve: {
     alias: [
       /*
@@ -44,5 +51,14 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
+
+    // This suite has more than a hundred jsdom files, many of which open real
+    // fake-IndexedDB databases. Letting Vitest match every host core can make
+    // ten isolated DOMs compete at once; under a shared or busy machine even a
+    // synchronous policy scan then crossed the five-second default. Two
+    // workers keeps the gate bounded without serialising the whole suite.
+    maxWorkers: 2,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

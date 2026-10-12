@@ -53,9 +53,9 @@ export default function AboutView() {
           <li>No account. There is nothing to sign up for and nothing to sign in to.</li>
           <li>This app uploads nothing. What you write is stored on this device.</li>
             <li>
-              Android&rsquo;s own backup, if you have it switched on for this app, may include what
-              the app stores. That copy is yours and goes to your own account, not to anyone here.
-              Your App Lock PIN is never part of it.
+              On iOS and Android, the operating system may include the app&rsquo;s data in your own
+              device or cloud backup if backup is enabled. That is Apple&rsquo;s or Android&rsquo;s
+              feature, not an upload by this app. Your App Lock PIN is never part of it.
             </li>
           <li>
             Your writing is saved locally as you type, so an interruption does not erase your

@@ -29,15 +29,17 @@ import {
   TXT_NOTES,
 } from '../import/sermon-notes-fixtures';
 import { PlatformProvider } from '../platform/provider';
+import { webAppLock } from '../platform/app-lock';
+import type { Platform } from '../platform/ports';
 import { DexieStorageProvider } from '../storage/db';
 import type { Entry } from '../types';
 
 let dbCounter = 0;
 let db: DexieStorageProvider;
 
-function renderApp() {
+function renderApp(platform?: Platform) {
   return render(
-    <PlatformProvider>
+    <PlatformProvider platform={platform}>
       <ThemeProvider>
         <StorageContextProvider provider={db}>
           <RouterProvider>
@@ -133,6 +135,44 @@ describe('before anything is chosen', () => {
     expect(await db.listEntries(), 'a failed read created an entry').toHaveLength(0);
     // Still on the choose step: nothing was proposed, so nothing can be used.
     expect(screen.queryByRole('button', { name: 'Use these notes' })).toBeNull();
+  });
+
+  it('reports a browser read failure instead of treating it as cancellation', async () => {
+    renderApp();
+    await openImport();
+
+    const input = screen.getByLabelText('Sermon notes file') as HTMLInputElement;
+    const file = new File(['unreadable'], 'unreadable.txt', { type: 'text/plain' });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => Promise.reject(new Error('provider disconnected')),
+    });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    fireEvent.change(input);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened or read/i);
+    expect(await db.listEntries(), 'a failed file read changed the journal').toHaveLength(0);
+  });
+
+  it('reports a native picker failure instead of treating it as cancellation', async () => {
+    const platform: Platform = {
+      appLock: webAppLock,
+      files: { save: async () => ({ status: 'cancelled' }) },
+      picker: {
+        presentsOwnUI: true,
+        pick: async () => {
+          throw new Error('provider disconnected');
+        },
+      },
+      printer: { print: () => undefined },
+      unsavedWork: { protect: () => () => undefined },
+      sharer: { canShare: false, share: async () => ({ shared: false }) },
+    };
+    renderApp(platform);
+    await openImport();
+    fireEvent.click(screen.getByRole('button', { name: 'Sermon notes file' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened or read/i);
+    expect(await db.listEntries(), 'a failed native pick changed the journal').toHaveLength(0);
   });
 
   it('shows a preview before anything is applied', async () => {

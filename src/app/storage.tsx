@@ -13,6 +13,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useState,
   type ReactNode,
@@ -34,6 +35,8 @@ interface StorageValue {
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
   ready: boolean;
   error: string | null;
+  /** Report/clear a post-open read failure without conflating it with empty data. */
+  reportReadError: (source: string, message: string | null) => void;
 }
 
 const StorageContext = createContext<StorageValue | null>(null);
@@ -74,6 +77,7 @@ export function StorageContextProvider({
   const [settings, setSettings] = useState<Settings>({});
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [readErrors, setReadErrors] = useState<Record<string, string>>({});
   // A failure to OPEN the journal, as opposed to a failure to select one.
   // Fatal only where the store is the whole product; see the effect below.
   const [openFailure, setOpenFailure] = useState<Error | null>(null);
@@ -121,6 +125,19 @@ export function StorageContextProvider({
 
   const touch = useCallback(() => setRevision((value) => value + 1), []);
 
+  const reportReadError = useCallback((source: string, message: string | null) => {
+    setReadErrors((current) => {
+      if (message === null) {
+        if (!(source in current)) return current;
+        const next = { ...current };
+        delete next[source];
+        return next;
+      }
+      if (current[source] === message) return current;
+      return { ...current, [source]: message };
+    });
+  }, []);
+
   const updateSettings = useCallback(
     async (patch: Partial<Settings>) => {
       if (!storage) return;
@@ -129,9 +146,20 @@ export function StorageContextProvider({
     [storage],
   );
 
+  const readError = Object.values(readErrors)[0] ?? null;
+  const visibleError = error ?? readError;
   const value = useMemo(
-    () => ({ storage: storage as StorageProvider, revision, touch, settings, updateSettings, ready, error }),
-    [storage, revision, touch, settings, updateSettings, ready, error],
+    () => ({
+      storage: storage as StorageProvider,
+      revision,
+      touch,
+      settings,
+      updateSettings,
+      ready,
+      error: visibleError,
+      reportReadError,
+    }),
+    [storage, revision, touch, settings, updateSettings, ready, visibleError, reportReadError],
   );
 
   // No provider means no journal, so the journal UI never mounts. Every view
@@ -157,10 +185,13 @@ export function useStorageQuery<T>(
   read: (storage: StorageProvider) => Promise<T>,
   deps: unknown[],
   initial: T,
-): { data: T; loading: boolean } {
-  const { storage, revision, ready } = useStorage();
+): { data: T; loading: boolean; error: string | null; complete: boolean } {
+  const { storage, revision, ready, reportReadError } = useStorage();
+  const source = useId();
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [complete, setComplete] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -173,20 +204,39 @@ export function useStorageQuery<T>(
     });
     read(storage)
       .then((result) => {
-        if (!cancelled) setData(result);
+        if (!cancelled) {
+          setData(result);
+          setQueryError(null);
+          setComplete(true);
+          reportReadError(source, null);
+        }
       })
-      .catch(() => {
-        // A failed read leaves the previous value in place; the error surfaced
-        // at open time already told the user storage is unavailable.
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        const message = `Your journal could not be read: ${detail}`;
+        // Keep the last known value, but mark it incomplete. Callers must never
+        // mistake the initial value for a successful empty result.
+        setQueryError(message);
+        setComplete(false);
+        reportReadError(source, message);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      reportReadError(source, null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storage, revision, ready, ...deps]);
+  }, [storage, revision, ready, reportReadError, source, ...deps]);
 
-  return { data, loading };
+  return {
+    data,
+    // Failure is a settled result with `complete: false`, not an endless load.
+    // Consumers can show the explicit error while refusing empty-state claims.
+    loading,
+    error: queryError,
+    complete,
+  };
 }

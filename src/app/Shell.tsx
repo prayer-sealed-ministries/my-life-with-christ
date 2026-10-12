@@ -24,6 +24,7 @@ import { AppMenu } from './AppMenu';
 import { useFocusMode } from './focus-context';
 import { useNotice } from './notice-context';
 import { Link, useRouter, type Route } from './router';
+import { useStorage } from './storage';
 
 /**
  * The product name and what it is, said once.
@@ -71,6 +72,7 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
   const { route } = useRouter();
   const { notice } = useNotice();
   const { focused } = useFocusMode();
+  const { error: storageError } = useStorage();
   const headingRef = useRef<HTMLDivElement>(null);
   const [announcement, setAnnouncement] = useState('');
   const firstRender = useRef(true);
@@ -218,6 +220,18 @@ export function Shell({ children, title }: { children: ReactNode; title: string 
       )}
 
       <FirstVisitNotice />
+
+      {storageError ? (
+        <div className="mx-auto max-w-3xl px-5 pt-4">
+          <p
+            role="alert"
+            className="rounded-card border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+          >
+            {storageError} The app is keeping the last known view and will not treat this as an
+            empty journal.
+          </p>
+        </div>
+      ) : null}
 
       {/* Announce the new page to assistive tech, which a hash change does not. */}
       <p aria-live="polite" className="sr-only">

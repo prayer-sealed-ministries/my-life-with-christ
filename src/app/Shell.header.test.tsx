@@ -18,16 +18,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { RouterProvider } from './router';
 import { Shell } from './Shell';
+import { StorageContextProvider } from './storage';
+import { DexieStorageProvider } from '../storage/db';
 
 const APP_NAME = 'My Life With Christ';
 const TAGLINE = 'Your walk, remembered.';
+let database = 0;
 
 function renderAt(hash: string, title: string, body = <h1>A page</h1>) {
   window.location.hash = hash;
   return render(
-    <RouterProvider>
-      <Shell title={title}>{body}</Shell>
-    </RouterProvider>,
+    <StorageContextProvider provider={new DexieStorageProvider(`shell-header-${database += 1}`)}>
+      <RouterProvider>
+        <Shell title={title}>{body}</Shell>
+      </RouterProvider>
+    </StorageContextProvider>,
   );
 }
 

@@ -46,6 +46,7 @@ import {
 } from './semantics';
 import { byRecency } from '../lib/drafts';
 import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
+import { JournalChangedError, journalToken, type JournalSnapshot } from './journal';
 
 /**
  * The logical database name.
@@ -290,6 +291,8 @@ export class SqliteStorageProvider implements StorageProvider {
   private readonly targetVersion: number;
   private plugin: SqlitePlugin | null = null;
   private opening: Promise<void> | null = null;
+  /** One connection cannot safely host overlapping multi-statement operations. */
+  private operationTail: Promise<void> = Promise.resolve();
 
   constructor(database: string = DATABASE_NAME, options: SqliteProviderOptions = {}) {
     this.database = database;
@@ -361,6 +364,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
   /** Release the connection. Used by tests and by a controlled shutdown. */
   async close(): Promise<void> {
+    await this.operationTail.catch(() => undefined);
     if (!this.plugin) return;
     const plugin = this.plugin;
     this.plugin = null;
@@ -500,6 +504,16 @@ export class SqliteStorageProvider implements StorageProvider {
     ) as T[];
   }
 
+  /** Serialize every public operation that touches the single native connection. */
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.operationTail.then(work, work);
+    this.operationTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   /**
    * Run a unit of work atomically.
    *
@@ -553,9 +567,39 @@ export class SqliteStorageProvider implements StorageProvider {
     }
   }
 
+  /** Write one whole recovery snapshot. Caller owns the transaction. */
+  private async writeDraft(draft: EntryDraft): Promise<void> {
+    await this.write(
+      `INSERT INTO drafts (id, entry_id, created_at, updated_at, data)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           entry_id   = excluded.entry_id,
+           updated_at = excluded.updated_at,
+           data       = excluded.data;`,
+      [draft.id, draft.entryId ?? null, draft.createdAt, draft.updatedAt, JSON.stringify(draft)],
+    );
+  }
+
   private async allEntries(): Promise<Entry[]> {
     const rows = await this.select<{ data: string }>(`SELECT data FROM entries;`);
     return rows.map((row) => JSON.parse(row.data) as Entry);
+  }
+
+  private async allDrafts(): Promise<EntryDraft[]> {
+    const rows = await this.select<{ data: string }>(`SELECT data FROM drafts;`);
+    return rows.map((row) => JSON.parse(row.data) as EntryDraft);
+  }
+
+  private async getEntryRaw(id: string): Promise<Entry | undefined> {
+    const rows = await this.select<{ data: string }>(`SELECT data FROM entries WHERE id = ?;`, [id]);
+    return rows.length ? (JSON.parse(rows[0].data) as Entry) : undefined;
+  }
+
+  private async getSettingsRaw(): Promise<Settings> {
+    const rows = await this.select<{ data: string }>(`SELECT data FROM settings WHERE key = ?;`, [
+      SETTINGS_KEY,
+    ]);
+    return rows.length ? (JSON.parse(rows[0].data) as Settings) : {};
   }
 
   // -------------------------------------------------------------------------
@@ -563,79 +607,152 @@ export class SqliteStorageProvider implements StorageProvider {
   // -------------------------------------------------------------------------
 
   async getEntry(id: string): Promise<Entry | undefined> {
-    const rows = await this.select<{ data: string }>(`SELECT data FROM entries WHERE id = ?;`, [id]);
-    return rows.length ? (JSON.parse(rows[0].data) as Entry) : undefined;
+    return this.enqueue(() => this.getEntryRaw(id));
   }
 
   async listEntries(query: EntryQuery = {}): Promise<Entry[]> {
-    const entries = await this.listEntriesChronological(query);
-    return entries.reverse();
+    return this.enqueue(async () => {
+      const entries = await this.allEntries();
+      return entries
+        .map(indexed)
+        .filter((row) => matches(row, query))
+        .map((row) => row.entry)
+        .sort(chronologically)
+        .reverse();
+    });
   }
 
   async listEntriesChronological(query: EntryQuery = {}): Promise<Entry[]> {
     // Filtered and ordered by the shared semantics rather than in SQL. The
     // predicate is the product's, it already exists, and a WHERE clause that
     // reimplemented it would be a second opinion about what a query means.
-    const entries = await this.allEntries();
-    return entries
-      .map(indexed)
-      .filter((row) => matches(row, query))
-      .map((row) => row.entry)
-      .sort(chronologically);
+    return this.enqueue(async () => {
+      const entries = await this.allEntries();
+      return entries
+        .map(indexed)
+        .filter((row) => matches(row, query))
+        .map((row) => row.entry)
+        .sort(chronologically);
+    });
   }
 
   async createEntry(input: NewEntry): Promise<Entry> {
-    const entry = entryToCreate(input);
-    await this.inTransaction(() => this.writeEntry(entry));
-    return entry;
+    return this.enqueue(async () => {
+      const entry = entryToCreate(input);
+      await this.inTransaction(() => this.writeEntry(entry));
+      return entry;
+    });
   }
 
   async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const existing = await this.getEntry(id);
-    if (!existing) throw new Error(`No entry with id ${id}`);
-    const updated = applyPatch(existing, patch);
-    await this.inTransaction(() => this.writeEntry(updated));
-    return updated;
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const existing = await this.getEntryRaw(id);
+        if (!existing) throw new Error(`No entry with id ${id}`);
+        const updated = applyPatch(existing, patch);
+        await this.writeEntry(updated);
+        return updated;
+      }),
+    );
   }
 
   async deleteEntry(id: string): Promise<void> {
-    // The anchor rows go with it, via ON DELETE CASCADE.
-    await this.inTransaction(() => this.write(`DELETE FROM entries WHERE id = ?;`, [id]));
+    await this.enqueue(() =>
+      this.inTransaction(async () => {
+        // Drafts have no foreign key because an old archive may contain an
+        // orphan. A deliberate entry deletion still retires its own drafts.
+        await this.write(`DELETE FROM drafts WHERE entry_id = ?;`, [id]);
+        // The anchor rows go with it, via ON DELETE CASCADE.
+        await this.write(`DELETE FROM entries WHERE id = ?;`, [id]);
+      }),
+    );
   }
 
   async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
-    const rows = await this.select<{ data: string }>(
-      `SELECT e.data FROM entries e
-         JOIN entry_anchor_keys k ON k.entry_id = e.id
-        WHERE k.anchor_key = ?;`,
-      [anchorLookupKey(anchor)],
-    );
-    return rows.map((row) => JSON.parse(row.data) as Entry).sort(byDateDescending);
+    return this.enqueue(async () => {
+      const rows = await this.select<{ data: string }>(
+        `SELECT e.data FROM entries e
+           JOIN entry_anchor_keys k ON k.entry_id = e.id
+          WHERE k.anchor_key = ?;`,
+        [anchorLookupKey(anchor)],
+      );
+      return rows.map((row) => JSON.parse(row.data) as Entry).sort(byDateDescending);
+    });
   }
 
   async putEntries(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return;
-    // One transaction for the whole batch. Import depends on it: a journal must
-    // not be able to end up half restored.
-    await this.inTransaction(async () => {
-      for (const entry of entries) await this.writeEntry(entry);
-    });
+    await this.enqueue(() =>
+      this.inTransaction(async () => {
+        for (const entry of entries) await this.writeEntry(entry);
+      }),
+    );
   }
 
   async replaceEntries(entries: Entry[]): Promise<void> {
     // The delete and every write share one transaction, so a failure part way
     // through rolls back to the journal the reader already had rather than to
     // no journal at all.
-    await this.inTransaction(async () => {
-      await this.write(`DELETE FROM entries;`);
-      for (const entry of entries) await this.writeEntry(entry);
-    });
+    await this.enqueue(() =>
+      this.inTransaction(async () => {
+        await this.write(`DELETE FROM entries;`);
+        for (const entry of entries) await this.writeEntry(entry);
+      }),
+    );
+  }
+
+  async readJournalSnapshot(): Promise<JournalSnapshot> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const entries = (await this.allEntries()).sort(chronologically);
+        const drafts = (await this.allDrafts()).sort(byRecency);
+        return {
+          entries,
+          drafts,
+          token: journalToken(entries, drafts),
+          capturedAt: new Date().toISOString(),
+        };
+      }),
+    );
+  }
+
+  async journalMatches(token: string): Promise<boolean> {
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const entries = await this.allEntries();
+        const drafts = await this.allDrafts();
+        return journalToken(entries, drafts) === token;
+      }),
+    );
+  }
+
+  async replaceJournal(
+    entries: Entry[],
+    drafts: EntryDraft[],
+    expectedToken?: string,
+  ): Promise<void> {
+    await this.enqueue(() =>
+      this.inTransaction(async () => {
+        if (expectedToken !== undefined) {
+          const currentEntries = await this.allEntries();
+          const currentDrafts = await this.allDrafts();
+          if (journalToken(currentEntries, currentDrafts) !== expectedToken) {
+            throw new JournalChangedError();
+          }
+        }
+
+        await this.write(`DELETE FROM drafts;`);
+        await this.write(`DELETE FROM entries;`);
+        for (const entry of entries) await this.writeEntry(entry);
+        for (const draft of drafts) await this.writeDraft(draft);
+      }),
+    );
   }
 
   async clearEntries(): Promise<void> {
     // Settings are a different table and are deliberately untouched — a
     // replace-mode import must not forget when the reader last exported.
-    await this.inTransaction(() => this.write(`DELETE FROM entries;`));
+    await this.enqueue(() => this.inTransaction(() => this.write(`DELETE FROM entries;`)));
   }
 
   // --- recovery drafts ---------------------------------------------------
@@ -644,78 +761,64 @@ export class SqliteStorageProvider implements StorageProvider {
     // One statement inside one transaction: the snapshot lands whole or not at
     // all. A half-applied draft would give back a title from one keystroke and
     // notes from another, which is worse than losing it.
-    await this.inTransaction(() =>
-      this.write(
-        `INSERT INTO drafts (id, entry_id, created_at, updated_at, data)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             entry_id   = excluded.entry_id,
-             updated_at = excluded.updated_at,
-             data       = excluded.data;`,
-        [draft.id, draft.entryId ?? null, draft.createdAt, draft.updatedAt, JSON.stringify(draft)],
-      ),
-    );
+    await this.enqueue(() => this.inTransaction(() => this.writeDraft(draft)));
   }
 
   async getDraft(id: string): Promise<EntryDraft | undefined> {
-    const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [id]);
-    return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+    return this.enqueue(async () => {
+      const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [id]);
+      return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+    });
   }
 
   async getDraftForEntry(entryId: string): Promise<EntryDraft | undefined> {
-    const rows = await this.select<{ data: string }>(
-      `SELECT data FROM drafts WHERE entry_id = ? ORDER BY updated_at DESC LIMIT 1;`,
-      [entryId],
-    );
-    return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+    return this.enqueue(async () => {
+      const rows = await this.select<{ data: string }>(
+        `SELECT data FROM drafts WHERE entry_id = ? ORDER BY updated_at DESC LIMIT 1;`,
+        [entryId],
+      );
+      return rows.length ? (JSON.parse(rows[0].data) as EntryDraft) : undefined;
+    });
   }
 
   async listDrafts(): Promise<EntryDraft[]> {
-    const rows = await this.select<{ data: string }>(
-      `SELECT data FROM drafts ORDER BY updated_at DESC;`,
-    );
-    // Sorted again in JS so the tie-break matches Dexie exactly. Two providers
-    // disagreeing about order is the class of bug src/storage/semantics.ts
-    // exists to prevent.
-    return rows.map((row) => JSON.parse(row.data) as EntryDraft).sort(byRecency);
+    return this.enqueue(async () => (await this.allDrafts()).sort(byRecency));
   }
 
   async deleteDraft(id: string): Promise<void> {
-    await this.inTransaction(() => this.write(`DELETE FROM drafts WHERE id = ?;`, [id]));
+    await this.enqueue(() =>
+      this.inTransaction(() => this.write(`DELETE FROM drafts WHERE id = ?;`, [id])),
+    );
   }
 
   async getSettings(): Promise<Settings> {
-    const rows = await this.select<{ data: string }>(`SELECT data FROM settings WHERE key = ?;`, [
-      SETTINGS_KEY,
-    ]);
-    return rows.length ? (JSON.parse(rows[0].data) as Settings) : {};
+    return this.enqueue(() => this.getSettingsRaw());
   }
 
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
-    const current = await this.getSettings();
-    const next = { ...current, ...patch };
-    // JSON.stringify drops keys whose value is undefined, which is exactly the
-    // documented way to clear one: patching `reminderDismissedAt: undefined`
-    // must un-dismiss the export reminder rather than storing a null.
-    await this.inTransaction(() =>
-      this.write(
-        `INSERT INTO settings (key, data) VALUES (?, ?)
-           ON CONFLICT(key) DO UPDATE SET data = excluded.data;`,
-        [SETTINGS_KEY, JSON.stringify(next)],
-      ),
+    return this.enqueue(() =>
+      this.inTransaction(async () => {
+        const current = await this.getSettingsRaw();
+        const next = { ...current, ...patch };
+        await this.write(
+          `INSERT INTO settings (key, data) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET data = excluded.data;`,
+          [SETTINGS_KEY, JSON.stringify(next)],
+        );
+        return next;
+      }),
     );
-    return next;
   }
 
   async listTags(): Promise<string[]> {
-    return distinctValues(await this.allEntries(), TAGS);
+    return this.enqueue(async () => distinctValues(await this.allEntries(), TAGS));
   }
 
   async listSpeakers(): Promise<string[]> {
-    return distinctValues(await this.allEntries(), SPEAKERS);
+    return this.enqueue(async () => distinctValues(await this.allEntries(), SPEAKERS));
   }
 
   async listPlaces(): Promise<string[]> {
-    return distinctValues(await this.allEntries(), PLACES);
+    return this.enqueue(async () => distinctValues(await this.allEntries(), PLACES));
   }
 }

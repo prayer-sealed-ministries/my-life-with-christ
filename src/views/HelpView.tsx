@@ -217,10 +217,10 @@ export default function HelpView() {
         </h2>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           The copy on this device is not a backup. Removing the app, clearing its data, or
-            losing the device takes the journal with it. If Android&rsquo;s backup is switched on
-            for this app, Android may include what it stores in your device backup — that is
-            Android&rsquo;s own feature, not something this app arranges, and not something to
-            rely on. An export is the copy you control.
+            losing the device takes the journal with it. On iOS and Android, the operating system
+            may include the app&rsquo;s data in your own device or cloud backup when backup is enabled
+            — that is Apple&rsquo;s or Android&rsquo;s feature, not something this app arranges, and not
+            something to rely on. An export is the copy you control.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           <Link to={{ name: 'data' }} className="underline focus-visible:outline-2">
@@ -280,10 +280,10 @@ export default function HelpView() {
             journal are all on the device, so reading and writing work with no network at all.
           </p>
           <p className="measure text-sm leading-relaxed text-ink-soft">
-            One thing the app does not control: if Android&rsquo;s backup is switched on for this
-            app, Android may include what it stores in your device backup. That backup is yours
-            and goes to your own account, not to anyone here. Your App Lock PIN is never included
-            in it.
+            One thing the app does not control: on iOS and Android, the operating system may
+            include what the app stores in your own device or cloud backup when backup is enabled.
+            That is Apple&rsquo;s or Android&rsquo;s feature, not an upload to anyone here. Your App Lock
+            PIN is never included in it.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           More about the product and where its words come from is in{' '}

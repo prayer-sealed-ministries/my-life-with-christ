@@ -28,6 +28,8 @@ import { useStorage, useStorageQuery } from '../app/storage';
 import { useFilePicker, useFileSaver } from '../platform/context';
 import type { PickedFile } from '../platform/ports';
 import { pickedFromDomFile } from '../platform/web';
+import { JournalChangedError, type JournalSnapshot } from '../storage/journal';
+import { PendingJournalWriteError, settlePendingJournalWrites } from '../storage/pending';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
 import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
@@ -220,7 +222,8 @@ export default function DataView() {
     setExportNothing('');
     setExportError('');
     try {
-      const { archive, saved } = await exportEverything({
+      await settlePendingJournalWrites();
+      const { archive, delivery, current, recordingError } = await exportEverything({
         storage,
         outlineBooks: sections.outlineBooks,
         topics,
@@ -228,22 +231,31 @@ export default function DataView() {
         filter,
         // Where the bytes go is the platform's business, not this view's.
         files,
+        // Use the context writer so the durable value and the line on this
+        // page advance together. The exporter still supplies a storage-backed
+        // default for non-React callers.
+        recordSettings: updateSettings,
       });
-
-      // exportEverything records lastExportAt straight to storage. Re-read it
-      // through the context — an empty patch changes nothing — so the line
-      // below updates without this view keeping a second copy of the truth.
-      if (!filter) await updateSettings({});
 
       // Only a save that happened may be announced. Backing out of the file
       // picker used to land here too, so the app said "Saved <filename> — 2
       // entries. Keep it somewhere that is not this device." over a file that
       // was never written.
       setExportNothing(
-        saved ? '' : 'Nothing was saved. Your journal is unchanged — you can export again whenever you like.',
+        delivery === 'cancelled'
+          ? 'Nothing was saved. Your journal is unchanged — you can export again whenever you like.'
+          : delivery === 'initiated'
+            ? current
+              ? 'The download was started, but this download method cannot verify that the file finished saving. Check that the archive opens before treating it as a backup.'
+              : 'The download was started, but your journal changed while it was being built and the file could not be verified. Export again.'
+            : !current
+              ? 'The file was saved, but your journal changed while it was being built. Export again before treating it as a current full backup.'
+              : recordingError
+                ? `The file was saved, but the app could not update its backup reminder: ${recordingError}. Keep the file, and export again after storage is working.`
+              : '',
       );
       setExportMessage(
-        !saved
+        delivery !== 'committed' || !current
           ? ''
           : filter
             ? `Saved ${archive.filename} — ${plural(archive.entryCount, 'entry', 'entries')}, with ${plural(archive.excludedCount, 'entry', 'entries')} left out. This is not a backup of the whole journal.`
@@ -255,10 +267,8 @@ export default function DataView() {
       );
     } finally {
       // Queue the focus request before the re-render that re-enables the button.
-      {
       const target = filter ? partialExportButton.current : fullExportButton.current;
       if (target) refocus.current = { target, from: document.activeElement };
-    }
       setBusy('none');
     }
   };
@@ -276,7 +286,7 @@ export default function DataView() {
   const [fileName, setFileName] = useState('');
   const [reading, setReading] = useState(false);
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
-  const [existing, setExisting] = useState<Entry[] | null>(null);
+  const [baseline, setBaseline] = useState<JournalSnapshot | null>(null);
   const [mode, setMode] = useState<ImportMode>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
@@ -285,8 +295,11 @@ export default function DataView() {
   // Pure, so changing the mode re-answers "what would this do?" with no reparse
   // and — the point of the whole flow — no write.
   const preview = useMemo(
-    () => (parsed && existing ? previewImport(parsed, existing, mode, anchorsResolve) : null),
-    [parsed, existing, mode],
+    () =>
+      parsed && baseline
+        ? previewImport(parsed, baseline.entries, mode, anchorsResolve, baseline.drafts)
+        : null,
+    [parsed, baseline, mode],
   );
 
   /**
@@ -302,7 +315,7 @@ export default function DataView() {
   const clearPending = () => {
     readToken.current += 1;
     setParsed(null);
-    setExisting(null);
+    setBaseline(null);
     setFileName('');
     setReading(false);
     // Clearing the element's value lets the same file be chosen again, which is
@@ -322,7 +335,7 @@ export default function DataView() {
   const onFileChosen = async (file: PickedFile | null) => {
     const token = (readToken.current += 1);
     setParsed(null);
-    setExisting(null);
+    setBaseline(null);
     setImportError('');
     setImportResult('');
     if (!file) {
@@ -336,50 +349,63 @@ export default function DataView() {
     setFileName(file.name);
     setReading(true);
     try {
+      await settlePendingJournalWrites();
       const [incoming, mine] = await Promise.all([
         parseImport(file.bytes, {
           resolveOutlineId: (id: string) => resolveOutlineId(id, sections),
           isTopicId: (id) => topicsById.has(id),
           isBookId: (id) => Boolean(versification[id]),
         }),
-        storage.listEntries(),
+        storage.readJournalSnapshot(),
       ]);
       if (token !== readToken.current) return;
       setParsed(incoming);
-      setExisting(mine);
+      setBaseline(mine);
     } catch (cause) {
       if (token !== readToken.current) return;
-      setImportError(
-        cause instanceof ArchiveIntegrityError
+      const message = cause instanceof PendingJournalWriteError
+        ? `${file.name} was not read because ${cause.message.toLowerCase()}. Keep the writing page open and try again. Nothing was changed.`
+        : cause instanceof ArchiveIntegrityError
           ? // An archive that did not match its own manifest. Deliberately not
             // "could not be read" — it read perfectly well, which is the
             // problem — and deliberately no accusation: a bad copy, a failing
             // card or a half-finished sync produce this too, and are likelier
             // than anyone meddling. The failing checksums stay out of the UI.
             `${file.name} could not be verified and was not restored. The file may be damaged or incomplete. Nothing was changed.`
-          : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`,
-      );
-      setFileName('');
+          : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`;
+      clearPending();
+      setImportError(message);
     } finally {
       if (token === readToken.current) setReading(false);
     }
   };
 
   const confirmImport = async () => {
-    if (!parsed) return;
+    if (!parsed || !baseline) return;
     setImporting(true);
     setImportError('');
     try {
-      const outcome = await applyImport(parsed, storage, mode);
+      const outcome = await applyImport(parsed, storage, mode, baseline.token);
       touch();
       setImportResult(
         outcome.replaced
-          ? `Replaced your journal from ${fileName}: everything that was here before was deleted, and ${plural(outcome.imported, 'entry', 'entries')} written.`
-          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} left as they were.`,
+          ? `Replaced your journal from ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written atomically.`
+          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} already identical.${outcome.conflictsPreserved > 0 ? ` ${plural(outcome.conflictsPreserved, 'conflicting entry was', 'conflicting entries were')} kept as separate copies so neither version was lost.` : ''}`,
       );
       clearPending();
     } catch (cause) {
-      setImportError(`The import did not finish: ${messageOf(cause, 'something went wrong')}.`);
+      if (cause instanceof JournalChangedError) {
+        try {
+          setBaseline(await storage.readJournalSnapshot());
+          setImportError(`${cause.message} The preview below has been refreshed.`);
+        } catch (refreshCause) {
+          setImportError(
+            `The import did not finish, and the preview could not be refreshed: ${messageOf(refreshCause, 'the journal could not be read')}. Nothing was changed.`,
+          );
+        }
+      } else {
+        setImportError(`The import did not finish: ${messageOf(cause, 'something went wrong')}.`);
+      }
     } finally {
       setImporting(false);
     }
@@ -388,14 +414,10 @@ export default function DataView() {
   /**
    * The two ways an import can land, described from the preview itself.
    *
-   * The replace count comes from `preview.existing` — the very list the preview
-   * was computed from — and never from the page's own entry count. Those are
-   * two reads taken at two moments, and the count above starts at 0 until its
-   * read lands: choose a file quickly enough and the old code offered "Deletes
-   * all 0 entries in this journal first. There is no undo." over a journal that
-   * was not empty. The line beside a destructive action is the last place a
-   * number may be guessed at, and taking it from the preview means there is no
-   * second read left to disagree.
+   * The replace counts come from the same atomic snapshot used to build the
+   * preview — never from the page's separately loaded entry count. The token
+   * from that snapshot is also required at confirmation, so work accepted
+   * after the preview cannot be deleted under an older warning.
    */
   const describeModes = (
     counted: ImportPreview,
@@ -403,12 +425,12 @@ export default function DataView() {
     {
       value: 'merge',
       label: 'Merge (recommended)',
-      detail: 'Keeps what is here. Where the same entry exists on both sides, the newer one wins.',
+      detail: 'Keeps what is here. Different versions of the same entry are kept as separate copies.',
     },
     {
       value: 'replace',
       label: 'Replace — destructive',
-      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, then writes the file's entries. There is no undo.`,
+      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, along with ${plural(counted.existingDrafts, 'unfinished draft', 'unfinished drafts')}, then writes the file's entries and drafts. There is no undo.`,
     },
   ];
 
@@ -432,10 +454,10 @@ export default function DataView() {
         </p>
         <p className="mt-2 text-sm leading-relaxed">
           Everything you have written lives on this device. Clearing this app&rsquo;s data,
-          removing it, or losing the device takes your journal with it. If Android&rsquo;s backup
-          is switched on for this app, Android may include what it stores in your device backup —
-          that is Android&rsquo;s own feature, not something this app arranges, and not something
-          to rely on. An export is the copy you control.
+          removing it, or losing the device takes your journal with it. On iOS and Android, the
+          operating system may include the app&rsquo;s data in your own device or cloud backup when
+          backup is enabled — that is Apple&rsquo;s or Android&rsquo;s feature, not something this app
+          arranges, and not something to rely on. An export is the copy you control.
         </p>
         <p className="mt-2 text-sm leading-relaxed">{lastExportedWords(settings.lastExportAt, new Date())}</p>
       </div>
@@ -701,9 +723,12 @@ export default function DataView() {
                 void picker
                   .pick({ accept: ['application/zip', 'application/json', '.zip', '.json'] })
                   .then(onFileChosen)
-                  // Cancelling is not a failure, and neither is a picker that
-                  // could not open: the journal is untouched either way.
-                  .catch(() => onFileChosen(null));
+                  .catch((cause) => {
+                    clearPending();
+                    setImportError(
+                      `The file picker could not read that file: ${messageOf(cause, 'the provider did not return its contents')}. Nothing was changed.`,
+                    );
+                  });
               }}
               className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
             >
@@ -719,7 +744,16 @@ export default function DataView() {
               onChange={(event) => {
                 const chosen = event.target.files?.[0];
                 // The web binding: a DOM File becomes the shape every edition uses.
-                if (chosen) void pickedFromDomFile(chosen).then(onFileChosen);
+                if (chosen) {
+                  void pickedFromDomFile(chosen)
+                    .then(onFileChosen)
+                    .catch((cause) => {
+                      clearPending();
+                      setImportError(
+                        `${chosen.name} could not be read: ${messageOf(cause, 'the selected file could not be read')}. Nothing was changed.`,
+                      );
+                    });
+                }
                 else void onFileChosen(null);
               }}
               disabled={importing || blocked}
@@ -764,12 +798,12 @@ export default function DataView() {
                 <strong>{preview.newEntries}</strong> new — not in this journal yet.
               </li>
               <li>
-                <strong>{preview.updated}</strong> updated — a newer version of an entry already
-                here.
+                <strong>{preview.updated}</strong> newer conflicting versions — these are preserved
+                as separate copies rather than chosen by the device clock.
               </li>
               <li>
-                <strong>{preview.unchanged}</strong> unchanged — this journal already has the same
-                or a newer copy.
+                <strong>{preview.unchanged}</strong> unchanged — this journal already has the exact
+                same copy.
               </li>
               <li>
                 <strong>{preview.conflicts.length}</strong>{' '}
@@ -796,9 +830,7 @@ export default function DataView() {
                       {conflict.theirsUpdatedAt.slice(0, 10)}.{' '}
                       {mode === 'replace'
                         ? 'Replace keeps the file’s copy.'
-                        : conflict.theirsUpdatedAt > conflict.mineUpdatedAt
-                          ? 'The file’s copy is newer and will win.'
-                          : 'Your copy is newer and will be kept.'}
+                        : 'Merge keeps both versions as separate entries.'}
                     </li>
                   ))}
                   {preview.conflicts.length > 10 ? (

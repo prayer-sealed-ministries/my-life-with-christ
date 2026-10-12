@@ -312,22 +312,25 @@ describe('import safety', () => {
     expect(await db.listEntries()).toHaveLength(1);
   });
 
-  it('merges with the newest updatedAt winning', async () => {
+  it('keeps both differing same-id versions even when the archive timestamp is newer', async () => {
     await db.putEntries([{ ...SERMON, title: 'Mine', updatedAt: '2026-09-10T00:00:00.000Z' }]);
     const archive = await buildArchive(archiveOptions([{ ...SERMON, title: 'Theirs', updatedAt: '2026-09-11T00:00:00.000Z' }]));
     await applyImport(await parseImport(archive.bytes), db, 'merge');
 
-    const [entry] = await db.listEntries();
-    expect(entry.title).toBe('Theirs');
+    const entries = await db.listEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.title).sort()).toEqual(['Mine', 'Theirs']);
+    expect(new Set(entries.map((entry) => entry.id)).size).toBe(2);
   });
 
-  it('keeps the local copy when it is newer', async () => {
+  it('keeps both differing same-id versions when a clock makes the local one look newer', async () => {
     await db.putEntries([{ ...SERMON, title: 'Mine', updatedAt: '2026-09-12T00:00:00.000Z' }]);
     const archive = await buildArchive(archiveOptions([{ ...SERMON, title: 'Theirs', updatedAt: '2026-09-11T00:00:00.000Z' }]));
     await applyImport(await parseImport(archive.bytes), db, 'merge');
 
-    const [entry] = await db.listEntries();
-    expect(entry.title).toBe('Mine');
+    const entries = await db.listEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.title).sort()).toEqual(['Mine', 'Theirs']);
   });
 
   it('replace mode clears first, and warns that it will', async () => {
@@ -341,6 +344,22 @@ describe('import safety', () => {
     await applyImport(parsed, db, 'replace');
     const after = await db.listEntries();
     expect(after.map((entry) => entry.id)).toEqual([AWKWARD.id]);
+  });
+
+  it('refuses a stale replace preview before deleting newer local writing', async () => {
+    await db.putEntries([SERMON]);
+    const beforePreview = await db.readJournalSnapshot();
+    const archive = await buildArchive(archiveOptions([AWKWARD]));
+    const parsed = await parseImport(archive.bytes);
+
+    await db.putEntries([READING]);
+
+    await expect(applyImport(parsed, db, 'replace', beforePreview.token)).rejects.toThrow(
+      /journal changed.*nothing was replaced/i,
+    );
+    expect((await db.listEntries()).map((entry) => entry.id).sort()).toEqual(
+      [SERMON.id, READING.id].sort(),
+    );
   });
 
   it('refuses a file that is not a journal, with a readable message', async () => {

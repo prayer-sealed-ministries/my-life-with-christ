@@ -1,10 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { MARKER, NATIVE_PROFILE } from '../native-assets.mjs';
+import { fingerprint, MARKER, NATIVE_PROFILE } from '../native-assets.mjs';
 import { COPIED_ASSETS } from '../native-sync.mjs';
 
 /**
@@ -191,6 +200,18 @@ describe('the app runs from bundled assets or not at all', () => {
   });
 });
 
+describe('the hosted build becomes offline-capable on its first visit', () => {
+  const worker = read('scripts/vite-plugin-offline.mjs');
+
+  it('claims the page after the complete cache activates without forcing an update takeover', () => {
+    expect(worker).toContain('self.clients.claim()');
+    // An updating worker must not take an old page over and serve new hashed
+    // chunks into it. It may claim a first, previously uncontrolled page; an
+    // existing controller remains until its tabs naturally close.
+    expect(worker).not.toContain('self.skipWaiting()');
+  });
+});
+
 describe('only the public profile can be packaged', () => {
   const assets = read('scripts/native-assets.mjs');
   const sync = read('scripts/native-sync.mjs');
@@ -219,12 +240,30 @@ describe('only the public profile can be packaged', () => {
     expect(sync).toMatch(/import \{[^}]*MARKER[^}]*\} from '\.\/native-assets\.mjs'/);
     expect(MARKER).toBe('native-assets.json');
     expect(sync).toMatch(/marker\.profile !== NATIVE_PROFILE/);
+    expect(sync).toMatch(/marker\.debugTools !== false/);
     expect(sync).toMatch(/actual\.files !== marker\.files/);
     expect(sync).toMatch(/actual\.bytes !== marker\.bytes/);
+    expect(sync).toMatch(/actual\.sha256 !== marker\.sha256/);
 
     // Three distinct refusals, each exiting non-zero.
     expect(sync.match(/fail\(/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(sync).toContain('process.exit(1)');
+  });
+
+  it('detects a same-length asset mutation that count and byte totals cannot see', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'journey-native-fingerprint-'));
+    try {
+      writeFileSync(join(directory, 'chunk.js'), 'safe-bytes');
+      const before = fingerprint(directory, MARKER);
+      writeFileSync(join(directory, 'chunk.js'), 'evil-bytes');
+      const after = fingerprint(directory, MARKER);
+
+      expect(after.files).toBe(before.files);
+      expect(after.bytes).toBe(before.bytes);
+      expect(after.sha256).not.toBe(before.sha256);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('re-verifies the copied assets where they now live', () => {
@@ -285,6 +324,7 @@ describe('the packaged artefacts carry what was verified', () => {
 
       const marker = JSON.parse(readFileSync(join(copied, MARKER), 'utf8'));
       expect(marker.profile).toBe(NATIVE_PROFILE);
+      expect(marker.debugTools).toBe(false);
 
       // The real verifier over the real bytes, not a re-implementation of it.
       const output = runVerifier(copied);

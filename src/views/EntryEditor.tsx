@@ -23,6 +23,7 @@ import { Link, useRouter } from '../app/router';
 import { nextFrame } from '../app/deferred-navigation';
 import { useStorage } from '../app/storage';
 import { useUnsavedWorkGuard } from '../platform/context';
+import { capacitorAppState } from '../platform/app-state';
 import { CollapseIcon, ExpandIcon } from '../components/icons';
 import { Markdown } from '../components/Markdown';
 import { MarkdownEditor } from '../components/MarkdownEditor';
@@ -40,6 +41,7 @@ import {
   type RecentDetails,
 } from '../lib/recent-details';
 import { newId } from '../storage/semantics';
+import { trackPendingJournalWrite } from '../storage/pending';
 import { refToString, versification } from '../lib/bible';
 import { BOOK_NAMES } from '../lib/canon';
 import {
@@ -425,6 +427,17 @@ export default function EntryEditor({
   const { navigate, navigateNextFrame } = useRouter();
 
   const [form, setForm] = useState<FormState | null>(null);
+  const currentEntryId = useRef(entryId);
+  currentEntryId.current = entryId;
+  /**
+   * The newest form React has rendered, including changes accepted while an
+   * explicit Save is awaiting storage. Event handlers close over the form that
+   * existed when Save began; this ref is the authority after any await.
+   */
+  const latestForm = useRef<FormState | null>(null);
+  latestForm.current = form;
+  /** Deliberate discard/delete is the only route leave that must not recover. */
+  const recoverOnUnmount = useRef(true);
 
   // --- crash-safe drafts --------------------------------------------------
   //
@@ -441,6 +454,8 @@ export default function EntryEditor({
    * first one's unfinished work.
    */
   const draftId = useRef<string | null>(draftParam ?? null);
+  /** Parent of future draft writes; changes when a new entry is first saved. */
+  const draftEntryId = useRef<string | undefined>(entryId);
   /** When the draft was first written, so "started at" means something. */
   const draftCreatedAt = useRef<string | null>(null);
   /**
@@ -487,6 +502,8 @@ export default function EntryEditor({
    * against the one being edited now.
    */
   const [missingId, setMissingId] = useState<string | null>(null);
+  /** A failed read is not evidence that an entry or draft is absent. */
+  const [loadError, setLoadError] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
   /**
    * Details this reader has saved before, for the fields inside Details.
@@ -505,6 +522,7 @@ export default function EntryEditor({
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   /** Open only on a saved entry, and only when there is nothing unsaved. */
   /**
    * The saved entry, loaded when Share is pressed, or null when it is closed.
@@ -714,7 +732,9 @@ export default function EntryEditor({
     // them means the writing is not being kept and the reader should be told.
     if (result.status === 'saved') {
       setDraftTrouble(false);
-      setNotYetDurable(false);
+      // A newer generation may have arrived while the successful write was in
+      // flight. Only the generation that is actually durable clears the guard.
+      setNotYetDurable(result.pending);
       return;
     }
     // A failed write leaves the words on screen and nowhere else, so the guard
@@ -733,7 +753,7 @@ export default function EntryEditor({
           draftCreatedAt.current ??= now;
           await storage.putDraft({
             id,
-            ...(entryId ? { entryId } : {}),
+            ...(draftEntryId.current ? { entryId: draftEntryId.current } : {}),
             form: snapshot,
             createdAt: draftCreatedAt.current,
             updatedAt: now,
@@ -743,7 +763,7 @@ export default function EntryEditor({
       });
     }
     return autosaver.current;
-  }, [entryId, onAutosaveResult, storage]);
+  }, [onAutosaveResult, storage]);
 
   /**
    * Throw away a draft whose reason to exist has gone.
@@ -759,8 +779,9 @@ export default function EntryEditor({
    * draft a moment later, which is worse than never having retired it — nothing
    * on screen would say so.
    */
-  const retireDraft = useCallback(async () => {
+  const retireDraft = useCallback(async (options: { requireDeletion?: boolean } = {}) => {
     const id = draftId.current;
+    const createdAt = draftCreatedAt.current;
     const writer = autosaver.current;
     // Cleared synchronously: the effect below runs again before any of this
     // resolves, and it must not find a draft id still standing and re-enter.
@@ -771,8 +792,29 @@ export default function EntryEditor({
     setHasDraft(false);
     setDraftRestored(false);
     await writer?.settled();
-    if (id) await storage.deleteDraft(id).catch(() => {});
-  }, [storage]);
+    if (!id) return;
+    try {
+      await storage.deleteDraft(id);
+    } catch (cause) {
+      if (!options.requireDeletion) return;
+
+      // A rejected delete has an unknown outcome at this boundary: it may have
+      // failed before the transaction, or the provider may have committed and
+      // then lost its connection. Restore the identity and rewrite the latest
+      // snapshot so either outcome leaves the writing recoverable.
+      draftId.current = id;
+      draftCreatedAt.current = createdAt;
+      setHasDraft(true);
+      setNotYetDurable(true);
+      const snapshot = latestForm.current;
+      if (snapshot) {
+        const replacement = getAutosaver();
+        replacement.queue(snapshot);
+        await replacement.flush();
+      }
+      throw cause;
+    }
+  }, [getAutosaver, storage]);
 
   /**
    * Snapshot the editor whenever it changes.
@@ -814,6 +856,58 @@ export default function EntryEditor({
     getAutosaver().queue(form);
   }, [form, getAutosaver, retireDraft]);
 
+  /**
+   * A native process can be suspended immediately after backgrounding. Push
+   * the latest rendered snapshot through the same ordered writer as soon as
+   * the lifecycle signal arrives instead of waiting for the debounce timer.
+   */
+  useEffect(() => {
+    const source = capacitorAppState();
+    return source.subscribe(
+      (active) => {
+        if (active) return;
+        const snapshot = latestForm.current;
+        if (!snapshot || !hasRecoverableChanges(snapshot, canonicalForm.current)) return;
+        if (!draftId.current) {
+          draftId.current = newId();
+          setHasDraft(true);
+        }
+        setNotYetDurable(true);
+        const writer = getAutosaver();
+        // Queue again deliberately: it closes the tiny gap where React has
+        // rendered the keystroke but the ordinary snapshot effect has not run.
+        writer.queue(snapshot);
+        void writer.flush().catch(() => {
+          setNotYetDurable(true);
+          setDraftTrouble(true);
+        });
+      },
+      () => {
+        // A missing lifecycle signal cannot itself save text. Keep the normal
+        // autosaver running, but never imply that pending words are durable.
+        if (autosaver.current?.hasPendingWork) setNotYetDurable(true);
+      },
+    );
+  }, [getAutosaver]);
+
+  /**
+   * Leaving through in-app navigation is not a licence to wait out the debounce.
+   * Start the newest draft write during cleanup and register it outside React,
+   * where the Data page can await it before taking a backup/import snapshot.
+   */
+  useEffect(
+    () => () => {
+      if (!recoverOnUnmount.current) return;
+      const snapshot = latestForm.current;
+      if (!snapshot || !hasRecoverableChanges(snapshot, canonicalForm.current)) return;
+      if (!draftId.current) draftId.current = newId();
+      const writer = getAutosaver();
+      writer.queue(snapshot);
+      trackPendingJournalWrite(writer.flush());
+    },
+    [getAutosaver],
+  );
+
   /** What a save writes to: the entry being edited, or the one just created. */
   const targetId = entryId ?? createdId;
 
@@ -823,6 +917,8 @@ export default function EntryEditor({
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
+
+    draftEntryId.current = entryId;
 
     // The route switch reuses this instance, so every piece of transient state
     // has to be stood down when the target changes. Left standing, a delete
@@ -835,7 +931,9 @@ export default function EntryEditor({
     // route so React remounts it, which makes the reset belt and braces.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMissingId(null);
+    setLoadError('');
     setConfirmingDelete(false);
+    setDeleting(false);
     setImportingNotes(false);
     setConfirmingRemoveProvided(false);
     setSaving(false);
@@ -849,11 +947,24 @@ export default function EntryEditor({
         // Work in progress wins over a blank page. There is no ambiguity to
         // resolve here — nothing has ever been saved under this id, so the
         // draft IS the entry as far as the reader is concerned.
-        const resuming = draftParam ? await storage.getDraft(draftParam).catch(() => undefined) : undefined;
+        let resuming;
+        try {
+          resuming = draftParam ? await storage.getDraft(draftParam) : undefined;
+        } catch (cause) {
+          if (!cancelled) {
+            setLoadError(
+              cause instanceof Error
+                ? `Your unfinished writing could not be opened: ${cause.message}`
+                : 'Your unfinished writing could not be opened.',
+            );
+          }
+          return;
+        }
         if (cancelled) return;
 
         if (resuming) {
           draftId.current = resuming.id;
+          draftEntryId.current = resuming.entryId;
           draftCreatedAt.current = resuming.createdAt;
           // Nothing has ever been saved under this id, so there is no canonical
           // state to be the same as. Set with the form, never apart from it: a
@@ -886,7 +997,7 @@ export default function EntryEditor({
       };
     }
 
-    Promise.all([storage.getEntry(entryId), storage.getDraftForEntry(entryId).catch(() => undefined)])
+    Promise.all([storage.getEntry(entryId), storage.getDraftForEntry(entryId)])
       .then(([entry, draft]) => {
         if (cancelled) return;
         if (!entry) {
@@ -925,8 +1036,14 @@ export default function EntryEditor({
         setForm(saved);
         setDetailsOpen(hasDetails(saved));
       })
-      .catch(() => {
-        if (!cancelled) setMissingId(entryId);
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setLoadError(
+            cause instanceof Error
+              ? `That entry could not be opened: ${cause.message}`
+              : 'That entry could not be opened.',
+          );
+        }
       });
     return () => {
       cancelled = true;
@@ -1287,7 +1404,11 @@ export default function EntryEditor({
     // the live region and still gets announced the second time.
     setMessage('');
 
-    const links: EntryLink[] = form.links
+    // This is the exact version licensed by this press of Save. A later edit
+    // must never be folded into it accidentally or deleted as though it were.
+    const submittedForm = form;
+
+    const links: EntryLink[] = submittedForm.links
       .filter(linkHasContent)
       .map((link) => ({
         url: link.url.trim(),
@@ -1297,29 +1418,35 @@ export default function EntryEditor({
       }));
 
     const patch: Partial<Entry> = {
-      kind: form.kind,
-      title: form.title.trim(),
-      date: form.date || todayIso(),
-      place: form.place.trim() || undefined,
-      speaker: form.speaker.trim() || undefined,
-      sermonSeries: form.sermonSeries.trim() || undefined,
-      notes: form.notes,
-      reflection: form.reflection,
-      prayer: form.prayer.trim() || undefined,
-      tags: parseTags(form.tagsText),
+      kind: submittedForm.kind,
+      title: submittedForm.title.trim(),
+      date: submittedForm.date || todayIso(),
+      place: submittedForm.place.trim() || undefined,
+      speaker: submittedForm.speaker.trim() || undefined,
+      sermonSeries: submittedForm.sermonSeries.trim() || undefined,
+      notes: submittedForm.notes,
+      reflection: submittedForm.reflection,
+      prayer: submittedForm.prayer.trim() || undefined,
+      tags: parseTags(submittedForm.tagsText),
       links,
-      anchors: form.anchors,
-      forDescendants: form.forDescendants,
-      scriptureRefs: form.scriptureRefs,
+      anchors: submittedForm.anchors,
+      forDescendants: submittedForm.forDescendants,
+      scriptureRefs: submittedForm.scriptureRefs,
       // Somebody else's words, written down as somebody else's. `notes` above
       // carries the reader's and is untouched by any of this.
-      sourceMaterial: form.sourceMaterial ?? undefined,
+      sourceMaterial: submittedForm.sourceMaterial ?? undefined,
     };
+
+    // Set the instant the canonical transaction succeeds. Work after that
+    // point is recovery-draft bookkeeping; if it fails, telling somebody the
+    // entry itself was not saved would invite a second create and a duplicate.
+    let canonicalSaved: Entry | null = null;
 
     try {
       // Flush before the canonical write, so Save cannot race the settle
       // window and commit against text the reader can no longer see.
-      await getAutosaver().flush().catch(() => {
+      const savingWriter = getAutosaver();
+      await savingWriter.flush().catch(() => {
         // A draft that would not write does not stop an explicit save: the
         // canonical write below is the one that matters, and it reports its own
         // failure. Swallowing here only means the draft is stale, and the next
@@ -1329,34 +1456,74 @@ export default function EntryEditor({
       const saved = targetId
         ? await storage.updateEntry(targetId, patch)
         : await storage.createEntry(patch);
+      canonicalSaved = saved;
 
-      // The draft has done its job. Retire it behind the autosaver's fence
-      // FIRST, so a write still in flight cannot recreate it afterwards and put
-      // superseded text back under a finished entry.
-      getAutosaver().retire();
+      // Fence the writer used by this save. Anything it already started is
+      // allowed to finish before the draft is changed or removed; anything
+      // still queued is represented by `latestForm` and is handled below.
+      savingWriter.retire();
+      await savingWriter.settled();
       // Retiring is permanent for that writer, which is the point of the fence.
       // Editing does not stop when a save happens, though: dropping the
       // reference means the next keystroke builds a fresh writer and a fresh
       // draft, so work done after a save is protected exactly as before it.
       autosaver.current = null;
       const finishedDraft = draftId.current;
-      draftId.current = null;
-      draftCreatedAt.current = null;
-      setHasDraft(false);
-      setDraftRestored(false);
-      if (finishedDraft) {
-        await storage.deleteDraft(finishedDraft).catch(() => {
-          // The entry is saved; a draft that outlives it is untidy, not a loss.
-          // It will be offered as unfinished work, which is recoverable, and
-          // the next save of this entry clears it.
-        });
+      draftEntryId.current = saved.id;
+
+      const savedForm = formFromEntry(saved);
+      let newest = latestForm.current ?? submittedForm;
+      const changedDuringSave = !draftFormsEqual(newest, submittedForm);
+
+      if (changedDuringSave) {
+        // Reuse the same recovery identity where possible. While the durable
+        // write is in progress, keep checking the rendered form: a person can
+        // continue typing during a slow native transaction, and the last
+        // accepted version—not merely the first late version—must win.
+        const id = finishedDraft ?? newId();
+        const createdAt = draftCreatedAt.current ?? new Date().toISOString();
+        draftId.current = id;
+        draftCreatedAt.current = createdAt;
+        setHasDraft(true);
+        setDraftRestored(false);
+
+        for (;;) {
+          const candidate = newest;
+          const now = new Date().toISOString();
+          await storage.putDraft({
+            id,
+            entryId: saved.id,
+            form: candidate,
+            createdAt,
+            updatedAt: now,
+          });
+          // Let any already-dispatched React change commit before deciding the
+          // snapshot is current.
+          await Promise.resolve();
+          newest = latestForm.current ?? candidate;
+          if (draftFormsEqual(newest, candidate)) break;
+        }
+      } else {
+        draftId.current = null;
+        draftCreatedAt.current = null;
+        setHasDraft(false);
+        setDraftRestored(false);
+        if (finishedDraft) {
+          await storage.deleteDraft(finishedDraft).catch(() => {
+            // A redundant draft is safer than deleting writing after a save.
+            // It will be recognised as identical and retired on next open.
+          });
+        }
+        // Reflect the canonical normalization (trimmed metadata, empty link
+        // rows removed) only when no later edit would be overwritten by it.
+        setForm(savedForm);
       }
 
       // The journal now holds what the screen holds, so "unchanged" means this
       // from here on. Taken from the saved entry rather than from `form`,
       // because a save trims and drops empty rows: the baseline has to be what
       // reopening this entry would actually show.
-      canonicalForm.current = formFromEntry(saved);
+      canonicalForm.current = savedForm;
       // Claimed before anything else, so a second submit lands on an update.
       setCreatedId(saved.id);
       touch();
@@ -1370,7 +1537,7 @@ export default function EntryEditor({
       // entry navigates to `#/entry/<id>`, which changes this component's key
       // and remounts it — any confirmation kept in local state is destroyed in
       // the same tick it is set. `notice.tsx` explains the rest.
-      showNotice('Saved');
+      showNotice(changedDuringSave ? 'Saved. Newer changes were kept as a draft.' : 'Saved');
       // The live region has to sit in the DOM for a beat before this view
       // unmounts, or the announcement is never picked up.
       //
@@ -1382,6 +1549,34 @@ export default function EntryEditor({
       navigateNextFrame({ name: 'entry', id: saved.id });
     } catch (cause) {
       setSaving(false);
+      if (canonicalSaved) {
+        const savedForm = formFromEntry(canonicalSaved);
+        canonicalForm.current = savedForm;
+        draftEntryId.current = canonicalSaved.id;
+        setCreatedId(canonicalSaved.id);
+        touch();
+
+        // The submitted version is safe, but a later edit accepted while that
+        // write was in flight is not. Keep it on screen, keep the navigation
+        // here, and restart the ordered writer so a transient failure can heal
+        // without requiring another keystroke.
+        const newest = latestForm.current;
+        if (newest && !draftFormsEqual(newest, savedForm)) {
+          if (!draftId.current) draftId.current = newId();
+          draftCreatedAt.current ??= new Date().toISOString();
+          setHasDraft(true);
+          setNotYetDurable(true);
+          setDraftTrouble(true);
+          getAutosaver().queue(newest);
+        }
+
+        setSaveError(
+          cause instanceof Error
+            ? `The version you submitted was saved, but newer changes could not yet be added to the recovery draft: ${cause.message} Keep this page open and press Save again.`
+            : 'The version you submitted was saved, but newer changes could not yet be added to the recovery draft. Keep this page open and press Save again.',
+        );
+        return;
+      }
       setSaveError(
         cause instanceof Error
           ? `Your entry could not be saved: ${cause.message}`
@@ -1399,6 +1594,11 @@ export default function EntryEditor({
    */
   async function handleDiscardDraft() {
     setConfirmingDiscard(false);
+    setSaveError('');
+    // The exact version the confirmation applies to. Inputs remain usable
+    // while storage responds, so anything accepted after this point is a new
+    // generation and is not covered by the earlier decision to discard.
+    const confirmedForm = latestForm.current;
     /*
      * The same retirement every other path uses, rather than a second one.
      *
@@ -1409,24 +1609,53 @@ export default function EntryEditor({
      * implementations of one ordering is how the weaker of them survives:
      * there is now only the one.
      */
-    await retireDraft();
+    try {
+      await retireDraft({ requireDeletion: true });
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error
+          ? `This draft could not be discarded: ${cause.message} Your writing is still here.`
+          : 'This draft could not be discarded. Your writing is still here.',
+      );
+      return;
+    }
+
+    const newest = latestForm.current;
+    if (confirmedForm && newest && !draftFormsEqual(confirmedForm, newest)) {
+      if (!draftId.current) draftId.current = newId();
+      draftCreatedAt.current ??= new Date().toISOString();
+      setHasDraft(true);
+      setNotYetDurable(true);
+      const writer = getAutosaver();
+      writer.queue(newest);
+      try {
+        await writer.flush();
+        setMessage('The earlier draft was discarded. Newer changes were kept as a draft.');
+      } catch (cause) {
+        setDraftTrouble(true);
+        setSaveError(
+          cause instanceof Error
+            ? `The earlier draft was discarded, but newer changes could not yet be saved: ${cause.message}`
+            : 'The earlier draft was discarded, but newer changes could not yet be saved.',
+        );
+      }
+      return;
+    }
 
     if (entryId) {
       // Back to the entry as the journal has it. The saved copy was never
       // touched by the draft, so this is a real return rather than a guess.
-      const entry = await storage.getEntry(entryId).catch(() => undefined);
-      if (entry) {
-        const saved = formFromEntry(entry);
-        canonicalForm.current = saved;
-        setForm(saved);
-      }
+      const saved = canonicalForm.current;
+      if (saved) setForm(saved);
       return;
     }
+    recoverOnUnmount.current = false;
     navigate({ name: 'timeline' });
   }
 
   async function handleDelete() {
-    if (!entryId) return;
+    if (!entryId || deleting || saving) return;
+    setDeleting(true);
     try {
       await storage.deleteEntry(entryId);
       touch();
@@ -1434,8 +1663,17 @@ export default function EntryEditor({
       // here would be gone before it could be read. Deleting something and
       // being told nothing at all is its own small cruelty.
       showNotice('Entry deleted');
+      // The reader may have used global navigation while the provider was
+      // working. Deleting the entry they confirmed is still correct; dragging
+      // a different editor back to the timeline when it completes is not.
+      if (currentEntryId.current !== entryId) {
+        setDeleting(false);
+        return;
+      }
+      recoverOnUnmount.current = false;
       navigate({ name: 'timeline' });
     } catch (cause) {
+      setDeleting(false);
       setConfirmingDelete(false);
       setSaveError(
         cause instanceof Error
@@ -1463,6 +1701,20 @@ export default function EntryEditor({
             </p>
           </EmptyState>
         </div>
+      </>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <>
+        <h1 className="font-serif text-2xl font-semibold">{heading}</h1>
+        <p
+          role="alert"
+          className="mt-6 rounded-card border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
+        >
+          {loadError} Nothing was changed. Try opening it again.
+        </p>
       </>
     );
   }
@@ -1529,8 +1781,9 @@ export default function EntryEditor({
 
       <form
         onSubmit={handleSubmit}
-        className={focused ? 'measure mx-auto space-y-6' : 'mt-6 space-y-6'}
+        className={focused ? 'measure mx-auto' : 'mt-6'}
       >
+        <fieldset disabled={deleting} className="m-0 min-w-0 space-y-6 border-0 p-0">
         {/* The only chrome in focus mode: the way out, what this entry is, and
             Save. Inside the form on purpose — a submit button outside its form
             needs the `form` attribute, and this way the button is simply a
@@ -2556,6 +2809,7 @@ export default function EntryEditor({
             )
           ) : null}
         </div>
+        </fieldset>
       </form>
 
       {entryId ? (
@@ -2619,10 +2873,16 @@ export default function EntryEditor({
                 one, and this cannot be undone.
               </p>
               <div className="mt-3 flex flex-wrap gap-3">
-                <Button ref={confirmRef} variant="danger" onClick={handleDelete}>
-                  Yes, delete it
+                <Button
+                  ref={confirmRef}
+                  variant="danger"
+                  disabled={deleting || saving}
+                  onClick={handleDelete}
+                >
+                  {deleting ? 'Deleting…' : 'Yes, delete it'}
                 </Button>
                 <Button
+                  disabled={deleting}
                   onClick={() => {
                     // Backing out unmounts this button; hand focus to the one
                     // that takes its place rather than letting it drop.
@@ -2636,7 +2896,12 @@ export default function EntryEditor({
             </div>
           ) : (
             <div className="mt-2">
-              <Button ref={deleteRef} variant="danger" onClick={() => setConfirmingDelete(true)}>
+              <Button
+                ref={deleteRef}
+                variant="danger"
+                disabled={saving || deleting}
+                onClick={() => setConfirmingDelete(true)}
+              >
                 Delete this entry
               </Button>
             </div>

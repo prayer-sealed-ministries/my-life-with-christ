@@ -189,6 +189,15 @@ describe('Autosaver', () => {
     expect(saver.hasPendingWork, 'the text is not in storage, so it is still pending').toBe(true);
   });
 
+  it('rejects an explicit flush when the pending snapshot did not become durable', async () => {
+    const failure = new Error('disk is full');
+    const saver = new Autosaver<string>({ write: () => Promise.reject(failure) });
+    saver.queue('words worth keeping');
+
+    await expect(saver.flush()).rejects.toBe(failure);
+    expect(saver.hasPendingWork).toBe(true);
+  });
+
   it('counts consecutive failures so a persistent one can become visible', async () => {
     const clock = heldClock();
     let failures = 0;

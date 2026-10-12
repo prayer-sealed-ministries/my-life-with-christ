@@ -336,7 +336,7 @@ describe('SearchView', () => {
     expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument();
   });
 
-  it('settles instead of spinning forever when the journal cannot be read', async () => {
+  it('reports a failed journal read instead of spinning or claiming no matches', async () => {
     const provider = freshProvider();
     await provider.open();
     vi.spyOn(provider, 'listEntries').mockRejectedValue(new Error('storage unavailable'));
@@ -344,7 +344,8 @@ describe('SearchView', () => {
 
     renderSearch(provider);
 
-    expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be read/i);
+    expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 

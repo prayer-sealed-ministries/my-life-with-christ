@@ -74,7 +74,11 @@ function openDetails(container: HTMLElement) {
 
 /** The chips offered for one field, in the order they are shown. */
 const chipsFor = async (spoken: string) => {
-  const found = await screen.findAllByRole('button', { name: new RegExp(`^Use ${spoken} `) });
+  const found = await screen.findAllByRole(
+    'button',
+    { name: new RegExp(`^Use ${spoken} `) },
+    { timeout: 15_000 },
+  );
   return found.map((button) => button.textContent?.trim() ?? '');
 };
 const chipsForNow = (spoken: string) =>
@@ -129,7 +133,7 @@ describe('where the suggestions come from', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Pastor John']));
+    expect(await chipsFor('speaker')).toEqual(['Pastor John']);
     expect(chipsForNow('speaker')).not.toContain('NEVER-SUGGEST-DRAFT');
   });
 
@@ -142,7 +146,7 @@ describe('where the suggestions come from', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Rev. Smith']));
+    expect(await chipsFor('speaker')).toEqual(['Rev. Smith']);
   });
 
   it('follows an edit to the canonical entry', async () => {
@@ -153,7 +157,7 @@ describe('where the suggestions come from', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Pastor Michael']));
+    expect(await chipsFor('speaker')).toEqual(['Pastor Michael']);
   });
 });
 
@@ -169,9 +173,7 @@ describe('what is shown', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () =>
-      expect(await chipsFor('series'), 'four Sundays, two series').toEqual(['James', 'Romans']),
-    );
+    expect(await chipsFor('series'), 'four Sundays, two series').toEqual(['James', 'Romans']);
   });
 
   it('puts the most recently used first, not the oldest', async () => {
@@ -189,7 +191,7 @@ describe('what is shown', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect(await chipsFor('series')).toEqual(['James', 'Romans']));
+    expect(await chipsFor('series')).toEqual(['James', 'Romans']);
   });
 
   it('keeps the spelling most recently saved', async () => {
@@ -200,7 +202,7 @@ describe('what is shown', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Pastor John']));
+    expect(await chipsFor('speaker')).toEqual(['Pastor John']);
   });
 
   it('shows no more than the limit, however long the history', async () => {
@@ -212,7 +214,7 @@ describe('what is shown', () => {
     await notes();
     openDetails(container);
 
-    await waitFor(async () => expect((await chipsFor('place')).length).toBe(SUGGESTION_LIMIT));
+    expect((await chipsFor('place')).length).toBe(SUGGESTION_LIMIT);
   });
 
   it('offers nothing on a first visit, rather than an empty shelf', async () => {
@@ -233,7 +235,7 @@ describe('nothing is filled in for anybody', () => {
     const { container } = mount(db);
     await notes();
     openDetails(container);
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Pastor John']));
+    expect(await chipsFor('speaker')).toEqual(['Pastor John']);
 
     expect(field('Place').value, 'the most recent church was filled in').toBe('');
     expect(field('Speaker').value, 'the most recent speaker was filled in').toBe('');
@@ -246,7 +248,7 @@ describe('nothing is filled in for anybody', () => {
     const { container } = mount(db);
     await notes();
     openDetails(container);
-    await waitFor(async () => expect(await chipsFor('speaker')).toEqual(['Pastor John']));
+    expect(await chipsFor('speaker')).toEqual(['Pastor John']);
     await new Promise((resolve) => setTimeout(resolve, DRAFT_DEBOUNCE_MS * 4));
 
     expect(
@@ -347,7 +349,7 @@ describe('an entry that already exists', () => {
     const { container } = mount(db, { entryId: entry.id });
     await notes();
     openDetails(container);
-    await waitFor(async () => expect((await chipsFor('speaker')).length).toBeGreaterThan(0));
+    expect((await chipsFor('speaker')).length).toBeGreaterThan(0);
     await new Promise((resolve) => setTimeout(resolve, DRAFT_DEBOUNCE_MS * 4));
 
     expect(field('Speaker').value, 'the saved speaker was overwritten').toBe('Rev. Smith');

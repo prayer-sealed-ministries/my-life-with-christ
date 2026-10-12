@@ -1,11 +1,10 @@
 /**
  * A bounded ZIP read, for archives this app did not write.
  *
- * `src/export/zip.ts` reads journals the app produced. Its `readZip` inflates
- * every member unconditionally and has no size ceiling, which is correct for
- * its own archives and wrong for a .docx somebody was handed by email. This
- * wraps the same format with limits rather than changing that function, so the
- * native journal path keeps behaving exactly as it did and as its tests assert.
+ * Both journal archives and document imports pass through this reader. It
+ * inflates only requested members and enforces ceilings while doing so, so a
+ * file supplied from outside the app cannot consume unbounded memory before a
+ * size check gets a chance to run.
  *
  * Three separate ceilings, and they are separate on purpose:
  *
@@ -47,6 +46,7 @@ export class DecompressionLimit extends ImportError {
 const SIGNATURE_EOCD = 0x06054b50;
 const SIGNATURE_CENTRAL = 0x02014b50;
 const METHOD_DEFLATE = 8;
+const METHOD_STORE = 0;
 
 const decoder = new TextDecoder();
 
@@ -171,6 +171,10 @@ export async function readZipLimited(
       throw new ImportError('That file is damaged and cannot be read.');
     }
     const raw = data.subarray(dataStart, dataStart + compressedSize);
+
+    if (method !== METHOD_STORE && method !== METHOD_DEFLATE) {
+      throw new ImportError(`That archive uses an unsupported compression method for "${path}".`);
+    }
 
     // The per-entry budget is the smaller of its own ceiling and what is left
     // of the total, so the total cannot be overshot by one large final member.

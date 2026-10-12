@@ -34,15 +34,13 @@
  * absolutely must learn WHETHER it went, because "you have a backup" is a claim
  * this product is not allowed to make loosely.
  */
-export interface SaveResult {
-  /**
-   * True only when the file reached the user's file system.
-   *
-   * False is an ordinary outcome, not an error: someone who backs out of the
-   * save dialog has changed their mind, not hit a failure.
-   */
-  saved: boolean;
-}
+export type SaveResult =
+  /** The destination accepted the complete file, including its final close. */
+  | { status: 'committed' }
+  /** The person dismissed the destination chooser. */
+  | { status: 'cancelled' }
+  /** Delivery began, but the platform exposes no completion signal. */
+  | { status: 'initiated' };
 
 /**
  * Hand bytes to the user's file system.
@@ -51,13 +49,10 @@ export interface SaveResult {
  * followed by the document picker, and on Android the Storage Access Framework
  * — both of which end with the file outside our sandbox, which is the point.
  *
- * This used to return `void`, and that was a real defect rather than a
- * simplification. Both native plugins already reported `{ saved: true/false }`
- * and the adapter discarded it, so backing out of the export dialog was
- * recorded as a successful export: the reminder reset and the journal page said
- * "Last exported today" when nothing had left the device. For a product whose
- * whole promise is that the export is the thing you own, that is the one
- * direction an error must never point.
+ * A browser anchor can only report `initiated`; it cannot observe cancellation
+ * or a completed disk write. Native document APIs and the browser File System
+ * Access API can report `committed`. Keeping those states distinct prevents an
+ * attempted download from being recorded as a durable backup.
  */
 export interface FileSaver {
   save(file: OutgoingFile): Promise<SaveResult>;

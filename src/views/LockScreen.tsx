@@ -29,7 +29,7 @@ import { usePlatform } from '../platform/context';
 type Mode = 'unlock' | 'recover';
 
 export default function LockScreen() {
-  const { unlock, penaltyMs, recoveryAvailable, refresh } = useAppLock();
+  const { unlock, penaltyMs, recoveryAvailable, refresh, lockError } = useAppLock();
   const { appLock } = usePlatform();
 
   const [mode, setMode] = useState<Mode>('unlock');
@@ -116,7 +116,12 @@ export default function LockScreen() {
         </header>
 
         <Card className="space-y-4">
-          {mode === 'unlock' ? (
+          {lockError ? (
+            <p role="alert" className="text-sm leading-relaxed text-ink">
+              {lockError} Close and reopen the app. If the problem continues, do not reinstall;
+              your journal has not been changed.
+            </p>
+          ) : mode === 'unlock' ? (
             <form onSubmit={onUnlock} className="space-y-4" noValidate>
               <Field
                 label="PIN"
@@ -175,15 +180,15 @@ export default function LockScreen() {
 
           {/* Errors are readable without colour: they are sentences, in the
               flow, and announced. Nothing here depends on the text being red. */}
-          {(message || blocked) && (
+          {!lockError && (message || blocked) && (
             <p role="alert" className="text-sm text-ink">
               {blocked ? penaltyMessage(penaltyMs) : message}
             </p>
           )}
-          <LiveRegion message={blocked ? penaltyMessage(penaltyMs) : message} />
+          <LiveRegion message={lockError || (blocked ? penaltyMessage(penaltyMs) : message)} />
         </Card>
 
-        {mode === 'unlock' && recoveryAvailable && (
+        {!lockError && mode === 'unlock' && recoveryAvailable && (
           <div className="text-center">
             <Button variant="ghost" onClick={onStartRecovery} disabled={busy}>
               Forgot your PIN?

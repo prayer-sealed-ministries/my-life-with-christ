@@ -26,11 +26,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MARKER, NATIVE_PROFILE } from './native-assets.mjs';
+import { fingerprint, MARKER, NATIVE_PROFILE } from './native-assets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -45,26 +45,6 @@ const fail = (message) => {
   console.error(`\nRefusing to sync native assets.\n\n${message}\n`);
   process.exit(1);
 };
-
-/** Must exclude the marker exactly as native-assets.mjs does, or it never matches. */
-function fingerprint(directory, exclude) {
-  let files = 0;
-  let bytes = 0;
-  const walk = (at) => {
-    for (const name of readdirSync(at)) {
-      if (at === directory && name === exclude) continue;
-      const path = join(at, name);
-      const info = statSync(path);
-      if (info.isDirectory()) walk(path);
-      else {
-        files += 1;
-        bytes += info.size;
-      }
-    }
-  };
-  walk(directory);
-  return { files, bytes };
-}
 
 function requireVerifiedAssets() {
   const markerPath = join(dist, MARKER);
@@ -92,12 +72,27 @@ function requireVerifiedAssets() {
     );
   }
 
+  if (marker.debugTools !== false) {
+    fail(
+      `dist/ has no verified release-mode debug policy.\n\n` +
+        `Only a build explicitly marked with debugTools=false may be packaged.\n` +
+        `Run: npm run native:assets`,
+    );
+  }
+
   const actual = fingerprint(dist, MARKER);
-  if (actual.files !== marker.files || actual.bytes !== marker.bytes) {
+  if (
+    actual.files !== marker.files ||
+    actual.bytes !== marker.bytes ||
+    typeof marker.sha256 !== 'string' ||
+    actual.sha256 !== marker.sha256
+  ) {
     fail(
       `dist/ has changed since it was verified.\n\n` +
         `  verified: ${marker.files} files, ${marker.bytes} bytes\n` +
         `  on disk:  ${actual.files} files, ${actual.bytes} bytes\n\n` +
+        `  verified digest: ${marker.sha256 ?? '(missing)'}\n` +
+        `  on-disk digest:  ${actual.sha256}\n\n` +
         `Something rebuilt dist/ after verification, so the bytes about to be\n` +
         `copied are not the bytes that were proved. Run: npm run native:assets`,
     );

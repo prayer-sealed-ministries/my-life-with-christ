@@ -13,6 +13,7 @@
  */
 
 import type { Entry, EntryDraft, EntryKind, NewEntry, Settings } from '../types';
+import type { JournalSnapshot } from './journal';
 
 /** Narrowing applied to a list or search. */
 export interface EntryQuery {
@@ -88,6 +89,16 @@ export interface StorageProvider {
    * Settings are untouched, exactly as `clearEntries` leaves them.
    */
   replaceEntries(entries: Entry[]): Promise<void>;
+
+  /** Entries and recovery drafts from one atomic database revision. */
+  readJournalSnapshot(): Promise<JournalSnapshot>;
+  /** Does the journal still contain exactly the snapshot identified by token? */
+  journalMatches(token: string): Promise<boolean>;
+  /**
+   * Atomically replace entries and drafts, refusing if `expectedToken` is stale.
+   * Used by both merge and replace import after their non-destructive preview.
+   */
+  replaceJournal(entries: Entry[], drafts: EntryDraft[], expectedToken?: string): Promise<void>;
 
   /**
    * Work in progress, kept apart from the journal itself.

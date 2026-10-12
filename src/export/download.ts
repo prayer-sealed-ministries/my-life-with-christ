@@ -13,10 +13,10 @@
  * reaching the export view.
  */
 
-import type { FileSaver, OutgoingFile } from '../platform/ports';
+import type { FileSaver, OutgoingFile, SaveResult } from '../platform/ports';
 import type { StorageProvider } from '../storage/StorageProvider';
 import { buildArchive, matchesFilter, type BuildArchiveOptions, type BuiltArchive } from './archive';
-import type { ExportFilter } from '../types';
+import type { ExportFilter, Settings } from '../types';
 
 /** The zip media type, named once so the port and its tests agree. */
 export const ARCHIVE_MIME = 'application/zip';
@@ -39,8 +39,14 @@ export function outgoingArchive(archive: BuiltArchive): OutgoingFile {
  */
 export interface ExportOutcome {
   archive: BuiltArchive;
-  /** True only when the file reached the user's file system. */
-  saved: boolean;
+  /** Whether delivery was committed, cancelled, or only initiated. */
+  delivery: SaveResult['status'];
+  /** False when accepted journal content changed after the atomic snapshot. */
+  current: boolean;
+  /** True only when a current full export also advanced the backup reminder. */
+  recorded: boolean;
+  /** A saved file remains a saved file even if its reminder metadata failed. */
+  recordingError?: string;
 }
 
 export interface ExportEverythingOptions
@@ -49,6 +55,8 @@ export interface ExportEverythingOptions
   filter?: ExportFilter;
   /** Where the bytes go. The web binding downloads them. */
   files: FileSaver;
+  /** Lets the React binding update its in-memory settings from the same write. */
+  recordSettings?: (patch: Partial<Settings>) => Promise<void>;
 }
 
 /**
@@ -61,9 +69,10 @@ export interface ExportEverythingOptions
  * system actually accepted updates `lastExportAt`.
  */
 export async function exportEverything(options: ExportEverythingOptions): Promise<ExportOutcome> {
-  const { storage, filter, files, ...rest } = options;
+  const { storage, filter, files, recordSettings, ...rest } = options;
 
-  const allEntries = await storage.listEntriesChronological();
+  const snapshot = await storage.readJournalSnapshot();
+  const allEntries = snapshot.entries;
   const entries = filter ? allEntries.filter((entry) => matchesFilter(entry, filter)) : allEntries;
 
   /*
@@ -75,10 +84,15 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
    * backup of the whole journal — and filters describe entries, not drafts, so
    * there is no honest way to narrow them.
    */
-  const drafts = filter ? [] : await storage.listDrafts().catch(() => []);
+  const drafts = filter ? [] : snapshot.drafts;
 
   const archive = await buildArchive({ ...rest, entries, allEntries, filter, drafts });
-  const { saved } = await files.save(outgoingArchive(archive));
+  const { status: delivery } = await files.save(outgoingArchive(archive));
+  const current =
+    delivery === 'cancelled' || filter ? true : await storage.journalMatches(snapshot.token);
+
+  let recorded = false;
+  let recordingError: string | undefined;
 
   // Two conditions, and both are about honesty rather than tidiness.
   //
@@ -90,12 +104,20 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
   // dialog looked alike: cancelling recorded a successful export, reset the
   // reminder, and left the journal page saying "Last exported today" over a
   // device that still held the only copy.
-  if (!filter && saved) {
-    await storage.updateSettings({
-      lastExportAt: new Date().toISOString(),
-      reminderDismissedAt: undefined,
-    });
+  if (!filter && delivery === 'committed' && current) {
+    try {
+      await (recordSettings ?? ((patch) => storage.updateSettings(patch)))({
+        lastExportAt: snapshot.capturedAt,
+        reminderDismissedAt: undefined,
+      });
+      recorded = true;
+    } catch (cause) {
+      recordingError =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : 'the backup reminder could not be updated';
+    }
   }
 
-  return { archive, saved };
+  return { archive, delivery, current, recorded, recordingError };
 }

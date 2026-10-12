@@ -65,6 +65,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   const source = useMemo(() => appState ?? capacitorAppState(), [appState]);
 
   const [phase, setPhase] = useState<LockPhase>('resolving');
+  const [lockError, setLockError] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(0);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
@@ -81,6 +82,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
   const lastFailureAt = useRef<Monotonic | null>(null);
   const timeoutRef = useRef(0);
   const enabledRef = useRef(false);
+  const lifecycleFailed = useRef(false);
 
   const applyState = useCallback(
     (state: Awaited<ReturnType<AppLock['getState']>>, nextPhase?: LockPhase) => {
@@ -117,16 +119,28 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
       .getState()
       .then((state) => {
         if (cancelled) return;
+        setLockError(null);
+        // A failed lifecycle listener matters only when a lock is enabled. A
+        // definite disabled state is still safe to open; otherwise a listener
+        // rejection that wins this race would brick a newly installed app.
         applyState(state, state.enabled ? 'locked' : 'unlocked');
+        if (state.enabled && lifecycleFailed.current) {
+          setLockError('App Lock could not verify the app lifecycle. Your journal remains hidden.');
+        }
         // Keep the app switcher in step with whether the lock is on at all.
         void appLock.setRecentsPrivacy(state.enabled).catch(() => undefined);
       })
       .catch(() => {
-        // A platform that cannot answer is one without App Lock. Failing
-        // open here is correct precisely because failing closed would brick
-        // an edition that never had the feature; the native side is the only
-        // thing that can say a lock exists, and it just said nothing does.
-        if (!cancelled) applyState(
+        if (cancelled) return;
+        if (appLock.supported) {
+          // Unsupported editions return a definite disabled state. A supported
+          // security service that fails to answer is different: mounting the
+          // journal would turn a bridge/storage fault into an unlock bypass.
+          setLockError('App Lock could not verify its state. Your journal remains hidden.');
+          setPhase('locked');
+          return;
+        }
+        applyState(
           {
             enabled: false,
             timeoutMs: 0,
@@ -178,6 +192,11 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
           backgroundedAt.current = null;
         })
         .catch(() => setPhase('locked'));
+    }, () => {
+      lifecycleFailed.current = true;
+      if (!enabledRef.current) return;
+      setLockError('App Lock could not verify the app lifecycle. Your journal remains hidden.');
+      setPhase('locked');
     });
   }, [appLock, source]);
 
@@ -229,6 +248,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
     () => ({
       phase,
       supported: appLock.supported,
+      lockError,
       enabled,
       timeoutMs,
       recoveryAvailable,
@@ -241,6 +261,7 @@ export function AppLockProvider({ children, lock, appState }: AppLockProviderPro
     [
       phase,
       appLock.supported,
+      lockError,
       enabled,
       timeoutMs,
       recoveryAvailable,

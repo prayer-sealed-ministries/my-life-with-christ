@@ -20,6 +20,7 @@ import { buildArchive } from '../export/archive';
 import { createZip, readZip } from '../export/zip';
 import type { DraftForm } from '../types';
 import { loadSections } from '../app/sections';
+import { trackPendingJournalWrite } from '../storage/pending';
 
 /*
  * The divisions, through the loader the application itself uses.
@@ -46,6 +47,9 @@ const brokenStorage = (): StorageProvider => {
     findEntriesForExactAnchor: fail,
     putEntries: fail,
     replaceEntries: fail,
+    readJournalSnapshot: fail,
+    journalMatches: fail,
+    replaceJournal: fail,
     clearEntries: fail,
     putDraft: fail,
     getDraft: fail,
@@ -180,7 +184,7 @@ describe('DataView', () => {
     expect(heading.compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('exports everything in one press and reports the filename and entry count', async () => {
+  it('starts a browser download without claiming that an unverifiable file is durable', async () => {
     const click = stubDownload();
     await db.putEntries([GRACE, QUIET]);
     // A reader who chose a weekly reminder keeps it through an export. The
@@ -191,18 +195,38 @@ describe('DataView', () => {
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
 
-    // Visible once, announced once: the same sentence in a live region.
-    const reported = await screen.findAllByText(/Saved journey-export-\d{4}-\d{2}-\d{2}\.zip — 2 entries/, undefined, {
-      timeout: 15_000,
-    });
+    // Visible once, announced once: the same honest limitation in a live region.
+    const reported = await screen.findAllByText(
+      /download was started, but this download method cannot verify/i,
+      undefined,
+      { timeout: 15_000 },
+    );
     expect(reported).toHaveLength(2);
     expect(click).toHaveBeenCalled();
 
-    // The export is recorded, so the reminder resets and the line above updates.
+    // Initiation is not a durable backup, so its reminder date cannot move.
     const afterExport = await db.getSettings();
-    expect(afterExport.lastExportAt).toBeTruthy();
+    expect(afterExport.lastExportAt).toBeUndefined();
     expect(afterExport.backupReminderDays, 'the export overwrote the chosen interval').toBe(7);
-    expect(screen.getByText('Last exported today.')).toBeInTheDocument();
+    expect(screen.getByText(/Never exported/)).toBeInTheDocument();
+  }, 30_000);
+
+  it('waits for writing left by the editor before taking an export snapshot', async () => {
+    const click = stubDownload();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    trackPendingJournalWrite(held);
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export everything' }));
+    await Promise.resolve();
+    expect(click, 'export started while an editor write was still pending').not.toHaveBeenCalled();
+
+    release();
+    await screen.findAllByText(/download was started, but this download method cannot verify/i);
+    expect(click).toHaveBeenCalledTimes(1);
   }, 30_000);
 
   it('refuses a partial export until something actually narrows it', async () => {
@@ -245,7 +269,9 @@ describe('DataView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Merge 2 entries' }));
 
-    expect(await screen.findAllByText(/Merged journey\.json: 2 entries written/)).toHaveLength(2);
+    expect(
+      await screen.findAllByText(/Merged journey\.json: 2 entries and 0 unfinished drafts written/),
+    ).toHaveLength(2);
     await waitFor(async () => expect(await db.listEntries()).toHaveLength(2));
   });
 
@@ -330,6 +356,13 @@ describe('DataView', () => {
 
   it('offers replace as a labelled radio, marked destructive', async () => {
     await db.putEntries([GRACE]);
+    await db.putDraft({
+      id: 'draft-being-replaced',
+      entryId: GRACE.id,
+      form: { ...EMPTY_FORM, notes: 'An unfinished edit.' },
+      createdAt: '2026-05-01T09:00:00.000Z',
+      updatedAt: '2026-05-01T09:05:00.000Z',
+    });
     renderView();
     await screen.findByRole('heading', { level: 1 });
 
@@ -350,9 +383,52 @@ describe('DataView', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Replace — destructive/ }));
 
     expect(screen.getByText(/Deletes all 1 entry in this journal first/)).toBeInTheDocument();
+    expect(screen.getByText(/along with 1 unfinished draft/)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Delete everything and import 1 entry' }),
     ).toBeInTheDocument();
+  });
+
+  it('refuses replace when writing changed after the preview and refreshes the warning', async () => {
+    await db.putEntries([GRACE]);
+    renderView();
+    await screen.findByRole('heading', { level: 1 });
+
+    const payload: JourneyExport = {
+      format: 'journey-export',
+      version: 1,
+      exportedAt: '2026-05-01T00:00:00.000Z',
+      entries: [QUIET],
+    };
+    const file = new File([JSON.stringify(payload)], 'journey.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('Journal file to read'), { target: { files: [file] } });
+    await screen.findByRole('heading', { name: 'What this would do' });
+    fireEvent.click(screen.getByRole('radio', { name: /Replace — destructive/ }));
+
+    // Accepted after the warning was rendered. Confirming that stale preview
+    // must not be authority to delete this new work.
+    await db.putEntries([entry({ id: 'entry-after-preview', notes: 'Newer local writing.' })]);
+    await db.putDraft({
+      id: 'draft-after-preview',
+      form: { ...EMPTY_FORM, notes: 'Unfinished after preview.' },
+      createdAt: '2026-05-01T10:00:00.000Z',
+      updatedAt: '2026-05-01T10:01:00.000Z',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete everything and import 1 entry' }));
+
+    expect(
+      await screen.findAllByText(/journal changed.*nothing was replaced/i),
+    ).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getByText(/Deletes all 2 entries in this journal first/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/along with 1 unfinished draft/)).toBeInTheDocument();
+    expect((await db.listEntries()).map((item) => item.id).sort()).toEqual([
+      'entry-after-preview',
+      GRACE.id,
+    ]);
+    expect((await db.listDrafts()).map((draft) => draft.id)).toEqual(['draft-after-preview']);
   });
 
   /**
@@ -492,7 +568,11 @@ describe('DataView', () => {
     elsewhere.blur();
     expect(document.activeElement).toBe(document.body);
 
-    await screen.findAllByText(/Saved journey-export/, undefined, { timeout: 15_000 });
+    await screen.findAllByText(
+      /download was started, but this download method cannot verify/i,
+      undefined,
+      { timeout: 15_000 },
+    );
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Export everything' })).toHaveFocus(),
     );

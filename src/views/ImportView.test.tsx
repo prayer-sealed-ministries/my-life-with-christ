@@ -206,6 +206,22 @@ describe('ImportView — committing', () => {
 });
 
 describe('ImportView — refusals are explained', () => {
+  it('reports a browser file-read failure and allows the same file to be retried', async () => {
+    const { storage } = setup();
+    const input = await screen.findByLabelText('File to import') as HTMLInputElement;
+    const file = new File(['unreadable'], 'unreadable.txt', { type: 'text/plain' });
+    const read = vi.fn().mockRejectedValue(new Error('provider disconnected'));
+    Object.defineProperty(file, 'arrayBuffer', { value: read });
+
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened or read/i);
+    expect(input.value).toBe('');
+    expect(await storage.listEntries()).toHaveLength(0);
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  });
+
   it('names the formats it handles when given another', async () => {
     setup();
     await screen.findByLabelText('File to import');

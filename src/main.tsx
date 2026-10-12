@@ -13,6 +13,7 @@ import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
 import { bindLaunchActions, locationHost } from './platform/native-launch';
 import { PlatformProvider } from './platform/provider';
+import { registerOfflineApp } from './platform/offline';
 import { AppLockGate, AppLockProvider } from './app/app-lock';
 import LockScreen from './views/LockScreen';
 import './index.css';
@@ -23,6 +24,15 @@ import './index.css';
 // tell `refs-only` from everything else, so it labelled a `public` build
 // `full` and nobody noticed. Something that can be read is not a guess.
 document.documentElement.dataset.dataProfile = DATA_PROFILE;
+
+// Hosted builds precache every lazy route, Scripture chunk and essential
+// asset. Start that background installation only after the initial document
+// has loaded, so downloading the full offline set cannot compete with Fast
+// Capture's first paint. Registration is a no-op in native shells, whose
+// assets are already packaged by Capacitor.
+const beginOfflineInstall = () => void registerOfflineApp().catch(() => undefined);
+if (document.readyState === 'complete') beginOfflineInstall();
+else window.addEventListener('load', beginOfflineInstall, { once: true });
 
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root element');

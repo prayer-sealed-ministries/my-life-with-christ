@@ -170,7 +170,10 @@ describe('saving a new entry while in focus mode', () => {
 
     // And focus mode is still on the far side of it.
     expect(chrome().header, 'saving threw the reader back out to the full app').toBeNull();
-    expect(leaveFocus(), 'the focus bar did not survive the save').toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: 'Leave focus mode' }),
+      'the focus bar did not survive the save',
+    ).toBeTruthy();
 
     // And the caret is back where the sermon is going. The shell moves focus to
     // the page heading after every navigation, which is right when the page has

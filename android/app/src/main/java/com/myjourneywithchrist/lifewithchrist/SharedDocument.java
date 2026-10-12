@@ -23,8 +23,22 @@ import android.net.Uri;
  */
 final class SharedDocument {
 
-    private static Uri pending;
-    private static String declaredType;
+    static final class Pending {
+        final Uri uri;
+        final String text;
+        final String declaredType;
+        final String error;
+
+        Pending(Uri uri, String text, String declaredType, String error) {
+            this.uri = uri;
+            this.text = text;
+            this.declaredType = declaredType;
+            this.error = error;
+        }
+    }
+
+    private static Pending pending;
+    private static final int MAX_SHARED_TEXT_CHARS = 1_000_000;
 
     private SharedDocument() {}
 
@@ -43,14 +57,31 @@ final class SharedDocument {
 
         final String action = intent.getAction();
         Uri uri = null;
+        String text = null;
 
         if (Intent.ACTION_SEND.equals(action)) {
             uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (uri == null) {
+                CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+                if (shared != null) {
+                    text = shared.toString();
+                }
+            }
         } else if (Intent.ACTION_VIEW.equals(action)) {
             uri = intent.getData();
         }
 
-        if (uri == null) {
+        if (uri == null && text == null) {
+            return;
+        }
+
+        if (text != null) {
+            if (text.length() > MAX_SHARED_TEXT_CHARS) {
+                pending = new Pending(null, null, intent.getType(),
+                        "That shared text is too large to review safely.");
+            } else {
+                pending = new Pending(null, text, intent.getType(), null);
+            }
             return;
         }
 
@@ -63,21 +94,13 @@ final class SharedDocument {
             return;
         }
 
-        pending = uri;
-        declaredType = intent.getType();
+        pending = new Pending(uri, null, intent.getType(), null);
     }
 
-    /** The waiting document, cleared as it is handed over. Null when there is none. */
-    static synchronized Uri take() {
-        final Uri uri = pending;
+    /** The waiting payload, cleared atomically as it is handed over. */
+    static synchronized Pending take() {
+        final Pending value = pending;
         pending = null;
-        return uri;
-    }
-
-    /** The media type the sender declared, for the document `take()` just returned. */
-    static synchronized String takeDeclaredType() {
-        final String type = declaredType;
-        declaredType = null;
-        return type;
+        return value;
     }
 }

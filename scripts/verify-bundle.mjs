@@ -85,6 +85,13 @@ const FORBIDDEN_PATTERNS = [
   { test: (path) => /outlines\.json$/i.test(path), why: 'a retired licensed division set' },
 ];
 
+/** Strings unique to the destructive development-only cleanup control. */
+const FORBIDDEN_DEBUG_SENTINELS = [
+  'SyntheticCleanup',
+  'Debug: remove test content',
+  'Remove all listed test entries and drafts',
+];
+
 async function main() {
   const { profile, dist } = parseArgs(process.argv.slice(2));
   const distDir = resolve(ROOT, dist);
@@ -171,6 +178,7 @@ async function main() {
 
   // ---- 3. Licensed wording, across every searchable file. ----
   const licensedHits = [];
+  const debugHits = [];
   const sentinelsFound = new Set();
 
   for (const file of textFiles) {
@@ -184,11 +192,20 @@ async function main() {
     for (const needle of LICENSED_SENTINELS) {
       if (content.includes(needle)) licensedHits.push({ path, needle });
     }
+    for (const needle of FORBIDDEN_DEBUG_SENTINELS) {
+      if (content.includes(needle)) debugHits.push({ path, needle });
+    }
   }
 
   for (const hit of licensedHits) {
     failures.push({
       assertion: 'NO_LICENSED_CONTENT',
+      detail: `${hit.path} contains ${JSON.stringify(hit.needle)}`,
+    });
+  }
+  for (const hit of debugHits) {
+    failures.push({
+      assertion: 'NO_DEBUG_TOOLS',
       detail: `${hit.path} contains ${JSON.stringify(hit.needle)}`,
     });
   }
@@ -234,6 +251,7 @@ async function main() {
     console.log(
       `  NO_LICENSED_CONTENT   none of ${LICENSED_SENTINELS.length} licensed sentinels present`,
     );
+    console.log('  NO_DEBUG_TOOLS        no destructive debug cleanup code present');
     console.log('\nThis build is publishable.');
   }
 }

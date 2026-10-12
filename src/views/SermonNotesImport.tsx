@@ -203,6 +203,10 @@ export function SermonNotesImport({
             disabled={busy}
             buttonLabel="Choose a file…"
             onFile={(file) => void onFile(file)}
+            onError={() => {
+              setProposal(null);
+              setError('That file could not be opened or read. Nothing was changed.');
+            }}
           />
 
           {busy ? <Spinner label="Reading the file" /> : null}

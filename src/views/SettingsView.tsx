@@ -214,9 +214,10 @@ export default function SettingsView() {
             that is your choice and your copy — not something this app requires or arranges.
           </p>
           <p className="measure text-sm leading-relaxed text-ink-soft">
-            Android&rsquo;s own backup is separate: if it is switched on for this app, Android may
-            include what the app stores in your device backup. That is Android&rsquo;s feature, not
-            this app&rsquo;s, and your App Lock PIN is never included in it.
+            Operating-system backup is separate: on iOS and Android, the system may include what
+            the app stores in your own device or cloud backup when backup is enabled. That is
+            Apple&rsquo;s or Android&rsquo;s feature, not this app&rsquo;s, and your App Lock PIN is never
+            included in it.
         </p>
         <p className="measure text-sm leading-relaxed text-ink-soft">
           More detail is in{' '}

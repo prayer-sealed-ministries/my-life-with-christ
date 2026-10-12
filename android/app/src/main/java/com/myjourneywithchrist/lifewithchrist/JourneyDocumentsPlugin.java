@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,6 +53,9 @@ import java.util.List;
  */
 @CapacitorPlugin(name = "JourneyDocuments")
 public class JourneyDocumentsPlugin extends Plugin {
+
+    /** Must match MAX_PICKED_FILE_BYTES in src/platform/file-limits.ts. */
+    private static final long MAX_PICKED_BYTES = 64L * 1024L * 1024L;
 
     /** Bytes waiting for a destination the user has not chosen yet. */
     private byte[] pendingBytes;
@@ -114,10 +118,15 @@ public class JourneyDocumentsPlugin extends Plugin {
             }
             out.write(bytes);
             out.flush();
-            call.resolve(new JSObject().put("saved", true));
         } catch (Exception error) {
             call.reject("The archive could not be saved: " + error.getMessage());
+            return;
         }
+
+        // Resolving after the try-with-resources block is significant: close()
+        // can be the operation that commits a remote/document-provider file,
+        // and a close failure must reach the caller before success does.
+        call.resolve(new JSObject().put("saved", true));
     }
 
     @PluginMethod
@@ -151,6 +160,12 @@ public class JourneyDocumentsPlugin extends Plugin {
             return;
         }
 
+        long declaredSize = displaySizeOf(source);
+        if (declaredSize > MAX_PICKED_BYTES) {
+            call.reject("That file is larger than the 64MB import limit and was not read.");
+            return;
+        }
+
         try (InputStream in = getContext().getContentResolver().openInputStream(source)) {
             if (in == null) {
                 call.reject("That file could not be read.");
@@ -160,7 +175,13 @@ public class JourneyDocumentsPlugin extends Plugin {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
             int read;
+            long total = 0;
             while ((read = in.read(chunk)) != -1) {
+                total += read;
+                if (total > MAX_PICKED_BYTES) {
+                    call.reject("That file is larger than the 64MB import limit and was not read.");
+                    return;
+                }
                 buffer.write(chunk, 0, read);
             }
 
@@ -202,6 +223,22 @@ public class JourneyDocumentsPlugin extends Plugin {
         return fallback;
     }
 
+    /** Size advertised by the document provider, or -1 when it is unknown. */
+    private long displaySizeOf(Uri uri) {
+        try (android.database.Cursor cursor =
+                getContext().getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int column = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                if (column >= 0 && !cursor.isNull(column)) {
+                    return cursor.getLong(column);
+                }
+            }
+        } catch (Exception ignored) {
+            // The streaming count below is authoritative when metadata is absent.
+        }
+        return -1;
+    }
+
     /**
      * The largest shared document this will read into memory.
      *
@@ -226,19 +263,43 @@ public class JourneyDocumentsPlugin extends Plugin {
      */
     @PluginMethod
     public void takeSharedDocument(PluginCall call) {
-        Uri source = SharedDocument.take();
-        String declaredType = SharedDocument.takeDeclaredType();
+        SharedDocument.Pending pending = SharedDocument.take();
 
-        if (source == null) {
+        if (pending == null) {
             call.resolve(new JSObject().put("present", false));
             return;
         }
 
         JSObject response = new JSObject();
         response.put("present", true);
+        if (pending.error != null) {
+            response.put("error", pending.error);
+            call.resolve(response);
+            return;
+        }
+
+        if (pending.text != null) {
+            byte[] bytes = pending.text.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_SHARED_BYTES) {
+                response.put("error", "That shared text is larger than the 8MB limit for sermon notes.");
+            } else {
+                response.put("name", "shared-text.txt");
+                response.put("mimeType", "text/plain");
+                response.put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            }
+            call.resolve(response);
+            return;
+        }
+
+        Uri source = pending.uri;
+        if (source == null) {
+            response.put("error", "That shared item did not contain readable text or a document.");
+            call.resolve(response);
+            return;
+        }
         response.put("name", displayNameOf(source, "shared document"));
 
-        String type = declaredType;
+        String type = pending.declaredType;
         if (type == null || type.isEmpty() || type.equals("*/*")) {
             // The sender said nothing useful. Ask the content resolver, which
             // asks the provider that owns the document.

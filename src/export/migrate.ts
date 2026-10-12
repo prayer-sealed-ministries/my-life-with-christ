@@ -10,6 +10,7 @@
 
 import type {
   EntryDraft,
+  DraftForm,
   Entry,
   EntryAnchor,
   EntryKind,
@@ -259,9 +260,27 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
 
   const id = str(value.id);
   if (!id) {
-    warnings.push('Skipped a record with no id — it cannot be merged or de-duplicated.');
-    return null;
+    throw new Error('This journal contains an entry with no valid id, so it cannot be restored safely.');
   }
+
+  // Anything this build does not know about, plus any known value it cannot
+  // safely interpret. A malformed known field must not disappear merely
+  // because its name is familiar.
+  const unmigrated: Record<string, unknown> = {
+    ...(value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
+      ? (value._unmigrated as Record<string, unknown>)
+      : {}),
+  };
+  const preserveMalformed = (key: string, valid: boolean, expected: string) => {
+    if (value[key] === undefined || valid) return;
+    Object.defineProperty(unmigrated, key, {
+      value: value[key],
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    warnings.push(`Entry ${id}: ${key} was not ${expected}; its original value was preserved in _unmigrated.`);
+  };
 
   const anchors: EntryAnchor[] = [];
   const unmappedAnchors: unknown[] = [];
@@ -273,12 +292,13 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
 
   const kind = readKind(value.kind, id, warnings);
 
+  preserveMalformed(
+    'kind',
+    value.kind === undefined || KINDS.includes(value.kind as EntryKind) || resolveEntryKind(value.kind) !== null,
+    'a recognised entry kind',
+  );
+
   // Anything this build does not know about, kept verbatim.
-  const unmigrated: Record<string, unknown> = {
-    ...(value._unmigrated && typeof value._unmigrated === 'object'
-      ? (value._unmigrated as Record<string, unknown>)
-      : {}),
-  };
   for (const [key, item] of Object.entries(value)) {
     if (KNOWN_FIELDS.has(key)) continue;
     // `JSON.parse` makes "__proto__" an OWN property, and `unmigrated[key] = item`
@@ -297,6 +317,42 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
   }
   if (unmappedAnchors.length > 0) unmigrated.anchors = unmappedAnchors;
 
+  const strings = ['title', 'date', 'notes', 'reflection', 'createdAt', 'updatedAt'] as const;
+  for (const key of strings) preserveMalformed(key, typeof value[key] === 'string', 'text');
+  for (const key of ['place', 'speaker', 'sermonSeries', 'prayer'] as const) {
+    preserveMalformed(key, typeof value[key] === 'string', 'text');
+  }
+  preserveMalformed('anchors', Array.isArray(value.anchors), 'a list');
+  preserveMalformed(
+    'scriptureRefs',
+    Array.isArray(value.scriptureRefs) && value.scriptureRefs.every((item) => typeof item === 'string'),
+    'a list of text references',
+  );
+  preserveMalformed(
+    'tags',
+    Array.isArray(value.tags) && value.tags.every((item) => typeof item === 'string'),
+    'a list of text tags',
+  );
+  const rawLinks = Array.isArray(value.links) ? value.links : [];
+  const migratedLinks = rawLinks.map(migrateLink);
+  preserveMalformed(
+    'links',
+    Array.isArray(value.links) && migratedLinks.every((link) => link !== null),
+    'a list of links',
+  );
+  preserveMalformed('forDescendants', typeof value.forDescendants === 'boolean', 'true or false');
+  preserveMalformed(
+    'visibility',
+    value.visibility === 'private' || value.visibility === 'shared',
+    '"private" or "shared"',
+  );
+  preserveMalformed(
+    '_unmigrated',
+    value._unmigrated === undefined ||
+      (typeof value._unmigrated === 'object' && value._unmigrated !== null && !Array.isArray(value._unmigrated)),
+    'an object',
+  );
+
   const now = new Date().toISOString();
   const entry: Entry = {
     id,
@@ -307,7 +363,7 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
     scriptureRefs: strArray(value.scriptureRefs),
     notes: str(value.notes),
     reflection: str(value.reflection),
-    links: (Array.isArray(value.links) ? value.links : []).map(migrateLink).filter((l): l is EntryLink => l !== null),
+    links: migratedLinks.filter((l): l is EntryLink => l !== null),
     tags: strArray(value.tags),
     forDescendants: bool(value.forDescendants),
     visibility: value.visibility === 'shared' ? ('shared' as Visibility) : ('private' as Visibility),
@@ -340,43 +396,197 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
   return entry;
 }
 
+const DRAFT_FORM_FIELDS = new Set([
+  'kind',
+  'title',
+  'date',
+  'place',
+  'speaker',
+  'sermonSeries',
+  'notes',
+  'reflection',
+  'prayer',
+  'tagsText',
+  'links',
+  'anchors',
+  'forDescendants',
+  'scriptureRefs',
+  'sourceMaterial',
+]);
+
+const DRAFT_FIELDS = new Set([
+  'id',
+  'entryId',
+  'form',
+  'createdAt',
+  'updatedAt',
+  '_unmigrated',
+]);
+
+function validDraftAnchor(raw: unknown): raw is EntryAnchor {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const value = raw as Record<string, unknown>;
+  if (value.kind === 'topic') return typeof value.topicId === 'string';
+  if (value.kind === 'book') return typeof value.book === 'string';
+  return value.kind === 'scripture' && isScriptureRef(value) &&
+    (value.outlineEntryId === undefined || typeof value.outlineEntryId === 'string');
+}
+
+function validDraftSourceMaterial(raw: unknown): raw is SourceMaterial {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const value = raw as Record<string, unknown>;
+  return (
+    MATERIAL_FORMATS.has(str(value.format)) &&
+    typeof value.filename === 'string' &&
+    typeof value.importedAt === 'string' &&
+    typeof value.body === 'string' &&
+    value.body.length > 0 &&
+    typeof value.parserVersion === 'number' &&
+    Number.isFinite(value.parserVersion) &&
+    (value.sha256 === undefined || typeof value.sha256 === 'string') &&
+    (value.church === undefined || typeof value.church === 'string') &&
+    (value.speaker === undefined || typeof value.speaker === 'string') &&
+    (value.date === undefined || typeof value.date === 'string') &&
+    (value.scripture === undefined ||
+      (Array.isArray(value.scripture) && value.scripture.every((item) => typeof item === 'string')))
+  );
+}
+
+function readDraftForm(raw: unknown, id: string): { form: DraftForm; unknown: Record<string, unknown> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`Draft ${id} has no valid form, so this backup was not restored.`);
+  }
+  const value = raw as Record<string, unknown>;
+  const stringFields = [
+    'title',
+    'date',
+    'place',
+    'speaker',
+    'sermonSeries',
+    'notes',
+    'reflection',
+    'prayer',
+    'tagsText',
+  ] as const;
+  if (!KINDS.includes(value.kind as EntryKind)) {
+    throw new Error(`Draft ${id} has an unsupported kind, so this backup was not restored.`);
+  }
+  for (const key of stringFields) {
+    if (typeof value[key] !== 'string') {
+      throw new Error(`Draft ${id} has an invalid ${key} field, so this backup was not restored.`);
+    }
+  }
+  if (
+    !Array.isArray(value.links) ||
+    !value.links.every((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const link = item as Record<string, unknown>;
+      return (
+        typeof link.url === 'string' &&
+        typeof link.label === 'string' &&
+        typeof link.capturedTitle === 'string' &&
+        (link.capturedAt === undefined || typeof link.capturedAt === 'string')
+      );
+    })
+  ) {
+    throw new Error(`Draft ${id} has an invalid links field, so this backup was not restored.`);
+  }
+  if (!Array.isArray(value.anchors) || !value.anchors.every(validDraftAnchor)) {
+    throw new Error(`Draft ${id} has an invalid anchors field, so this backup was not restored.`);
+  }
+  if (
+    !Array.isArray(value.scriptureRefs) ||
+    !value.scriptureRefs.every((item) => typeof item === 'string')
+  ) {
+    throw new Error(`Draft ${id} has an invalid scriptureRefs field, so this backup was not restored.`);
+  }
+  if (typeof value.forDescendants !== 'boolean') {
+    throw new Error(`Draft ${id} has an invalid forDescendants field, so this backup was not restored.`);
+  }
+  if (value.sourceMaterial !== null && !validDraftSourceMaterial(value.sourceMaterial)) {
+    throw new Error(`Draft ${id} has invalid provided material, so this backup was not restored.`);
+  }
+
+  const unknown: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (DRAFT_FORM_FIELDS.has(key)) continue;
+    Object.defineProperty(unknown, key, {
+      value: item,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  return { form: value as unknown as DraftForm, unknown };
+}
+
 /**
- * Read the drafts an archive carried, defensively.
- *
- * Absent is the normal case and is silent: every archive written before this
- * existed has no such key, and treating that as a problem would make old
- * backups look damaged. Anything present but malformed is dropped with a note
- * rather than crashing the import — an unfinished note is not worth refusing
- * somebody's whole journal over.
+ * Read the drafts an archive carried. Absent is the normal pre-draft format;
+ * present-but-malformed is a damaged backup and aborts the import. Silently
+ * dropping unfinished writing would make a successful restore claim false.
  */
 function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
-    warnings.push('The "drafts" section was not a list, so unfinished writing was not restored.');
-    return [];
+    throw new Error('The "drafts" section is not a list, so this backup was not restored.');
   }
 
   const drafts: EntryDraft[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('A draft in this backup is malformed, so nothing was restored.');
+    }
     const value = item as Record<string, unknown>;
     const id = typeof value.id === 'string' ? value.id : '';
-    const form = value.form;
-    if (!id || !form || typeof form !== 'object') {
-      warnings.push('A draft in this archive was malformed and could not be restored.');
-      continue;
+    if (!id || typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') {
+      throw new Error('A draft in this backup has invalid identity or dates, so nothing was restored.');
+    }
+    if (value.entryId !== undefined && typeof value.entryId !== 'string') {
+      throw new Error(`Draft ${id} has an invalid parent entry id, so nothing was restored.`);
+    }
+    const { form, unknown } = readDraftForm(value.form, id);
+    const unknownDraft: Record<string, unknown> = {};
+    for (const [key, field] of Object.entries(value)) {
+      if (DRAFT_FIELDS.has(key)) continue;
+      Object.defineProperty(unknownDraft, key, {
+        value: field,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+      warnings.push(`Draft ${id}: unrecognised field "${key}" was preserved in _unmigrated.`);
+    }
+    const carried =
+      value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
+        ? (value._unmigrated as Record<string, unknown>)
+        : {};
+    if (value._unmigrated !== undefined && Object.keys(carried).length === 0 &&
+        (typeof value._unmigrated !== 'object' || value._unmigrated === null || Array.isArray(value._unmigrated))) {
+      throw new Error(`Draft ${id} has invalid preserved data, so nothing was restored.`);
+    }
+    const unmigrated = {
+      ...carried,
+      ...unknownDraft,
+      ...(Object.keys(unknown).length > 0
+        ? {
+            form: {
+              ...(carried.form && typeof carried.form === 'object' ? (carried.form as object) : {}),
+              ...unknown,
+            },
+          }
+        : {}),
+    };
+    if (Object.keys(unknown).length > 0) {
+      warnings.push(`Draft ${id}: unrecognised form fields were preserved in _unmigrated.`);
     }
     drafts.push({
       id,
       ...(typeof value.entryId === 'string' ? { entryId: value.entryId } : {}),
-      // Kept verbatim: a draft's whole purpose is to be exactly what was typed,
-      // and this build must not tidy a snapshot it is only passing through.
-      form: form as EntryDraft['form'],
-      createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
-      updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date(0).toISOString(),
-      ...(value._unmigrated && typeof value._unmigrated === 'object'
-        ? { _unmigrated: value._unmigrated as Record<string, unknown> }
-        : {}),
+      form,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      ...(Object.keys(unmigrated).length > 0 ? { _unmigrated: unmigrated } : {}),
     });
   }
   return drafts;
@@ -403,14 +613,34 @@ export function migrateExport(raw: unknown, context: MigrationContext = {}): Mig
   }
 
   const entries: Entry[] = [];
+  const entryIds = new Set<string>();
   for (const item of envelope.entries) {
     const entry = migrateEntry(item, context, warnings);
-    if (entry) entries.push(entry);
+    if (!entry) continue;
+    if (entryIds.has(entry.id)) {
+      throw new Error(`This journal contains the entry id "${entry.id}" more than once.`);
+    }
+    entryIds.add(entry.id);
+    entries.push(entry);
+  }
+
+  const drafts = readDrafts(envelope.drafts, warnings);
+  const draftIds = new Set<string>();
+  for (const draft of drafts) {
+    if (draftIds.has(draft.id)) {
+      throw new Error(`This journal contains the draft id "${draft.id}" more than once.`);
+    }
+    draftIds.add(draft.id);
+    if (draft.entryId && !entryIds.has(draft.entryId)) {
+      throw new Error(
+        `Draft ${draft.id} refers to entry ${draft.entryId}, which is not present in this backup.`,
+      );
+    }
   }
 
   return {
     entries,
-    drafts: readDrafts(envelope.drafts, warnings),
+    drafts,
     warnings,
     migratedFrom: version !== undefined && version !== CURRENT_VERSION ? version : undefined,
   };

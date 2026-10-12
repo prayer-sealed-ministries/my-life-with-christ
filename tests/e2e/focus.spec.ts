@@ -272,7 +272,7 @@ test.describe('the kind control shows what is selected', () => {
 
     // The bar is chrome. At the most extreme size it is allowed two lines and
     // no more — the writing surface is what the mode exists to enlarge.
-    const bar = await page.locator('form > div').first().boundingBox();
+    const bar = await page.locator('form > fieldset > div').first().boundingBox();
     expect(
       bar!.height / 760,
       `the focus bar is taking ${Math.round((bar!.height / 760) * 100)}% of the screen`,

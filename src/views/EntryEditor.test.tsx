@@ -1001,6 +1001,46 @@ describe('EntryEditor — delete', () => {
     );
   });
 
+  it('does not accept edits while a confirmed deletion is in flight', async () => {
+    const storage = new DexieStorageProvider(`journey-test-${(counter += 1)}`);
+    const existing = await storage.createEntry({ notes: 'Delete this exact version.' });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let signalStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const slow = new Proxy(storage, {
+      get(target, prop, receiver) {
+        if (prop === 'deleteEntry') {
+          return async (id: string) => {
+            signalStarted();
+            await held;
+            return target.deleteEntry(id);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...args: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    }) as DexieStorageProvider;
+    await renderEdit(slow, existing.id);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this entry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }));
+    await started;
+
+    expect(screen.getByLabelText('Notes')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Deleting…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Keep this entry' })).toBeDisabled();
+
+    release();
+    await waitFor(() => expect(window.location.hash).toBe('#/timeline'));
+  });
+
   it('offers no delete when there is nothing saved yet', async () => {
     setup(<EntryEditor />);
     await notesBox();

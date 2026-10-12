@@ -205,6 +205,10 @@ async function main() {
   if (payload && payloadName) {
     for (const [file, source] of sources) {
       if (file === payload) continue;
+      // The offline worker names every shipped chunk in its install-time
+      // precache. It is registered only after window.load and does not import
+      // or execute the divisions on the application startup path.
+      if (relative(distDir, file) === 'sw.js') continue;
       let at = source.indexOf(payloadName);
       while (at !== -1) {
         const kind = referenceKind(source, at);

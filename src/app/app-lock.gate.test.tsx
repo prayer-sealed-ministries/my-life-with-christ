@@ -178,6 +178,21 @@ describe('when App Lock is off', () => {
 });
 
 describe('when App Lock is on', () => {
+  it('keeps the private tree unmounted when a supported lock cannot read its state', async () => {
+    const lock: AppLock = {
+      ...fakeLock({ enabled: true }).lock,
+      getState: async () => {
+        throw new Error('native state unavailable');
+      },
+    };
+
+    renderGate(lock);
+
+    expect(await screen.findByText('App locked')).toBeInTheDocument();
+    expect(screen.queryByText(PRIVATE_TEXT)).toBeNull();
+    expect(await settledMounts()).toBe(0);
+  });
+
   it('never constructs the journal before it is unlocked', async () => {
     const { lock } = fakeLock({ enabled: true });
     renderGate(lock);
@@ -412,6 +427,38 @@ describe('when the platform has no App Lock at all', () => {
     // feature. The native side is the only thing that can assert a lock
     // exists, and it just failed to assert anything.
     expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
+  });
+});
+
+describe('when the lifecycle listener cannot be attached', () => {
+  it('does not brick an app whose native state definitively says the lock is off', async () => {
+    let release: (value: AppLockState) => void = () => {};
+    const pending = new Promise<AppLockState>((resolve) => {
+      release = resolve;
+    });
+    const lock: AppLock = {
+      ...fakeLock({ enabled: false }).lock,
+      getState: () => pending,
+    };
+    const failedLifecycle: AppStateSource = {
+      subscribe(_onChange, onError) {
+        onError?.(new Error('listener unavailable'));
+        return () => {};
+      },
+    };
+
+    renderGate(lock, failedLifecycle);
+    release({
+      enabled: false,
+      timeoutMs: 0,
+      failures: 0,
+      lastFailureAt: null,
+      recoveryAvailable: false,
+      now: { elapsedMs: 0, bootId: 'b' },
+    });
+
+    expect(await screen.findByText(PRIVATE_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText('App locked')).toBeNull();
   });
 });
 

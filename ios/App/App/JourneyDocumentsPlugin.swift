@@ -22,6 +22,8 @@ import UniformTypeIdentifiers
  */
 @objc(JourneyDocumentsPlugin)
 public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
+    /// Must match MAX_PICKED_FILE_BYTES in src/platform/file-limits.ts.
+    private let maxPickedBytes = 64 * 1024 * 1024
     public let identifier = "JourneyDocumentsPlugin"
     public let jsName = "JourneyDocuments"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -38,6 +40,30 @@ public class JourneyDocumentsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// export and a share can be staged at once, and one finishing must not
     /// delete the other's file out from under the system.
     private var sharedURL: URL?
+
+    private enum PickReadError: Error {
+        case tooLarge
+        case unreadable
+    }
+
+    /// Read incrementally so a provider with missing or incorrect size
+    /// metadata cannot make `Data(contentsOf:)` allocate an unbounded file.
+    private func readPickedData(from url: URL) throws -> Data {
+        guard let stream = InputStream(url: url) else { throw PickReadError.unreadable }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw stream.streamError ?? PickReadError.unreadable }
+            if count == 0 { break }
+            if data.count > maxPickedBytes - count { throw PickReadError.tooLarge }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
+    }
 
     // MARK: - Save
 
@@ -257,12 +283,19 @@ extension JourneyDocumentsPlugin: UIDocumentPickerDelegate {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            let data = try Data(contentsOf: url)
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            if let size = values.fileSize, size > maxPickedBytes {
+                call.reject("That file is larger than the 64MB import limit and was not read.")
+                return
+            }
+            let data = try readPickedData(from: url)
             call.resolve([
                 "cancelled": false,
                 "name": url.lastPathComponent,
                 "base64": data.base64EncodedString()
             ])
+        } catch PickReadError.tooLarge {
+            call.reject("That file is larger than the 64MB import limit and was not read.")
         } catch {
             call.reject("That file could not be read: \(error.localizedDescription)")
         }

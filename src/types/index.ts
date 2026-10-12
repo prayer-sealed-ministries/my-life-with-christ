@@ -513,10 +513,12 @@ export interface ImportPreview {
    * option, which must never state a number it has not actually read.
    */
   existing: number;
+  /** Unfinished drafts that replace mode would delete with those entries. */
+  existingDrafts: number;
   newEntries: number;
   updated: number;
   unchanged: number;
-  /** Same id, both sides edited — newest updatedAt wins under merge. */
+  /** Same id with differing content — merge preserves both under distinct ids. */
   conflicts: { id: string; title: string; mineUpdatedAt: string; theirsUpdatedAt: string }[];
   /** Anchors that will not resolve in this build's data profile. */
   danglingAnchors: number;

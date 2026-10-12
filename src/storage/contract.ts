@@ -496,6 +496,24 @@ export const CONTRACT_CASES: ContractCase[] = [
       );
     },
   },
+  {
+    group: 'updating',
+    name: 'serializes concurrent non-overlapping patches without losing either',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const created = await storage.createEntry({ title: 'Before', notes: 'Before notes' });
+
+      await Promise.all([
+        storage.updateEntry(created.id, { title: 'After title' }),
+        storage.updateEntry(created.id, { notes: 'After notes' }),
+      ]);
+
+      const after = await storage.getEntry(created.id);
+      assertDefined(after, 'the concurrently updated entry still exists');
+      assert.is(after.title, 'After title', 'the title patch survived');
+      assert.is(after.notes, 'After notes', 'the notes patch survived');
+    },
+  },
 
   // -------------------------------------------------------------------------
   {
@@ -523,6 +541,21 @@ export const CONTRACT_CASES: ContractCase[] = [
         () => storage.deleteEntry('never-existed'),
         'deleting a missing entry',
       );
+    },
+  },
+  {
+    group: 'deleting',
+    name: 'removes recovery drafts belonging to the deleted entry',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const saved = await storage.createEntry({ title: 'Parent' });
+      await storage.putDraft(draft({ id: 'owned-draft', entryId: saved.id }));
+      await storage.putDraft(draft({ id: 'other-draft' }));
+
+      await storage.deleteEntry(saved.id);
+
+      assert.is(await storage.getDraft('owned-draft'), undefined, 'the parented draft was deleted');
+      assertDefined(await storage.getDraft('other-draft'), 'an unrelated draft survived');
     },
   },
 
@@ -1069,6 +1102,46 @@ export const CONTRACT_CASES: ContractCase[] = [
 
       assert.is((await storage.listEntries()).length, 0, 'the journal was cleared');
       assertDefined(await storage.getDraft('d-keep'), 'unfinished work is not part of a journal wipe');
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  {
+    group: 'atomic journal snapshots',
+    name: 'captures entries and drafts together and replaces them together',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'old-entry' })]);
+      await storage.putDraft(draft({ id: 'old-draft' }));
+      const before = await storage.readJournalSnapshot();
+
+      await storage.replaceJournal(
+        [entry({ id: 'new-entry', title: 'Restored' })],
+        [draft({ id: 'new-draft', form: draftForm({ notes: 'Restored draft' }) })],
+        before.token,
+      );
+
+      assert.equal((await storage.listEntries()).map((item) => item.id), ['new-entry'], 'entries swapped');
+      assert.equal((await storage.listDrafts()).map((item) => item.id), ['new-draft'], 'drafts swapped');
+    },
+  },
+  {
+    group: 'atomic journal snapshots',
+    name: 'refuses a stale replacement without altering the current journal',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.putEntries([entry({ id: 'kept' })]);
+      const before = await storage.readJournalSnapshot();
+      await storage.putDraft(draft({ id: 'arrived-later' }));
+
+      await assert.rejects(
+        () => storage.replaceJournal([entry({ id: 'incoming' })], [], before.token),
+        'a replacement based on a stale snapshot',
+      );
+
+      assertDefined(await storage.getEntry('kept'), 'the prior entry survived');
+      assertDefined(await storage.getDraft('arrived-later'), 'the concurrent draft survived');
+      assert.undefined(await storage.getEntry('incoming'), 'the stale replacement wrote nothing');
     },
   },
 ];

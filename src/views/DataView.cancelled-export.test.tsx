@@ -63,7 +63,7 @@ function platformAnswering(saved: boolean, delayMs = 0): Platform {
       async save(): Promise<SaveResult> {
         // A picker the reader takes a moment over, or a machine under load.
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return { saved };
+        return { status: saved ? 'committed' : 'cancelled' };
       },
     },
   };

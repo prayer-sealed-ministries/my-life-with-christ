@@ -11,6 +11,7 @@
   the tagline.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -25,7 +26,7 @@
         android:layout_height="24dp"
         android:layout_marginEnd="10dp"
         android:src="@drawable/ic_shortcut_sermon_note"
-        android:tint="@color/widget_ink"
+        app:tint="@color/widget_ink"
         android:importantForAccessibility="no" />
 
     <LinearLayout

@@ -158,18 +158,26 @@ public class AppLockPlugin extends Plugin {
             call.reject("App Lock could not confirm it was you.");
             return;
         }
-        store.clearAll();
-        consumeRecoveryGrant();
-        JSObject result = new JSObject();
-        result.put("ok", true);
-        call.resolve(result);
+        try {
+            store.clearAll();
+            consumeRecoveryGrant();
+            JSObject result = new JSObject();
+            result.put("ok", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("App Lock could not be disabled on this device.");
+        }
     }
 
     @PluginMethod
     public void setTimeout(PluginCall call) {
         Integer ms = call.getInt("timeoutMs", 0);
-        store.setTimeoutMs(ms == null ? 0L : ms.longValue());
-        call.resolve();
+        try {
+            store.setTimeoutMs(ms == null ? 0L : ms.longValue());
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("App Lock could not save that timeout.");
+        }
     }
 
     /**

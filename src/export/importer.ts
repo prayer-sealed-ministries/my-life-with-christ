@@ -25,10 +25,14 @@
  * input, not an older archive, and it is accepted exactly as before.
  */
 
-import type { Entry, ImportMode, ImportPreview, JourneyExport } from '../types';
+import type { Entry, EntryDraft, ImportMode, ImportPreview, JourneyExport } from '../types';
 import type { StorageProvider } from '../storage/StorageProvider';
+import { newId } from '../storage/semantics';
+import { JournalChangedError, sameRecord } from '../storage/journal';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
-import { readZip, zipEntryText } from './zip';
+import { zipEntryText } from './zip';
+import { readZipLimited } from '../import/zip-limits';
+import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from '../platform/file-limits';
 import { verifyArchiveManifest } from './manifest.mjs';
 
 /** Where journey.json lives inside an archive this app wrote. */
@@ -82,13 +86,24 @@ export async function parseImport(
   let text: string;
   let source: ParsedImport['source'];
 
+  if (
+    (typeof data === 'string' && new TextEncoder().encode(data).byteLength > MAX_PICKED_FILE_BYTES) ||
+    (data instanceof Uint8Array && data.byteLength > MAX_PICKED_FILE_BYTES)
+  ) {
+    throw new Error(pickedFileTooLargeMessage);
+  }
+
   if (typeof data === 'string') {
     text = data;
     source = 'json';
   } else if (looksLikeZip(data)) {
     let entries;
     try {
-      entries = await readZip(data);
+      entries = await readZipLimited(data, {
+        maxEntries: 10_000,
+        maxEntryBytes: 128 * 1024 * 1024,
+        maxTotalBytes: 256 * 1024 * 1024,
+      });
     } catch (cause) {
       // A ZIP that will not open is damage of the loudest kind. It is reported
       // as a failure to verify, like every other kind, because from where the
@@ -136,15 +151,16 @@ export async function parseImport(
 /**
  * Work out what an import would do. Writes nothing.
  *
- * Under `merge` the newest `updatedAt` wins, and any id present on both sides
- * where both were edited is reported as a conflict so the user sees it before
- * deciding.
+ * Under `merge`, differing records with the same id are conflicts. Apply keeps
+ * both as separate entries, because a wall clock cannot safely decide which
+ * human-authored version deserves to disappear.
  */
 export function previewImport(
   incoming: ParsedImport,
   existing: Entry[],
   mode: ImportMode = 'merge',
   isAnchorResolvable?: (entry: Entry) => boolean,
+  existingDrafts: EntryDraft[] = [],
 ): ImportPreview {
   const mine = new Map(existing.map((entry) => [entry.id, entry]));
 
@@ -159,12 +175,11 @@ export function previewImport(
       newEntries += 1;
       continue;
     }
-    if (current.updatedAt === entry.updatedAt) {
+    if (sameRecord(current, entry)) {
       unchanged += 1;
       continue;
     }
     if (entry.updatedAt > current.updatedAt) updated += 1;
-    else unchanged += 1;
 
     conflicts.push({
       id: entry.id,
@@ -177,7 +192,7 @@ export function previewImport(
   const warnings = [...incoming.warnings];
   if (mode === 'replace') {
     warnings.unshift(
-      `Replace mode will delete all ${existing.length} existing ${existing.length === 1 ? 'entry' : 'entries'} before importing.`,
+      `Replace mode will delete all ${existing.length} existing ${existing.length === 1 ? 'entry' : 'entries'} and ${existingDrafts.length} unfinished ${existingDrafts.length === 1 ? 'draft' : 'drafts'} before importing.`,
     );
   }
   if (incoming.filter) {
@@ -192,6 +207,7 @@ export function previewImport(
     mode,
     incoming: incoming.entries.length,
     existing: existing.length,
+    existingDrafts: existingDrafts.length,
     newEntries,
     updated,
     unchanged,
@@ -204,6 +220,8 @@ export function previewImport(
 
 export interface ImportResult {
   imported: number;
+  draftsImported: number;
+  conflictsPreserved: number;
   replaced: boolean;
   preview: ImportPreview;
 }
@@ -215,47 +233,84 @@ export async function applyImport(
   incoming: ParsedImport,
   storage: StorageProvider,
   mode: ImportMode = 'merge',
+  /** Snapshot shown in the preview. A changed journal must be reviewed again. */
+  previewToken?: string,
 ): Promise<ImportResult> {
-  const existing = await storage.listEntries();
-  const preview = previewImport(incoming, existing, mode);
+  const before = await storage.readJournalSnapshot();
+  if (previewToken !== undefined && before.token !== previewToken) {
+    throw new JournalChangedError();
+  }
+  const preview = previewImport(incoming, before.entries, mode, undefined, before.drafts);
 
   if (mode === 'replace') {
-    // One atomic swap rather than clear-then-write. The two-step version could
-    // leave a reader with neither journal if the write failed after the delete
-    // succeeded, which is reachable from an ordinary restore.
-    await storage.replaceEntries(incoming.entries);
-    await restoreDrafts(incoming, storage);
-    return { imported: incoming.entries.length, replaced: true, preview };
+    if (incoming.filter) {
+      throw new Error('A partial export cannot replace a whole journal. Choose Merge instead.');
+    }
+    await storage.replaceJournal(incoming.entries, incoming.drafts, before.token);
+    return {
+      imported: incoming.entries.length,
+      draftsImported: incoming.drafts.length,
+      conflictsPreserved: 0,
+      replaced: true,
+      preview,
+    };
   }
 
-  // Merge: newest updatedAt wins, per id.
-  const mine = new Map(existing.map((entry) => [entry.id, entry]));
-  const toWrite: Entry[] = [];
+  const entries = [...before.entries];
+  const drafts = [...before.drafts];
+  const mine = new Map(entries.map((entry) => [entry.id, entry]));
+  const takenEntryIds = new Set(mine.keys());
+  const remappedEntryIds = new Map<string, string>();
+  let imported = 0;
+  let conflictsPreserved = 0;
 
+  const unusedId = (taken: Set<string>): string => {
+    let id = newId();
+    while (taken.has(id)) id = newId();
+    taken.add(id);
+    return id;
+  };
+
+  // A differing same-id entry is never silently discarded. Keep the local
+  // identity in place and import the archived payload under a fresh identity.
   for (const entry of incoming.entries) {
     const current = mine.get(entry.id);
-    if (!current || entry.updatedAt > current.updatedAt) toWrite.push(entry);
+    if (!current) {
+      entries.push(entry);
+      mine.set(entry.id, entry);
+      takenEntryIds.add(entry.id);
+      imported += 1;
+      continue;
+    }
+    if (sameRecord(current, entry)) continue;
+
+    const id = unusedId(takenEntryIds);
+    entries.push({ ...entry, id });
+    remappedEntryIds.set(entry.id, id);
+    imported += 1;
+    conflictsPreserved += 1;
   }
 
-  await storage.putEntries(toWrite);
-  await restoreDrafts(incoming, storage);
-  return { imported: toWrite.length, replaced: false, preview };
-}
-
-/**
- * Put unfinished writing back as unfinished writing.
- *
- * Restored as drafts, never as entries: an archive made mid-sentence carries
- * the sentence, and importing it must not promote a half-thought into the
- * finished journal. The count reported to the reader stays the entry count for
- * the same reason — drafts are recovered work, not entries received.
- *
- * Failures here are deliberately not fatal. The journal has already been
- * written by the time this runs, and refusing the whole import because an
- * unfinished note would not restore would be the wrong trade.
- */
-async function restoreDrafts(incoming: ParsedImport, storage: StorageProvider): Promise<void> {
+  const mineDrafts = new Map(drafts.map((draft) => [draft.id, draft]));
+  const takenDraftIds = new Set(mineDrafts.keys());
+  let draftsImported = 0;
   for (const draft of incoming.drafts) {
-    await storage.putDraft(draft).catch(() => {});
+    const reparented: EntryDraft = draft.entryId && remappedEntryIds.has(draft.entryId)
+      ? { ...draft, entryId: remappedEntryIds.get(draft.entryId) }
+      : draft;
+    const current = mineDrafts.get(reparented.id);
+    if (!current) {
+      drafts.push(reparented);
+      mineDrafts.set(reparented.id, reparented);
+      takenDraftIds.add(reparented.id);
+      draftsImported += 1;
+      continue;
+    }
+    if (sameRecord(current, reparented)) continue;
+    drafts.push({ ...reparented, id: unusedId(takenDraftIds) });
+    draftsImported += 1;
   }
+
+  await storage.replaceJournal(entries, drafts, before.token);
+  return { imported, draftsImported, conflictsPreserved, replaced: false, preview };
 }

@@ -80,8 +80,10 @@ final class AppLockStore {
         return prefs.getLong(K_TIMEOUT, 0L);
     }
 
-    void setTimeoutMs(long ms) {
-        prefs.edit().putLong(K_TIMEOUT, ms).apply();
+    void setTimeoutMs(long ms) throws Exception {
+        if (!prefs.edit().putLong(K_TIMEOUT, ms).commit()) {
+            throw new Exception("App Lock timeout was not persisted.");
+        }
     }
 
     int failures() {
@@ -113,20 +115,22 @@ final class AppLockStore {
     }
 
     /** Record a wrong PIN. Persisted, so force-stop does not clear the penalty. */
-    void recordFailure() {
-        prefs.edit()
+    void recordFailure() throws Exception {
+        boolean written = prefs.edit()
                 .putInt(K_FAILURES, failures() + 1)
                 .putLong(K_LAST_FAIL_ELAPSED, SystemClock.elapsedRealtime())
                 .putString(K_LAST_FAIL_BOOT, bootId())
-                .apply();
+                .commit();
+        if (!written) throw new Exception("App Lock attempt state was not persisted.");
     }
 
-    void clearFailures() {
-        prefs.edit()
+    void clearFailures() throws Exception {
+        boolean written = prefs.edit()
                 .remove(K_FAILURES)
                 .remove(K_LAST_FAIL_ELAPSED)
                 .remove(K_LAST_FAIL_BOOT)
-                .apply();
+                .commit();
+        if (!written) throw new Exception("App Lock attempt state was not cleared.");
     }
 
     /**
@@ -145,10 +149,16 @@ final class AppLockStore {
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString(K_SALT, Base64.encodeToString(salt, Base64.NO_WRAP));
         editor.putString(K_VERIFIER, Base64.encodeToString(verifier, Base64.NO_WRAP));
+        editor.remove(K_FAILURES);
+        editor.remove(K_LAST_FAIL_ELAPSED);
+        editor.remove(K_LAST_FAIL_BOOT);
         // commit, not apply: the caller is about to tell somebody their PIN is
-        // set, and that sentence must not outrun the write.
-        editor.commit();
-        clearFailures();
+        // set, and that sentence must not outrun the write. The verifier and
+        // cleared attempt state share this one commit so the method cannot
+        // report failure after already installing the new PIN.
+        if (!editor.commit()) {
+            throw new Exception("App Lock PIN was not persisted.");
+        }
     }
 
     /** Constant-time check of a candidate PIN. Does not touch failure counts. */
@@ -170,8 +180,10 @@ final class AppLockStore {
      * reused the same key, and the point of per-install randomness is that two
      * installs of this app share nothing.
      */
-    void clearAll() {
-        prefs.edit().clear().commit();
+    void clearAll() throws Exception {
+        if (!prefs.edit().clear().commit()) {
+            throw new Exception("App Lock state was not cleared.");
+        }
         try {
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
             keyStore.load(null);

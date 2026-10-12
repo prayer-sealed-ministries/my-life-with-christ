@@ -69,7 +69,7 @@ function show(
   onClose = () => {},
 ) {
   const platform = {
-    files: { save: async () => ({ saved: false as const, reason: 'cancelled' as const }) },
+    files: { save: async () => ({ status: 'cancelled' as const }) },
     picker: { pick: async () => null },
     printer: { print: () => {}, canPrint: false },
     unsavedWork: { protect: () => () => {} },

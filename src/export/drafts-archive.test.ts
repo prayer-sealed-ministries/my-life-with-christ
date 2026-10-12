@@ -155,6 +155,25 @@ describe('reading an archive back', () => {
 
     expect(back.drafts).toEqual([ragged]);
   });
+
+  it('replace swaps drafts as well as entries instead of leaving old unfinished text behind', async () => {
+    const storage = new DexieStorageProvider(`drafts-replace-${(counter += 1)}`);
+    await storage.open();
+    await storage.putEntries([entry({ id: 'old-entry' })]);
+    await storage.putDraft(draft({ id: 'old-draft' }));
+
+    const archive = await buildArchive({
+      entries: [entry({ id: 'restored-entry' })],
+      drafts: [],
+      outlineBooks: [],
+      topics: [],
+      profile: 'public',
+    });
+    await applyImport(await parseImport(archive.bytes), storage, 'replace');
+
+    expect((await storage.listEntries()).map((item) => item.id)).toEqual(['restored-entry']);
+    expect(await storage.listDrafts()).toEqual([]);
+  });
 });
 
 describe('archives written before drafts existed', () => {
@@ -177,7 +196,7 @@ describe('archives written before drafts existed', () => {
     ).not.toMatch(/draft/i);
   });
 
-  it('survives a drafts section that is malformed, without refusing the journal', () => {
+  it('refuses a malformed drafts section instead of silently dropping unfinished writing', () => {
     const damaged = {
       format: 'journey-export',
       version: 1,
@@ -186,10 +205,6 @@ describe('archives written before drafts existed', () => {
       drafts: [{ id: 'no-form' }, 'not even an object'],
     };
 
-    const result = migrateExport(damaged);
-
-    expect(result.entries, 'the journal still imported').toHaveLength(1);
-    expect(result.drafts).toEqual([]);
-    expect(result.warnings.join(' ')).toMatch(/draft/i);
+    expect(() => migrateExport(damaged)).toThrow(/draft/i);
   });
 });

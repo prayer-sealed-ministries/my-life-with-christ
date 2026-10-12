@@ -72,6 +72,20 @@ function invokeFastCapture() {
   window.location.replace(href(route!));
 }
 
+/** Wait for the new capture, not merely for its synchronously changed URL. */
+async function fastCaptureReady() {
+  await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
+  // The outgoing editor can keep its Notes element alive for a render after
+  // location.replace updates the hash. A Notes-only wait can therefore inspect
+  // the old focused prayer or saved entry. The ordinary Focus button exists
+  // only after the new session has mounted and deliberately left focus mode.
+  await screen.findByRole('button', { name: 'Focus' });
+  await waitFor(() =>
+    expect((screen.getByLabelText('Kind') as HTMLSelectElement).value).toBe('sermon'),
+  );
+  return notes();
+}
+
 /**
  * A storage provider whose entry reads can be held open.
  *
@@ -179,8 +193,7 @@ describe('a new Fast Capture never inherits focus mode', () => {
 
     invokeFastCapture();
 
-    await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
-    await notes();
+    await fastCaptureReady();
     expect(inFocusMode(), 'the new sermon inherited focus mode').toBe(false);
     await waitFor(() => expect(notesFocused(), 'the cursor is not in the notes box').toBe(true));
   });
@@ -195,8 +208,7 @@ describe('a new Fast Capture never inherits focus mode', () => {
 
     invokeFastCapture();
 
-    await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
-    await notes();
+    await fastCaptureReady();
     expect(inFocusMode(), 'the sermon inherited the prayer’s focus mode').toBe(false);
 
     // And the prayer is still there, exactly as written.
@@ -215,8 +227,7 @@ describe('a new Fast Capture never inherits focus mode', () => {
 
     invokeFastCapture();
 
-    await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
-    await notes();
+    await fastCaptureReady();
     expect(inFocusMode()).toBe(false);
   });
 
@@ -231,8 +242,7 @@ describe('a new Fast Capture never inherits focus mode', () => {
     await waitFor(() => expect(inFocusMode()).toBe(false));
     invokeFastCapture();
 
-    await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
-    await notes();
+    await fastCaptureReady();
     expect(inFocusMode(), 'focus came back for a session that never asked').toBe(false);
   });
 
@@ -342,8 +352,7 @@ describe('the session that did ask for it keeps it', () => {
     // Now the widget, for a genuinely new sermon.
     invokeFastCapture();
 
-    await waitFor(() => expect(window.location.hash).toBe('#/entry/new?kind=sermon'));
-    await notes();
+    await fastCaptureReady();
     expect(inFocusMode(), 'the saved entry handed focus mode to a new capture').toBe(false);
   });
 

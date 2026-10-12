@@ -28,6 +28,7 @@ import {
 } from './semantics';
 import { byRecency } from '../lib/drafts';
 import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
+import { JournalChangedError, journalToken, type JournalSnapshot } from './journal';
 
 // Re-exported for the views and tests that already import them from here. The
 // definitions moved to `semantics.ts` so the SQLite provider can share them
@@ -117,15 +118,20 @@ export class DexieStorageProvider implements StorageProvider {
   }
 
   async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
-    const existing = await this.getEntry(id);
-    if (!existing) throw new Error(`No entry with id ${id}`);
-    const updated = applyPatch(existing, patch);
-    await this.db.entries.put(toRow(updated));
-    return updated;
+    return this.db.transaction('rw', this.db.entries, async () => {
+      const row = (await this.db.entries.get(id)) as EntryRow | undefined;
+      if (!row) throw new Error(`No entry with id ${id}`);
+      const updated = applyPatch(fromRow(row), patch);
+      await this.db.entries.put(toRow(updated));
+      return updated;
+    });
   }
 
   async deleteEntry(id: string): Promise<void> {
-    await this.db.entries.delete(id);
+    await this.db.transaction('rw', this.db.entries, this.db.drafts, async () => {
+      await this.db.entries.delete(id);
+      await this.db.drafts.where('entryId').equals(id).delete();
+    });
   }
 
   async findEntriesForExactAnchor(anchor: AnchorLookup): Promise<Entry[]> {
@@ -144,6 +150,46 @@ export class DexieStorageProvider implements StorageProvider {
     await this.db.transaction('rw', this.db.entries, async () => {
       await this.db.entries.clear();
       await this.db.entries.bulkPut(entries.map(toRow));
+    });
+  }
+
+  async readJournalSnapshot(): Promise<JournalSnapshot> {
+    return this.db.transaction('r', this.db.entries, this.db.drafts, async () => {
+      const entries = ((await this.db.entries.toArray()) as EntryRow[])
+        .map(fromRow)
+        .sort(chronologically);
+      const drafts = (await this.db.drafts.toArray()).sort(byRecency);
+      return {
+        entries,
+        drafts,
+        token: journalToken(entries, drafts),
+        capturedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  async journalMatches(token: string): Promise<boolean> {
+    const snapshot = await this.readJournalSnapshot();
+    return snapshot.token === token;
+  }
+
+  async replaceJournal(
+    entries: Entry[],
+    drafts: EntryDraft[],
+    expectedToken?: string,
+  ): Promise<void> {
+    await this.db.transaction('rw', this.db.entries, this.db.drafts, async () => {
+      if (expectedToken !== undefined) {
+        const currentEntries = ((await this.db.entries.toArray()) as EntryRow[]).map(fromRow);
+        const currentDrafts = await this.db.drafts.toArray();
+        if (journalToken(currentEntries, currentDrafts) !== expectedToken) {
+          throw new JournalChangedError();
+        }
+      }
+      await this.db.entries.clear();
+      await this.db.drafts.clear();
+      if (entries.length > 0) await this.db.entries.bulkPut(entries.map(toRow));
+      if (drafts.length > 0) await this.db.drafts.bulkPut(drafts);
     });
   }
 
@@ -188,10 +234,13 @@ export class DexieStorageProvider implements StorageProvider {
   }
 
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
-    const current = await this.getSettings();
-    const next = { ...current, ...patch };
-    await this.db.settings.put({ key: SETTINGS_KEY, ...next });
-    return next;
+    return this.db.transaction('rw', this.db.settings, async () => {
+      const row = await this.db.settings.get(SETTINGS_KEY);
+      const current = row ? (({ key: _key, ...value }) => value)(row) : {};
+      const next = { ...current, ...patch };
+      await this.db.settings.put({ key: SETTINGS_KEY, ...next });
+      return next;
+    });
   }
 
   async listTags(): Promise<string[]> {

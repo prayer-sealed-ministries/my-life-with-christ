@@ -94,6 +94,20 @@ describe('a new entry nobody has saved', () => {
     expect(await db.listEntries(), 'a draft is not an entry').toHaveLength(0);
   });
 
+  it('flushes the newest sentence immediately when in-app navigation unmounts the editor', async () => {
+    mount(db);
+    await notes();
+    type('Notes', 'Written immediately before leaving.');
+
+    // No wait for the ordinary settle window: route replacement unmounts now.
+    cleanup();
+
+    await waitFor(async () => {
+      const [draft] = await db.listDrafts();
+      expect(draft?.form.notes).toBe('Written immediately before leaving.');
+    });
+  });
+
   it.each([
     ['Title', 'Grace at the door'],
     ['Notes', 'What was said.'],
@@ -237,6 +251,112 @@ describe('explicit Save', () => {
     expect(entry.notes, 'Save must flush the pending snapshot first').toBe(
       'First. And the sentence typed just before pressing Save.',
     );
+  });
+
+  it('keeps text typed while a slow Save is in flight as a parented draft', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let signalStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+
+    const slow = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'createEntry') {
+          return async (...args: Parameters<DexieStorageProvider['createEntry']>) => {
+            signalStarted();
+            await held;
+            return target.createEntry(...args);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(slow);
+    await notes();
+    type('Notes', 'The version submitted.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await started;
+
+    // This edit is visibly accepted while the canonical write is still held.
+    type('Notes', 'The version typed while Save was waiting.');
+    release();
+
+    await waitFor(async () => {
+      const entries = await db.listEntries();
+      const drafts = await db.listDrafts();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].notes).toBe('The version submitted.');
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0].entryId).toBe(entries[0].id);
+      expect(drafts[0].form.notes).toBe('The version typed while Save was waiting.');
+    });
+  });
+
+  it('does not misreport a saved entry when preserving a later edit initially fails', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let signalStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    let failedParentedWrite = false;
+
+    const flaky = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'createEntry') {
+          return async (...args: Parameters<DexieStorageProvider['createEntry']>) => {
+            signalStarted();
+            await held;
+            return target.createEntry(...args);
+          };
+        }
+        if (prop === 'putDraft') {
+          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+            // Fail the first write that identifies the newly-created parent.
+            // Counting calls made this test depend on a 400 ms debounce not
+            // expiring while createEntry was held, which is not true on a busy
+            // machine and is unrelated to the behavior under test.
+            if (draft.entryId && !failedParentedWrite) {
+              failedParentedWrite = true;
+              throw new Error('temporary draft failure');
+            }
+            return target.putDraft(draft);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(flaky);
+    await notes();
+    type('Notes', 'The version submitted.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await started;
+    type('Notes', 'The later sentence still on screen.');
+    release();
+
+    expect(await screen.findByText(/version you submitted was saved/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Your entry could not be saved/i)).toBeNull();
+    expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe(
+      'The later sentence still on screen.',
+    );
+
+    const [entry] = await db.listEntries();
+    expect(entry.notes).toBe('The version submitted.');
+    await waitFor(async () => {
+      const [draft] = await db.listDrafts();
+      expect(draft.entryId).toBe(entry.id);
+      expect(draft.form.notes).toBe('The later sentence still on screen.');
+    });
   });
 });
 
@@ -603,10 +723,15 @@ describe('the home page after an entry was only read', () => {
       </RouterProvider>,
     );
 
+    const continuation = await screen.findByRole('link', { name: /Continue sermon/i });
     expect(
-      await screen.findByRole('link', { name: /Continue sermon/i }),
+      continuation,
       'suppressing false drafts must not suppress real ones',
     ).toBeInTheDocument();
+    expect(
+      continuation.getAttribute('href'),
+      'a draft for a saved entry must reopen its parent rather than create a duplicate',
+    ).toBe(`#/entry/${entry.id}`);
   });
 });
 
@@ -951,5 +1076,88 @@ describe('discarding a draft', () => {
     const [survivor] = await db.listDrafts();
     expect(survivor.entryId, 'the wrong draft was thrown away').toBe(entry.id);
     expect(survivor.form.notes).toBe('The original notes. An edit nobody kept.');
+  });
+
+  it('G — reports a failed delete and restores the draft even when the outcome was ambiguous', async () => {
+    const ambiguousDelete = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'deleteDraft') {
+          return async (id: string) => {
+            // Model a provider that commits and then loses its connection. A
+            // rejection alone cannot tell the editor whether the row survived.
+            await target.deleteDraft(id);
+            throw new Error('storage disconnected after delete');
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(ambiguousDelete);
+    await notes();
+    type('Notes', 'These words must survive a failed discard.');
+    await settle(db);
+
+    await discard();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /draft could not be discarded.*writing is still here/i,
+    );
+    await waitFor(async () => {
+      const [restored] = await db.listDrafts();
+      expect(restored?.form.notes).toBe('These words must survive a failed discard.');
+    });
+    expect(window.location.hash).toBe('#/entry/new');
+    expect(screen.getByRole('button', { name: 'Discard draft' })).toBeInTheDocument();
+  });
+
+  it('H — keeps words typed while a slow discard is in flight as a new draft', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let signalStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const slowDelete = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'deleteDraft') {
+          return async (id: string) => {
+            signalStarted();
+            await held;
+            return target.deleteDraft(id);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    }) as DexieStorageProvider;
+
+    mount(slowDelete);
+    await notes();
+    type('Notes', 'The version deliberately discarded.');
+    await settle(db);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes, discard it' }));
+    await started;
+    type('Notes', 'Words typed after confirming the earlier discard.');
+    release();
+
+    expect(
+      await screen.findByText(/earlier draft was discarded.*newer changes were kept/i),
+    ).toBeInTheDocument();
+    await waitFor(async () => {
+      const drafts = await db.listDrafts();
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0].form.notes).toBe('Words typed after confirming the earlier discard.');
+    });
+    expect(window.location.hash).toBe('#/entry/new');
   });
 });

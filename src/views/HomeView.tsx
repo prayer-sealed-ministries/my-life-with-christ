@@ -385,7 +385,11 @@ export default function HomeView() {
             Unfinished writing
           </h2>
           <Link
-            to={{ name: 'newEntry', draft: continueWith.id }}
+            to={
+              continueWith.entryId
+                ? { name: 'entry', id: continueWith.entryId }
+                : { name: 'newEntry', draft: continueWith.id }
+            }
             className={`flex w-full items-center gap-3.5 p-4 ${cardClasses({
               interactive: true,
             })} active:brightness-95`}

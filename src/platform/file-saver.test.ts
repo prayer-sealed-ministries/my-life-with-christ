@@ -11,7 +11,7 @@
  * was always correct about the result it was handed; nobody handed it one.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const saveDocument = vi.fn();
 const pickDocument = vi.fn();
@@ -39,12 +39,17 @@ beforeEach(() => {
   pickDocument.mockReset();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe('the native saver reports what the operating system did', () => {
   it('passes a real save through', async () => {
     saveDocument.mockResolvedValue({ saved: true });
     const { nativeFileSaver } = await import('./native');
 
-    await expect(nativeFileSaver.save(file)).resolves.toEqual({ saved: true });
+    await expect(nativeFileSaver.save(file)).resolves.toEqual({ status: 'committed' });
   });
 
   it('passes a cancellation through instead of swallowing it', async () => {
@@ -53,7 +58,7 @@ describe('the native saver reports what the operating system did', () => {
     saveDocument.mockResolvedValue({ saved: false });
     const { nativeFileSaver } = await import('./native');
 
-    await expect(nativeFileSaver.save(file)).resolves.toEqual({ saved: false });
+    await expect(nativeFileSaver.save(file)).resolves.toEqual({ status: 'cancelled' });
   });
 
   it('treats a plugin that says nothing useful as not saved', async () => {
@@ -65,7 +70,7 @@ describe('the native saver reports what the operating system did', () => {
       await expect(
         nativeFileSaver.save(file),
         `${JSON.stringify(answer)} was treated as a successful save`,
-      ).resolves.toEqual({ saved: false });
+      ).resolves.toEqual({ status: 'cancelled' });
     }
   });
 
@@ -97,13 +102,90 @@ describe('the web saver still downloads', () => {
     expect(click, 'the download was never triggered').toHaveBeenCalledTimes(1);
     expect(createObjectURL).toHaveBeenCalledTimes(1);
 
-    // `saved: true` on the web means the download STARTED. A browser gives no
-    // completion or cancellation signal for an anchor download, and this is
-    // the honest limit rather than a pretence: native, which does know, tells
-    // the truth, and the web says what it can actually observe.
-    expect(result).toEqual({ saved: true });
+    // An anchor download has no completion or cancellation signal. The tagged
+    // result prevents the caller from recording it as a durable backup.
+    expect(result).toEqual({ status: 'initiated' });
 
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+  });
+
+  it('commits only after a File System Access writable closes successfully', async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const recordReceiver = vi.fn();
+    const showSaveFilePicker = vi.fn(function (this: Window) {
+      recordReceiver(this === window);
+      return Promise.resolve({
+        createWritable: vi.fn().mockResolvedValue({ write, close }),
+      });
+    });
+    vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+
+    const { webFileSaver } = await import('./web');
+    await expect(webFileSaver.save(file)).resolves.toEqual({ status: 'committed' });
+    expect(recordReceiver, 'the Web IDL method lost its Window receiver').toHaveBeenCalledWith(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim a committed file when close fails', async () => {
+    const closeFailure = new Error('destination disconnected on close');
+    const abort = vi.fn(() => {
+      throw new Error('cleanup also failed');
+    });
+    vi.stubGlobal(
+      'showSaveFilePicker',
+      vi.fn().mockResolvedValue({
+        createWritable: vi.fn().mockResolvedValue({
+          write: vi.fn().mockResolvedValue(undefined),
+          close: vi.fn().mockRejectedValue(closeFailure),
+          abort,
+        }),
+      }),
+    );
+
+    const { webFileSaver } = await import('./web');
+    await expect(webFileSaver.save(file)).rejects.toBe(closeFailure);
+    expect(abort).toHaveBeenCalledWith(closeFailure);
+  });
+
+  it('reports a write-time AbortError as failure and cleans up the writable', async () => {
+    const writeFailure = new Error('destination disappeared while writing');
+    writeFailure.name = 'AbortError';
+    const abort = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      'showSaveFilePicker',
+      vi.fn().mockResolvedValue({
+        createWritable: vi.fn().mockResolvedValue({
+          write: vi.fn().mockRejectedValue(writeFailure),
+          close: vi.fn(),
+          abort,
+        }),
+      }),
+    );
+
+    const { webFileSaver } = await import('./web');
+    await expect(webFileSaver.save(file)).rejects.toBe(writeFailure);
+    expect(abort).toHaveBeenCalledWith(writeFailure);
+  });
+
+  it('reports dismissal separately from a write failure', async () => {
+    const cancelled = new Error('dismissed');
+    cancelled.name = 'AbortError';
+    vi.stubGlobal('showSaveFilePicker', vi.fn().mockRejectedValue(cancelled));
+
+    const { webFileSaver } = await import('./web');
+    await expect(webFileSaver.save(file)).resolves.toEqual({ status: 'cancelled' });
+  });
+});
+
+describe('the web picker bounds memory before reading', () => {
+  it('rejects an oversized File without calling arrayBuffer', async () => {
+    const chosen = new File(['small placeholder'], 'oversized.zip');
+    Object.defineProperty(chosen, 'size', { value: 64 * 1024 * 1024 + 1 });
+    const read = vi.spyOn(chosen, 'arrayBuffer');
+    const { pickedFromDomFile } = await import('./web');
+
+    await expect(pickedFromDomFile(chosen)).rejects.toThrow(/64MB import limit/i);
+    expect(read).not.toHaveBeenCalled();
   });
 });
