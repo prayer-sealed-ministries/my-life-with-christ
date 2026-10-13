@@ -28,6 +28,8 @@ import { useStorage, useStorageQuery } from '../app/storage';
 import { useFilePicker, useFileSaver } from '../platform/context';
 import type { PickedFile } from '../platform/ports';
 import { pickedFromDomFile } from '../platform/web';
+import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from '../platform/file-limits';
+import { ProtectedTransferPasswordRequired } from '../export/protected-transfer';
 import { JournalChangedError, type JournalSnapshot } from '../storage/journal';
 import { PendingJournalWriteError, settlePendingJournalWrites } from '../storage/pending';
 import { Button, Card, Field, FieldRow, LiveRegion, Spinner } from '../components/ui';
@@ -291,14 +293,43 @@ export default function DataView() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [importResult, setImportResult] = useState('');
+  const [protectedFile, setProtectedFile] = useState<PickedFile | null>(null);
+  const [transferPassword, setTransferPassword] = useState('');
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const passwordFocusFrom = useRef<{ from: Element | null } | null>(null);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
+  const previewFocusFrom = useRef<{ from: Element | null } | null>(null);
+
+  useEffect(() => {
+    const queued = previewFocusFrom.current;
+    const target = previewHeading.current;
+    if (!queued || !target) return;
+    const state = { active: document.activeElement, target, from: queued.from, body: document.body };
+    if (shouldRestoreFocus(state)) {
+      previewFocusFrom.current = null;
+      target.focus();
+    } else if (shouldAbandonRestore(state)) {
+      previewFocusFrom.current = null;
+    }
+  });
+
+  useEffect(() => {
+    const queued = passwordFocusFrom.current;
+    const target = passwordInput.current;
+    if (!queued || !target || reading) return;
+    const state = { active: document.activeElement, target, from: queued.from, body: document.body };
+    if (shouldRestoreFocus(state)) {
+      passwordFocusFrom.current = null;
+      target.focus();
+    } else if (shouldAbandonRestore(state)) {
+      passwordFocusFrom.current = null;
+    }
+  });
 
   // Pure, so changing the mode re-answers "what would this do?" with no reparse
   // and — the point of the whole flow — no write.
   const preview = useMemo(
-    () =>
-      parsed && baseline
-        ? previewImport(parsed, baseline.entries, mode, anchorsResolve, baseline.drafts)
-        : null,
+    () => (parsed && baseline ? previewImport(parsed, baseline.entries, mode, anchorsResolve, baseline.drafts) : null),
     [parsed, baseline, mode],
   );
 
@@ -311,13 +342,18 @@ export default function DataView() {
    * writes the one the user is no longer looking at.
    */
   const readToken = useRef(0);
+  useEffect(() => () => { readToken.current += 1; }, []);
 
   const clearPending = () => {
     readToken.current += 1;
     setParsed(null);
     setBaseline(null);
+    previewFocusFrom.current = null;
+    passwordFocusFrom.current = null;
     setFileName('');
     setReading(false);
+    setProtectedFile(null);
+    setTransferPassword('');
     // Clearing the element's value lets the same file be chosen again, which is
     // exactly what someone does after cancelling. Only an `<input>` carries a
     // value; a button that opens the OS picker has nothing to reset.
@@ -332,10 +368,18 @@ export default function DataView() {
    * Takes a name and bytes. The `<input>` below converts a DOM `File` first; a
    * native document picker will hand the same shape straight in.
    */
-  const onFileChosen = async (file: PickedFile | null) => {
-    const token = (readToken.current += 1);
+  const onFileChosen = async (
+    file: PickedFile | null, password?: string, requestedToken?: number,
+    focusFrom: Element | null = document.activeElement,
+  ) => {
+    const token = requestedToken ?? (readToken.current += 1);
+    if (token !== readToken.current) return;
+    previewFocusFrom.current = null;
+    passwordFocusFrom.current = null;
     setParsed(null);
     setBaseline(null);
+    setProtectedFile(password === undefined ? null : file);
+    setTransferPassword('');
     setImportError('');
     setImportResult('');
     if (!file) {
@@ -350,31 +394,46 @@ export default function DataView() {
     setReading(true);
     try {
       await settlePendingJournalWrites();
-      const [incoming, mine] = await Promise.all([
+      if (token !== readToken.current) return;
+      const [incoming, snapshot] = await Promise.all([
         parseImport(file.bytes, {
           resolveOutlineId: (id: string) => resolveOutlineId(id, sections),
           isTopicId: (id) => topicsById.has(id),
           isBookId: (id) => Boolean(versification[id]),
-        }),
+        }, password),
         storage.readJournalSnapshot(),
       ]);
       if (token !== readToken.current) return;
       setParsed(incoming);
-      setBaseline(mine);
+      setBaseline(snapshot);
+      previewFocusFrom.current = { from: focusFrom };
+      setProtectedFile(null);
     } catch (cause) {
       if (token !== readToken.current) return;
-      const message = cause instanceof PendingJournalWriteError
-        ? `${file.name} was not read because ${cause.message.toLowerCase()}. Keep the writing page open and try again. Nothing was changed.`
-        : cause instanceof ArchiveIntegrityError
+      if (cause instanceof ProtectedTransferPasswordRequired) {
+        passwordFocusFrom.current = { from: focusFrom };
+        setProtectedFile(file);
+        return;
+      }
+      // A failed unlock keeps the encrypted original available for retry. The
+      // password input itself is cleared on every attempt and cancellation.
+      if (password !== undefined) {
+        passwordFocusFrom.current = { from: focusFrom };
+        setProtectedFile(file);
+      }
+      setImportError(
+        cause instanceof PendingJournalWriteError
+          ? `${file.name} was not read because ${cause.message.toLowerCase()}. Keep the writing page open and try again. Nothing was changed.`
+          : cause instanceof ArchiveIntegrityError
           ? // An archive that did not match its own manifest. Deliberately not
             // "could not be read" — it read perfectly well, which is the
             // problem — and deliberately no accusation: a bad copy, a failing
             // card or a half-finished sync produce this too, and are likelier
             // than anyone meddling. The failing checksums stay out of the UI.
             `${file.name} could not be verified and was not restored. The file may be damaged or incomplete. Nothing was changed.`
-          : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`;
-      clearPending();
-      setImportError(message);
+          : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`,
+      );
+      if (password === undefined) setFileName('');
     } finally {
       if (token === readToken.current) setReading(false);
     }
@@ -382,22 +441,26 @@ export default function DataView() {
 
   const confirmImport = async () => {
     if (!parsed || !baseline) return;
+    const token = readToken.current;
     setImporting(true);
     setImportError('');
     try {
+      await settlePendingJournalWrites();
+      // Navigation/cancellation while earlier writing settles revokes this
+      // pending confirmation before the atomic import begins.
+      if (token !== readToken.current) return;
       const outcome = await applyImport(parsed, storage, mode, baseline.token);
       touch();
-      setImportResult(
-        outcome.replaced
-          ? `Replaced your journal from ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written atomically.`
-          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} already identical.${outcome.conflictsPreserved > 0 ? ` ${plural(outcome.conflictsPreserved, 'conflicting entry was', 'conflicting entries were')} kept as separate copies so neither version was lost.` : ''}`,
-      );
+      const receipt = outcome.replaced
+          ? `Replaced your journal from ${fileName}: the previous entries, unfinished drafts and journal-level metadata were replaced atomically by ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} with the file's metadata.`
+          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written; ${plural(outcome.entriesSkipped, 'entry', 'entries')} and ${plural(outcome.draftsSkipped, 'draft', 'drafts')} already present and skipped${outcome.conflictsPreserved ? `; ${plural(outcome.conflictsPreserved, 'conflicting entry', 'conflicting entries')} kept as separate copies` : ''}${outcome.draftConflictsPreserved ? `; ${plural(outcome.draftConflictsPreserved, 'conflicting draft', 'conflicting drafts')} kept as separate copies` : ''}.`;
+      setImportResult(receipt + (parsed.envelopeMetadata?.length ? ' Journal-level metadata was preserved.' : ''));
       clearPending();
     } catch (cause) {
       if (cause instanceof JournalChangedError) {
         try {
           setBaseline(await storage.readJournalSnapshot());
-          setImportError(`${cause.message} The preview below has been refreshed.`);
+          setImportError(`The import did not finish: ${cause.message} The preview below has been refreshed.`);
         } catch (refreshCause) {
           setImportError(
             `The import did not finish, and the preview could not be refreshed: ${messageOf(refreshCause, 'the journal could not be read')}. Nothing was changed.`,
@@ -414,10 +477,14 @@ export default function DataView() {
   /**
    * The two ways an import can land, described from the preview itself.
    *
-   * The replace counts come from the same atomic snapshot used to build the
-   * preview — never from the page's separately loaded entry count. The token
-   * from that snapshot is also required at confirmation, so work accepted
-   * after the preview cannot be deleted under an older warning.
+   * The replace count comes from `preview.existing` — the very list the preview
+   * was computed from — and never from the page's own entry count. Those are
+   * two reads taken at two moments, and the count above starts at 0 until its
+   * read lands: choose a file quickly enough and the old code offered "Deletes
+   * all 0 entries in this journal first. There is no undo." over a journal that
+   * was not empty. The line beside a destructive action is the last place a
+   * number may be guessed at, and taking it from the preview means there is no
+   * second read left to disagree.
    */
   const describeModes = (
     counted: ImportPreview,
@@ -425,12 +492,12 @@ export default function DataView() {
     {
       value: 'merge',
       label: 'Merge (recommended)',
-      detail: 'Keeps what is here. Different versions of the same entry are kept as separate copies.',
+      detail: 'Keeps what is here. If the same entry differs, both versions are preserved instead of guessing from device clocks.',
     },
     {
       value: 'replace',
       label: 'Replace — destructive',
-      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, along with ${plural(counted.existingDrafts, 'unfinished draft', 'unfinished drafts')}, then writes the file's entries and drafts. There is no undo.`,
+      detail: `Deletes all ${plural(counted.existing, 'entry', 'entries')} in this journal first, along with ${plural(counted.existingDrafts, 'unfinished draft', 'unfinished drafts')} and journal-level metadata, then writes the file's journal atomically. There is no undo.`,
     },
   ];
 
@@ -702,7 +769,7 @@ export default function DataView() {
             Journal file to read
           </label>
           <p id="import-file-hint" className="mt-0.5 text-xs text-ink-muted">
-            A Journey export: a .zip archive, or a bare journey.json.
+            A Journey export: a .zip archive, a bare journey.json, or a password-protected .lwc transfer.
           </p>
           {/*
             Which control depends on whether the picker has an interface of its
@@ -720,14 +787,28 @@ export default function DataView() {
               aria-describedby="import-file-hint"
               disabled={importing || blocked}
               onClick={() => {
+                const token = ++readToken.current;
+                const focusFrom = document.activeElement;
+                previewFocusFrom.current = null;
+                passwordFocusFrom.current = null;
+                setParsed(null);
+                setBaseline(null);
+                setProtectedFile(null);
+                setTransferPassword('');
+                setFileName('');
+                setReading(false);
+                setImportResult('');
+                setImportError('');
                 void picker
-                  .pick({ accept: ['application/zip', 'application/json', '.zip', '.json'] })
-                  .then(onFileChosen)
+                  .pick({
+                    accept: ['application/zip', 'application/json', 'application/octet-stream', '.zip', '.json', '.lwc'],
+                  })
+                  .then((result) => {
+                    if (token !== readToken.current) return;
+                    void onFileChosen(result, undefined, token, focusFrom);
+                  })
                   .catch((cause) => {
-                    clearPending();
-                    setImportError(
-                      `The file picker could not read that file: ${messageOf(cause, 'the provider did not return its contents')}. Nothing was changed.`,
-                    );
+                    if (token === readToken.current) setImportError(`The file picker could not read that file: ${messageOf(cause, 'the provider did not return its contents')}. Nothing was changed.`);
                   });
               }}
               className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
@@ -739,22 +820,42 @@ export default function DataView() {
               id="import-file"
               ref={fileInput as React.RefObject<HTMLInputElement>}
               type="file"
-              accept=".zip,.json,application/zip,application/json"
+              accept=".zip,.json,.lwc,application/zip,application/json,application/octet-stream"
               aria-describedby="import-file-hint"
               onChange={(event) => {
                 const chosen = event.target.files?.[0];
+                // Retrying the same file must work after a read error too.
+                event.target.value = '';
+                // Fence at selection time, before a DOM File finishes reading.
+                // A slower previous file must never replace the latest choice.
+                const token = ++readToken.current;
+                const focusFrom = document.activeElement;
+                previewFocusFrom.current = null;
+                passwordFocusFrom.current = null;
+                setParsed(null);
+                setBaseline(null);
+                setProtectedFile(null);
+                setTransferPassword('');
+                setFileName('');
+                setReading(false);
+                setImportResult('');
+                setImportError('');
                 // The web binding: a DOM File becomes the shape every edition uses.
-                if (chosen) {
+                if (chosen && chosen.size > MAX_PICKED_FILE_BYTES) {
+                  setImportError(`${pickedFileTooLargeMessage} Nothing was changed.`);
+                } else if (chosen) {
+                  setFileName(chosen.name);
+                  setReading(true);
                   void pickedFromDomFile(chosen)
-                    .then(onFileChosen)
+                    .then((file) => onFileChosen(file, undefined, token, focusFrom))
                     .catch((cause) => {
-                      clearPending();
-                      setImportError(
-                        `${chosen.name} could not be read: ${messageOf(cause, 'the selected file could not be read')}. Nothing was changed.`,
-                      );
+                      if (token === readToken.current) {
+                        setReading(false);
+                        setImportError(`${cause instanceof Error ? cause.message : 'That file could not be read.'} Nothing was changed.`);
+                      }
                     });
                 }
-                else void onFileChosen(null);
+                else void onFileChosen(null, undefined, token, focusFrom);
               }}
               disabled={importing || blocked}
               className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
@@ -763,6 +864,34 @@ export default function DataView() {
         </div>
 
         {reading ? <Spinner label={`Reading ${fileName}`} /> : null}
+
+        {protectedFile ? (
+          <Card className="space-y-3">
+            <h3 className="font-serif text-lg font-semibold">Unlock your protected transfer</h3>
+            <p className="text-sm text-ink-soft">
+              {fileName} stays on this device. Enter its password to review the writing before importing.
+              The password is not saved. There is no password recovery.
+            </p>
+            <form className="space-y-3" onSubmit={(event) => {
+              event.preventDefault();
+              if (!reading) void onFileChosen(protectedFile, transferPassword);
+            }}>
+              <Field
+                ref={passwordInput}
+                label="Transfer password"
+                type="password"
+                autoComplete="off"
+                value={transferPassword}
+                onChange={(event) => setTransferPassword(event.target.value)}
+                disabled={reading}
+              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="submit" variant="primary" disabled={reading || !transferPassword}>Unlock and review</Button>
+                <Button type="button" onClick={clearPending}>Cancel</Button>
+              </div>
+            </form>
+          </Card>
+        ) : null}
 
         {/* break-words throughout: these carry a filename the user chose, and one
             long unbroken name would scroll a 360px page sideways. */}
@@ -783,7 +912,7 @@ export default function DataView() {
 
         {preview ? (
           <Card className="space-y-4">
-            <h3 className="font-medium">What this would do</h3>
+            <h3 ref={previewHeading} tabIndex={-1} className="font-medium">What this would do</h3>
 
             <p className="break-words text-sm text-ink-soft">
               {fileName} holds {plural(preview.incoming, 'entry', 'entries')}
@@ -792,6 +921,13 @@ export default function DataView() {
                 : ''}
               .
             </p>
+
+            {parsed?.envelopeMetadata?.length ? (
+              <p className="text-sm text-ink-soft">
+                Additional journal-level metadata will be preserved in full backups. It is not
+                displayed as writing or included in selected sharing copies.
+              </p>
+            ) : null}
 
             <ul className="space-y-1 text-sm">
               <li>
@@ -802,8 +938,8 @@ export default function DataView() {
                 as separate copies rather than chosen by the device clock.
               </li>
               <li>
-                <strong>{preview.unchanged}</strong> unchanged — this journal already has the exact
-                same copy.
+                <strong>{preview.unchanged}</strong> unchanged — this journal already has the same
+                copy.
               </li>
               <li>
                 <strong>{preview.conflicts.length}</strong>{' '}
@@ -894,7 +1030,9 @@ export default function DataView() {
                   ? 'Importing…'
                   : mode === 'replace'
                     ? `Delete everything and import ${plural(preview.incoming, 'entry', 'entries')}`
-                    : `Merge ${plural(preview.incoming, 'entry', 'entries')}`}
+                    : preview.incoming === 0 && parsed?.drafts.length === 0 && parsed.envelopeMetadata?.length
+                      ? 'Merge journal metadata'
+                      : `Merge ${plural(preview.incoming, 'entry', 'entries')}`}
               </Button>
               <Button onClick={clearPending} disabled={importing}>
                 Cancel
