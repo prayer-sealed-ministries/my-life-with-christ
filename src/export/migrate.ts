@@ -4,8 +4,9 @@
  * The governing rule: never drop a field silently. This app is meant to be
  * outlived by its data, which means an archive written by some later version —
  * or by a version that predates a schema change — must import without loss.
- * Anything this build does not recognise is preserved verbatim in `_unmigrated`
- * and reported, rather than discarded.
+ * Unrecognised record fields are preserved verbatim in `_unmigrated` and
+ * reported. Extensions inside a validated nested object stay beside that
+ * object's known fields as inert data, rather than being discarded.
  */
 
 import type {
@@ -30,6 +31,29 @@ const KNOWN_FIELDS = new Set([
   'forDescendants', 'visibility', 'createdAt', 'updatedAt', 'source', 'sourceMaterial',
   '_unmigrated',
 ]);
+
+const SOURCE_FIELDS = new Set(['format', 'importedAt', 'filename', 'itemIndex', 'parserVersion', 'page']);
+const MATERIAL_FIELDS = new Set([
+  'format', 'filename', 'importedAt', 'body', 'parserVersion',
+  'sha256', 'church', 'speaker', 'date', 'scripture',
+]);
+const LINK_FIELDS = new Set(['url', 'label', 'capturedTitle', 'capturedAt']);
+const TOPIC_FIELDS = new Set(['kind', 'topicId']);
+const BOOK_FIELDS = new Set(['kind', 'book']);
+const SCRIPTURE_FIELDS = new Set([
+  'kind', 'book', 'chapterStart', 'verseStart', 'chapterEnd', 'verseEnd', 'outlineEntryId', 'note',
+]);
+const DRAFT_FIELDS = new Set(['id', 'entryId', 'form', 'createdAt', 'updatedAt', '_unmigrated']);
+
+/**
+ * Extensions remain inert data beside the validated fields they extend.
+ * fromEntries/spread creates own properties, including a literal __proto__,
+ * without invoking setters. Known fields are always rebuilt below: an unknown
+ * extension must never bypass validation of a field the current UI consumes.
+ */
+function extensionFields(value: Record<string, unknown>, known: ReadonlySet<string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !known.has(key)));
+}
 
 const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
 
@@ -63,6 +87,7 @@ function migrateSourceMaterial(raw: unknown): SourceMaterial | undefined {
   if (typeof value.body !== 'string' || value.body.length === 0) return undefined;
 
   const material: SourceMaterial = {
+    ...extensionFields(value, MATERIAL_FIELDS),
     format: format as SourceMaterial['format'],
     filename: value.filename,
     importedAt: value.importedAt,
@@ -77,17 +102,17 @@ function migrateSourceMaterial(raw: unknown): SourceMaterial | undefined {
   if (typeof value.speaker === 'string') material.speaker = value.speaker;
   if (typeof value.date === 'string') material.date = value.date;
   const scripture = strArray(value.scripture);
-  if (scripture.length > 0) material.scripture = scripture;
+  if (Array.isArray(value.scripture)) material.scripture = scripture;
   return material;
 }
 
 /**
  * Read an import-provenance block, or nothing.
  *
- * Validated field by field rather than spread: this arrives from a file, and an
- * entry's provenance must not become a place to smuggle arbitrary keys into the
- * journal. Anything malformed yields undefined, and the whole block then falls
- * through to `_unmigrated` like any other unrecognised value would.
+ * Known fields are validated field by field; extension fields are retained as
+ * inert data and never interpreted as provenance by this build. Anything
+ * malformed yields undefined, and the whole block then falls through to
+ * `_unmigrated` like any other unrecognised value would.
  */
 function migrateSource(raw: unknown): EntrySource | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -98,6 +123,7 @@ function migrateSource(raw: unknown): EntrySource | undefined {
   if (typeof value.importedAt !== 'string' || typeof value.filename !== 'string') return undefined;
 
   const source: EntrySource = {
+    ...extensionFields(value, SOURCE_FIELDS),
     importedAt: value.importedAt,
     filename: value.filename,
     format: format as EntrySource['format'],
@@ -202,13 +228,14 @@ function migrateAnchor(
     const value = raw as Record<string, unknown>;
 
     if (value.kind === 'topic' && typeof value.topicId === 'string') {
-      return { anchor: { kind: 'topic', topicId: value.topicId } };
+      return { anchor: { ...extensionFields(value, TOPIC_FIELDS), kind: 'topic', topicId: value.topicId } };
     }
     if (value.kind === 'book' && typeof value.book === 'string') {
-      return { anchor: { kind: 'book', book: value.book } };
+      return { anchor: { ...extensionFields(value, BOOK_FIELDS), kind: 'book', book: value.book } };
     }
     if (isScriptureRef(value)) {
       const anchor: EntryAnchor = {
+        ...extensionFields(value, SCRIPTURE_FIELDS),
         kind: 'scripture',
         book: value.book,
         chapterStart: value.chapterStart,
@@ -217,6 +244,7 @@ function migrateAnchor(
         verseEnd: value.verseEnd,
       };
       if (typeof value.outlineEntryId === 'string') anchor.outlineEntryId = value.outlineEntryId;
+      if (typeof value.note === 'string') anchor.note = value.note;
       return { anchor };
     }
     return { unmapped: raw };
@@ -249,7 +277,7 @@ function migrateLink(raw: unknown): EntryLink | null {
   const value = raw as Record<string, unknown>;
   if (typeof value.url !== 'string') return null;
 
-  const link: EntryLink = { url: value.url };
+  const link: EntryLink = { ...extensionFields(value, LINK_FIELDS), url: value.url };
   if (typeof value.label === 'string') link.label = value.label;
   if (typeof value.capturedTitle === 'string') link.capturedTitle = value.capturedTitle;
   if (typeof value.capturedAt === 'string') link.capturedAt = value.capturedAt;
@@ -410,6 +438,7 @@ function readDraftForm(raw: unknown): EntryDraft['form'] {
     }
     const link = rawLink as Record<string, unknown>;
     return {
+      ...extensionFields(link, LINK_FIELDS),
       url: requiredDraftString(link.url, 'link URL'),
       label: requiredDraftString(link.label, 'link label'),
       capturedTitle: requiredDraftString(link.capturedTitle, 'link title'),
@@ -460,7 +489,7 @@ function readDraftForm(raw: unknown): EntryDraft['form'] {
   } as EntryDraft['form'];
 }
 
-function readDrafts(raw: unknown, _warnings: string[]): EntryDraft[] {
+function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
     throw new Error('This journal has an invalid "drafts" section. Nothing was restored.');
@@ -483,15 +512,24 @@ function readDrafts(raw: unknown, _warnings: string[]): EntryDraft[] {
     if (!Number.isFinite(Date.parse(createdAt)) || !Number.isFinite(Date.parse(updatedAt))) {
       throw new Error(`Draft ${id} has an invalid timestamp. Nothing was restored.`);
     }
+    const extensions = extensionFields(value, DRAFT_FIELDS);
+    const existingUnmigrated = value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
+      ? value._unmigrated as Record<string, unknown>
+      : undefined;
+    const unmigrated = {
+      ...existingUnmigrated,
+      ...extensions,
+    };
+    for (const key of Object.keys(extensions)) {
+      warnings.push(`Draft ${id}: unrecognised field "${key}" preserved in _unmigrated.`);
+    }
     drafts.push({
       id,
       ...(typeof value.entryId === 'string' ? { entryId: value.entryId } : {}),
       form: readDraftForm(value.form),
       createdAt,
       updatedAt,
-      ...(value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
-        ? { _unmigrated: value._unmigrated as Record<string, unknown> }
-        : {}),
+      ...(existingUnmigrated || Object.keys(unmigrated).length > 0 ? { _unmigrated: unmigrated } : {}),
     });
   }
   return drafts;
