@@ -1,8 +1,9 @@
 /**
  * Reading a journal back in.
  *
- * Two shapes are accepted: an archive this app wrote (a .zip, from which
- * data/journey.json is read), and a bare journey.json. Both go through the same
+ * Three shapes are accepted: a protected companion .lwc transfer, an archive
+ * this app wrote (a .zip, from which
+ * data/journey.json is read), and a bare journey.json. All go through the same
  * forward migration, so neither can lose a field this build does not recognise.
  *
  * Nothing is written until the caller has seen a preview. An import can replace
@@ -26,19 +27,20 @@
  */
 
 import type { Entry, EntryDraft, ImportMode, ImportPreview, JourneyExport } from '../types';
-import type { StorageProvider } from '../storage/StorageProvider';
+import type { StorageProvider, JournalSnapshot } from '../storage/StorageProvider';
 import { stableJson } from '../storage/semantics';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
 import { readZip, sha256, zipEntryText } from './zip';
 import { verifyArchiveManifest } from './manifest.mjs';
 import { MAX_JOURNAL_FILE_BYTES, journalSizeMessage } from '../lib/journal-limits';
+import { isProtectedTransfer, unlockProtectedTransfer, MAX_PROTECTED_FILE_BYTES } from './protected-transfer';
 
 /** Where journey.json lives inside an archive this app wrote. */
 const CANONICAL_PATH = 'data/journey.json';
 
 export interface ParsedImport extends MigrationResult {
   /** How the file arrived, so the UI can describe what it read. */
-  source: 'archive' | 'json';
+  source: 'archive' | 'json' | 'protected';
   /** The filter recorded in the archive, when it was a partial export. */
   filter?: JourneyExport['filter'];
   exportedAt?: string;
@@ -80,6 +82,7 @@ const looksLikeZip = (data: Uint8Array): boolean =>
 export async function parseImport(
   data: Uint8Array | string,
   context: MigrationContext = {},
+  password?: string,
 ): Promise<ParsedImport> {
   const byteLength = typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength;
   if (byteLength > MAX_JOURNAL_FILE_BYTES) throw new Error(journalSizeMessage());
@@ -126,8 +129,30 @@ export async function parseImport(
     throw new Error('That file is not valid JSON, so it cannot be read as a journal.');
   }
 
+  if (isProtectedTransfer(parsed)) {
+    if (byteLength > MAX_PROTECTED_FILE_BYTES) {
+      throw new Error('This protected file exceeds the supported 16 MiB limit. Nothing was imported.');
+    }
+    const plaintext = await unlockProtectedTransfer(parsed, password);
+    try { parsed = JSON.parse(plaintext); } catch {
+      throw new Error('The unlocked file is not valid journal JSON. Nothing was imported.');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+        (parsed as Record<string, unknown>).format !== 'journey-export' ||
+        (parsed as Record<string, unknown>).version !== 1) {
+      throw new Error('The unlocked file is not a supported journal transfer. Keep the original file.');
+    }
+    source = 'protected';
+  }
   const migrated = migrateExport(parsed, context);
   const envelope = parsed as Partial<JourneyExport>;
+
+  // Envelope metadata has no persistent home in this app yet. Say so before
+  // confirmation instead of claiming that a transfer preserves every field.
+  const envelopeKeys = new Set(['format', 'version', 'entries', 'drafts', 'filter', 'exportedAt']);
+  if (Object.keys(envelope).some((key) => !envelopeKeys.has(key))) {
+    migrated.warnings.push('This file includes additional journal-level metadata that this app cannot retain. Keep the original file; entry and draft extension fields are preserved.');
+  }
 
   return {
     ...migrated,
@@ -163,7 +188,7 @@ export function previewImport(
       newEntries += 1;
       continue;
     }
-    if (sameEntryContent(current, entry)) {
+    if (sameEntryContent(current, entry) || existingConflictCopy(entry, existing)) {
       unchanged += 1;
       continue;
     }
@@ -213,6 +238,9 @@ export interface ImportResult {
   imported: number;
   draftsImported: number;
   conflictsPreserved: number;
+  entriesSkipped: number;
+  draftsSkipped: number;
+  draftConflictsPreserved: number;
   replaced: boolean;
   preview: ImportPreview;
 }
@@ -224,9 +252,13 @@ export async function applyImport(
   incoming: ParsedImport,
   storage: StorageProvider,
   mode: ImportMode = 'merge',
+  reviewed?: JournalSnapshot,
 ): Promise<ImportResult> {
-  const existing = await storage.listEntries();
-  const existingDrafts = await storage.listDrafts();
+  // The screen supplies the exact state the reader reviewed. Re-reading it
+  // after confirmation would permit Replace to delete writing that appeared
+  // since the preview. The providers compare this snapshot inside the commit.
+  const existing = reviewed?.entries ?? await storage.listEntries();
+  const existingDrafts = reviewed?.drafts ?? await storage.listDrafts();
   const preview = previewImport(incoming, existing, mode);
 
   if (mode === 'replace') {
@@ -241,6 +273,9 @@ export async function applyImport(
       imported: incoming.entries.length,
       draftsImported: incoming.drafts.length,
       conflictsPreserved: 0,
+      entriesSkipped: 0,
+      draftsSkipped: 0,
+      draftConflictsPreserved: 0,
       replaced: true,
       preview,
     };
@@ -251,6 +286,7 @@ export async function applyImport(
   // importing the same archive twice does not create another copy.
   const mine = new Map(existing.map((entry) => [entry.id, entry]));
   const toWrite: Entry[] = [];
+  const incomingEntryIds = new Set(incoming.entries.map((entry) => entry.id));
   const remappedEntryIds = new Map<string, string>();
   let conflictsPreserved = 0;
 
@@ -262,16 +298,24 @@ export async function applyImport(
     }
     if (sameEntryContent(current, entry)) continue;
 
-    const conflict = await conflictEntry(entry, existing, toWrite);
+    const preserved = existingConflictCopy(entry, existing);
+    if (preserved) {
+      remappedEntryIds.set(entry.id, preserved.id);
+      continue;
+    }
+
+    const conflict = await conflictEntry(entry, existing, toWrite, incomingEntryIds);
     remappedEntryIds.set(entry.id, conflict.id);
     if (!existing.some((item) => stableJson(item) === stableJson(conflict))) {
       toWrite.push(conflict);
+      conflictsPreserved += 1;
     }
-    conflictsPreserved += 1;
   }
 
   const mergedDrafts: EntryDraft[] = [];
   const knownDrafts = [...existingDrafts];
+  const incomingDraftIds = new Set(incoming.drafts.map((draft) => draft.id));
+  let draftConflictsPreserved = 0;
   for (const original of incoming.drafts) {
     const draft = remappedEntryIds.has(original.entryId ?? '')
       ? { ...original, entryId: remappedEntryIds.get(original.entryId!) }
@@ -283,10 +327,11 @@ export async function applyImport(
       continue;
     }
     if (stableJson(current) === stableJson(draft)) continue;
-    const conflict = await conflictDraft(draft, knownDrafts);
+    const conflict = await conflictDraft(draft, knownDrafts, incomingDraftIds);
     if (!knownDrafts.some((item) => stableJson(item) === stableJson(conflict))) {
       mergedDrafts.push(conflict);
       knownDrafts.push(conflict);
+      draftConflictsPreserved += 1;
     }
   }
 
@@ -298,6 +343,9 @@ export async function applyImport(
     imported: toWrite.length,
     draftsImported: mergedDrafts.length,
     conflictsPreserved,
+    entriesSkipped: incoming.entries.length - toWrite.length,
+    draftsSkipped: incoming.drafts.length - mergedDrafts.length,
+    draftConflictsPreserved,
     replaced: false,
     preview,
   };
@@ -309,21 +357,42 @@ function sameEntryContent(a: Entry, b: Entry): boolean {
   return stableJson(left) === stableJson(right);
 }
 
+/** A previously kept conflict is a duplicate too, not another new conflict. */
+function existingConflictCopy(entry: Entry, existing: Entry[]): Entry | undefined {
+  return existing.find((saved) => {
+    const marker = saved._unmigrated?.journeyImportConflict;
+    if (!marker || typeof marker !== 'object' || Array.isArray(marker) ||
+        (marker as Record<string, unknown>).originalId !== entry.id) return false;
+    const provenance = marker as Record<string, unknown>;
+    const extensions = { ...saved._unmigrated };
+    if (Object.hasOwn(provenance, 'previous')) extensions.journeyImportConflict = provenance.previous;
+    else delete extensions.journeyImportConflict;
+    const original = { ...saved, id: entry.id };
+    if (Object.keys(extensions).length || entry._unmigrated) original._unmigrated = extensions;
+    else delete original._unmigrated;
+    return sameEntryContent(original, entry);
+  });
+}
+
 async function conflictEntry(
   entry: Entry,
   existing: Entry[],
   pending: Entry[],
+  reservedIds: ReadonlySet<string>,
 ): Promise<Entry> {
   const digest = await sha256(stableJson(entry));
   const base = `${entry.id}~conflict-${digest.slice(0, 16)}`;
   for (let suffix = 1; ; suffix += 1) {
     const id = suffix === 1 ? base : `${base}-${suffix}`;
+    // A later incoming record may already own this deterministic-looking id.
+    // Reserve the whole incoming inventory, not just records visited so far.
+    if (reservedIds.has(id)) continue;
     const candidate: Entry = {
       ...entry,
       id,
       _unmigrated: {
         ...entry._unmigrated,
-        journeyImportConflict: { originalId: entry.id },
+        journeyImportConflict: conflictProvenance(entry.id, entry._unmigrated),
       },
     };
     const occupying = [...existing, ...pending].find((item) => item.id === id);
@@ -334,20 +403,31 @@ async function conflictEntry(
 async function conflictDraft(
   draft: EntryDraft,
   existing: EntryDraft[],
+  reservedIds: ReadonlySet<string>,
 ): Promise<EntryDraft> {
   const digest = await sha256(stableJson(draft));
   const base = `${draft.id}~conflict-${digest.slice(0, 16)}`;
   for (let suffix = 1; ; suffix += 1) {
     const id = suffix === 1 ? base : `${base}-${suffix}`;
+    if (reservedIds.has(id)) continue;
     const candidate: EntryDraft = {
       ...draft,
       id,
       _unmigrated: {
         ...draft._unmigrated,
-        journeyImportConflict: { originalId: draft.id },
+        journeyImportConflict: conflictProvenance(draft.id, draft._unmigrated),
       },
     };
     const occupying = existing.find((item) => item.id === id);
     if (!occupying || stableJson(occupying) === stableJson(candidate)) return candidate;
   }
+}
+
+function conflictProvenance(originalId: string, extensions?: Record<string, unknown>) {
+  return {
+    originalId,
+    ...(extensions && Object.hasOwn(extensions, 'journeyImportConflict')
+      ? { previous: extensions.journeyImportConflict }
+      : {}),
+  };
 }

@@ -25,6 +25,7 @@ import {
 import { useSections, type Sections } from '../app/sections';
 import { Link } from '../app/router';
 import { useStorage, useStorageQuery } from '../app/storage';
+import type { JournalSnapshot } from '../storage/StorageProvider';
 import { useFilePicker, useFileSaver } from '../platform/context';
 import { pickFailureMessage, type PickedFile } from '../platform/ports';
 import { pickedFromDomFile } from '../platform/web';
@@ -34,6 +35,7 @@ import { shouldAbandonRestore, shouldRestoreFocus } from '../lib/focus-restore';
 import { Attribution } from '../components/Attribution';
 import { KIND_LABELS } from '../export/context';
 import { exportEverything } from '../export/download';
+import { ProtectedTransferPasswordRequired } from '../export/protected-transfer';
 import {
   ArchiveIntegrityError,
   applyImport,
@@ -291,10 +293,18 @@ export default function DataView() {
   const [reading, setReading] = useState(false);
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
   const [existing, setExisting] = useState<Entry[] | null>(null);
+  const reviewedJournal = useRef<JournalSnapshot | null>(null);
   const [mode, setMode] = useState<ImportMode>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [importResult, setImportResult] = useState('');
+  const [protectedFile, setProtectedFile] = useState<PickedFile | null>(null);
+  const [transferPassword, setTransferPassword] = useState('');
+  const passwordInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (protectedFile && !reading) passwordInput.current?.focus();
+  }, [protectedFile, reading]);
 
   // Pure, so changing the mode re-answers "what would this do?" with no reparse
   // and — the point of the whole flow — no write.
@@ -312,13 +322,17 @@ export default function DataView() {
    * writes the one the user is no longer looking at.
    */
   const readToken = useRef(0);
+  useEffect(() => () => { readToken.current += 1; }, []);
 
   const clearPending = () => {
     readToken.current += 1;
     setParsed(null);
     setExisting(null);
+    reviewedJournal.current = null;
     setFileName('');
     setReading(false);
+    setProtectedFile(null);
+    setTransferPassword('');
     // Clearing the element's value lets the same file be chosen again, which is
     // exactly what someone does after cancelling. Only an `<input>` carries a
     // value; a button that opens the OS picker has nothing to reset.
@@ -333,10 +347,14 @@ export default function DataView() {
    * Takes a name and bytes. The `<input>` below converts a DOM `File` first; a
    * native document picker will hand the same shape straight in.
    */
-  const onFileChosen = async (file: PickedFile | null) => {
-    const token = (readToken.current += 1);
+  const onFileChosen = async (file: PickedFile | null, password?: string, requestedToken?: number) => {
+    const token = requestedToken ?? (readToken.current += 1);
+    if (token !== readToken.current) return;
     setParsed(null);
     setExisting(null);
+    reviewedJournal.current = null;
+    setProtectedFile(password === undefined ? null : file);
+    setTransferPassword('');
     setImportError('');
     setImportResult('');
     if (!file) {
@@ -350,19 +368,29 @@ export default function DataView() {
     setFileName(file.name);
     setReading(true);
     try {
-      const [incoming, mine] = await Promise.all([
+      const [incoming, mine, mineDrafts] = await Promise.all([
         parseImport(file.bytes, {
           resolveOutlineId: (id: string) => resolveOutlineId(id, sections),
           isTopicId: (id) => topicsById.has(id),
           isBookId: (id) => Boolean(versification[id]),
-        }),
+        }, password),
         storage.listEntries(),
+        storage.listDrafts(),
       ]);
       if (token !== readToken.current) return;
       setParsed(incoming);
       setExisting(mine);
+      reviewedJournal.current = { entries: mine, drafts: mineDrafts };
+      setProtectedFile(null);
     } catch (cause) {
       if (token !== readToken.current) return;
+      if (cause instanceof ProtectedTransferPasswordRequired) {
+        setProtectedFile(file);
+        return;
+      }
+      // A failed unlock keeps the encrypted original available for retry. The
+      // password input itself is cleared on every attempt and cancellation.
+      if (password !== undefined) setProtectedFile(file);
       setImportError(
         cause instanceof ArchiveIntegrityError
           ? // An archive that did not match its own manifest. Deliberately not
@@ -373,23 +401,23 @@ export default function DataView() {
             `${file.name} could not be verified and was not restored. The file may be damaged or incomplete. Nothing was changed.`
           : `${file.name} could not be read: ${messageOf(cause, 'it is not a Journey export')}. Nothing was changed.`,
       );
-      setFileName('');
+      if (password === undefined) setFileName('');
     } finally {
       if (token === readToken.current) setReading(false);
     }
   };
 
   const confirmImport = async () => {
-    if (!parsed) return;
+    if (!parsed || !reviewedJournal.current) return;
     setImporting(true);
     setImportError('');
     try {
-      const outcome = await applyImport(parsed, storage, mode);
+      const outcome = await applyImport(parsed, storage, mode, reviewedJournal.current);
       touch();
       setImportResult(
         outcome.replaced
           ? `Replaced your journal from ${fileName}: the previous entries and unfinished drafts were replaced atomically by ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')}.`
-          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written, ${plural(outcome.preview.unchanged, 'entry', 'entries')} already present${outcome.conflictsPreserved ? `, and ${plural(outcome.conflictsPreserved, 'conflicting version', 'conflicting versions')} preserved as separate entries` : ''}.`,
+          : `Merged ${fileName}: ${plural(outcome.imported, 'entry', 'entries')} and ${plural(outcome.draftsImported, 'unfinished draft', 'unfinished drafts')} written; ${plural(outcome.entriesSkipped, 'entry', 'entries')} and ${plural(outcome.draftsSkipped, 'draft', 'drafts')} already present and skipped${outcome.conflictsPreserved ? `; ${plural(outcome.conflictsPreserved, 'conflicting entry', 'conflicting entries')} kept as separate copies` : ''}${outcome.draftConflictsPreserved ? `; ${plural(outcome.draftConflictsPreserved, 'conflicting draft', 'conflicting drafts')} kept as separate copies` : ''}.`,
       );
       clearPending();
     } catch (cause) {
@@ -685,7 +713,7 @@ export default function DataView() {
             Journal file to read
           </label>
           <p id="import-file-hint" className="mt-0.5 text-xs text-ink-muted">
-            A Journey export: a .zip archive, or a bare journey.json.
+            A Journey export: a .zip archive, a bare journey.json, or a password-protected .lwc transfer.
           </p>
           {/*
             Which control depends on whether the picker has an interface of its
@@ -703,17 +731,30 @@ export default function DataView() {
               aria-describedby="import-file-hint"
               disabled={importing || blocked}
               onClick={() => {
+                const token = ++readToken.current;
+                setParsed(null);
+                setExisting(null);
+                reviewedJournal.current = null;
+                setProtectedFile(null);
+                setTransferPassword('');
+                setFileName('');
+                setReading(false);
+                setImportResult('');
+                setImportError('');
                 void picker
                   .pick({
-                    accept: ['application/zip', 'application/json', '.zip', '.json'],
+                    accept: ['application/zip', 'application/json', 'application/octet-stream', '.zip', '.json', '.lwc'],
                     maxBytes: MAX_JOURNAL_FILE_BYTES,
                   })
                   .then((result) => {
-                    if (result.status === 'picked') void onFileChosen(result.file);
-                    else if (result.status === 'cancelled') void onFileChosen(null);
+                    if (token !== readToken.current) return;
+                    if (result.status === 'picked') void onFileChosen(result.file, undefined, token);
+                    else if (result.status === 'cancelled') void onFileChosen(null, undefined, token);
                     else setImportError(`${pickFailureMessage(result.reason, 'journal file')} Nothing was changed.`);
                   })
-                  .catch(() => setImportError('The file picker could not be opened. Nothing was changed.'));
+                  .catch(() => {
+                    if (token === readToken.current) setImportError('The file picker could not be opened. Nothing was changed.');
+                  });
               }}
               className="mt-1 block min-h-11 rounded-control border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
             >
@@ -724,21 +765,38 @@ export default function DataView() {
               id="import-file"
               ref={fileInput as React.RefObject<HTMLInputElement>}
               type="file"
-              accept=".zip,.json,application/zip,application/json"
+              accept=".zip,.json,.lwc,application/zip,application/json,application/octet-stream"
               aria-describedby="import-file-hint"
               onChange={(event) => {
                 const chosen = event.target.files?.[0];
+                // Fence at selection time, before a DOM File finishes reading.
+                // A slower previous file must never replace the latest choice.
+                const token = ++readToken.current;
+                setParsed(null);
+                setExisting(null);
+                reviewedJournal.current = null;
+                setProtectedFile(null);
+                setTransferPassword('');
+                setFileName('');
+                setReading(false);
+                setImportResult('');
+                setImportError('');
                 // The web binding: a DOM File becomes the shape every edition uses.
                 if (chosen && chosen.size > MAX_JOURNAL_FILE_BYTES) {
                   setImportError('That journal file is larger than the supported 256 MiB limit. Nothing was read or changed.');
                 } else if (chosen) {
+                  setFileName(chosen.name);
+                  setReading(true);
                   void pickedFromDomFile(chosen)
-                    .then(onFileChosen)
-                    .catch((cause) => setImportError(
-                      `${cause instanceof Error ? cause.message : 'That file could not be read.'} Nothing was changed.`,
-                    ));
+                    .then((file) => onFileChosen(file, undefined, token))
+                    .catch((cause) => {
+                      if (token === readToken.current) {
+                        setReading(false);
+                        setImportError(`${cause instanceof Error ? cause.message : 'That file could not be read.'} Nothing was changed.`);
+                      }
+                    });
                 }
-                else void onFileChosen(null);
+                else void onFileChosen(null, undefined, token);
               }}
               disabled={importing || blocked}
               className="mt-1 block w-full min-h-11 rounded-control border border-line-strong bg-surface px-3 py-2 text-sm text-ink file:mr-3 file:min-h-9 file:rounded-control file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
@@ -747,6 +805,34 @@ export default function DataView() {
         </div>
 
         {reading ? <Spinner label={`Reading ${fileName}`} /> : null}
+
+        {protectedFile ? (
+          <Card className="space-y-3">
+            <h3 className="font-serif text-lg font-semibold">Unlock your protected transfer</h3>
+            <p className="text-sm text-ink-soft">
+              {fileName} stays on this device. Enter its password to review the writing before importing.
+              The password is not saved. There is no password recovery.
+            </p>
+            <form className="space-y-3" onSubmit={(event) => {
+              event.preventDefault();
+              if (!reading) void onFileChosen(protectedFile, transferPassword);
+            }}>
+              <Field
+                ref={passwordInput}
+                label="Transfer password"
+                type="password"
+                autoComplete="off"
+                value={transferPassword}
+                onChange={(event) => setTransferPassword(event.target.value)}
+                disabled={reading}
+              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="submit" variant="primary" disabled={reading || !transferPassword}>Unlock and review</Button>
+                <Button type="button" onClick={clearPending}>Cancel</Button>
+              </div>
+            </form>
+          </Card>
+        ) : null}
 
         {/* break-words throughout: these carry a filename the user chose, and one
             long unbroken name would scroll a 360px page sideways. */}

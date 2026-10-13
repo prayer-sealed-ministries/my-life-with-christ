@@ -1,0 +1,4 @@
+{
+  "password": "Fictional test — café 2026",
+  "note": "Fictional test only. Fixed salt/IV for independent cross-component known-answer testing; production must use fresh randomness."
+}
