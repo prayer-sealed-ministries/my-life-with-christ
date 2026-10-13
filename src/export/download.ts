@@ -50,7 +50,7 @@ export interface ExportOutcome {
 }
 
 export interface ExportEverythingOptions
-  extends Omit<BuildArchiveOptions, 'entries' | 'allEntries' | 'filter'> {
+  extends Omit<BuildArchiveOptions, 'entries' | 'allEntries' | 'filter' | 'drafts' | 'envelopeMetadata'> {
   storage: StorageProvider;
   filter?: ExportFilter;
   /** Where the bytes go. The web binding downloads them. */
@@ -85,8 +85,9 @@ export async function exportEverything(options: ExportEverythingOptions): Promis
    * there is no honest way to narrow them.
    */
   const drafts = filter ? [] : snapshot.drafts;
+  const envelopeMetadata = filter ? [] : snapshot.envelopeMetadata;
 
-  const archive = await buildArchive({ ...rest, entries, allEntries, filter, drafts });
+  const archive = await buildArchive({ ...rest, entries, allEntries, filter, drafts, envelopeMetadata });
   const { status: delivery } = await files.save(outgoingArchive(archive));
   const current =
     delivery === 'cancelled' || filter ? true : await storage.journalMatches(snapshot.token);

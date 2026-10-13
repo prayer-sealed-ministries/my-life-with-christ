@@ -1,0 +1,190 @@
+[
+  {
+    "name": "single-original-locations",
+    "sources": [
+      {
+        "future": {
+          "notes": "fictional personal metadata"
+        },
+        "_unmigrated": {
+          "earlier": "preserve"
+        }
+      }
+    ],
+    "exported": {
+      "future": {
+        "notes": "fictional personal metadata"
+      },
+      "_unmigrated": {
+        "earlier": "preserve"
+      }
+    }
+  },
+  {
+    "name": "nonconflicting-projection",
+    "sources": [
+      {
+        "a": 1
+      },
+      {
+        "b": 2
+      }
+    ],
+    "exported": {
+      "a": 1,
+      "b": 2,
+      "_unmigrated": {
+        "companionSourceEnvelopes": [
+          {
+            "a": 1
+          },
+          {
+            "b": 2
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "conflicting-values-no-winner",
+    "sources": [
+      {
+        "a": "first",
+        "common": true
+      },
+      {
+        "a": "second",
+        "common": true
+      }
+    ],
+    "exported": {
+      "common": true,
+      "_unmigrated": {
+        "companionSourceEnvelopes": [
+          {
+            "a": "first",
+            "common": true
+          },
+          {
+            "a": "second",
+            "common": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "legacy-known-fields-cannot-overwrite",
+    "sources": [
+      {
+        "exportedAt": "old timestamp",
+        "format": "journey-export",
+        "future": "literal",
+        "version": 1
+      }
+    ],
+    "exported": {
+      "future": "literal",
+      "_unmigrated": {
+        "companionSourceEnvelopes": [
+          {
+            "exportedAt": "old timestamp",
+            "format": "journey-export",
+            "future": "literal",
+            "version": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "literal-old-carrier-stays-verbatim",
+    "sources": [
+      {
+        "_unmigrated": {
+          "companionSourceEnvelopes": [
+            {
+              "x": 1
+            }
+          ]
+        }
+      }
+    ],
+    "exported": {
+      "_unmigrated": {
+        "companionSourceEnvelopes": [
+          {
+            "x": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "literal-empty-carrier",
+    "sources": [
+      {
+        "_unmigrated": {
+          "companionSourceEnvelopes": []
+        }
+      }
+    ],
+    "exported": {
+      "_unmigrated": {
+        "companionSourceEnvelopes": []
+      }
+    }
+  },
+  {
+    "name": "literal-duplicate-carrier",
+    "sources": [
+      {
+        "_unmigrated": {
+          "companionSourceEnvelopes": [
+            {
+              "x": 1
+            },
+            {
+              "x": 1
+            }
+          ]
+        }
+      }
+    ],
+    "exported": {
+      "_unmigrated": {
+        "companionSourceEnvelopes": [
+          {
+            "x": 1
+          },
+          {
+            "x": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "prototype-looking-own-properties",
+    "sources": [
+      {
+        "__proto__": {
+          "polluted": false
+        },
+        "constructor": null,
+        "toString": [
+          "literal"
+        ]
+      }
+    ],
+    "exported": {
+      "__proto__": {
+        "polluted": false
+      },
+      "constructor": null,
+      "toString": [
+        "literal"
+      ]
+    }
+  }
+]

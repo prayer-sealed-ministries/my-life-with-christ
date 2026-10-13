@@ -25,10 +25,14 @@ import {
   entryToCreate,
   indexed,
   matches,
+  DraftConflictError,
+  assertEntryPatchCurrent,
 } from './semantics';
+import { mergeEnvelopeMetadata, type JournalEnvelopeMetadata } from './envelope-metadata';
+import { promotedDraftMetadata } from '../lib/entry-draft';
 import { byRecency } from '../lib/drafts';
-import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
-import { JournalChangedError, journalToken, type JournalSnapshot } from './journal';
+import type { AnchorLookup, EntryQuery, StorageProvider, UpdateEntryOptions } from './StorageProvider';
+import { JournalChangedError, journalToken, sameRecord, type JournalSnapshot } from './journal';
 
 // Re-exported for the views and tests that already import them from here. The
 // definitions moved to `semantics.ts` so the SQLite provider can share them
@@ -41,10 +45,13 @@ interface SettingsRow extends Settings {
   key: string;
 }
 
+interface EnvelopeRow { key: string; sources: JournalEnvelopeMetadata }
+
 class JourneyDatabase extends Dexie {
   entries!: EntityTable<Entry, 'id'>;
   settings!: EntityTable<SettingsRow, 'key'>;
   drafts!: EntityTable<EntryDraft, 'id'>;
+  envelopeMetadata!: EntityTable<EnvelopeRow, 'key'>;
 
   constructor(name = 'journey') {
     super(name);
@@ -62,6 +69,8 @@ class JourneyDatabase extends Dexie {
     this.version(2).stores({
       drafts: 'id, entryId, updatedAt',
     });
+    // Independent singleton data survives even a journal with zero records.
+    this.version(3).stores({ envelopeMetadata: 'key' });
   }
 }
 
@@ -117,11 +126,14 @@ export class DexieStorageProvider implements StorageProvider {
     return entry;
   }
 
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
+  async updateEntry(id: string, patch: Partial<Entry>, options?: UpdateEntryOptions): Promise<Entry> {
     return this.db.transaction('rw', this.db.entries, async () => {
       const row = (await this.db.entries.get(id)) as EntryRow | undefined;
       if (!row) throw new Error(`No entry with id ${id}`);
-      const updated = applyPatch(fromRow(row), patch);
+      const existing = fromRow(row);
+      assertEntryPatchCurrent(existing, patch, options?.expectedEntry);
+      const updated = applyPatch(existing, patch);
+      if (options?.preserveDraft) updated._unmigrated = promotedDraftMetadata(existing._unmigrated, options.preserveDraft);
       await this.db.entries.put(toRow(updated));
       return updated;
     });
@@ -154,15 +166,17 @@ export class DexieStorageProvider implements StorageProvider {
   }
 
   async readJournalSnapshot(): Promise<JournalSnapshot> {
-    return this.db.transaction('r', this.db.entries, this.db.drafts, async () => {
+    return this.db.transaction('r', this.db.entries, this.db.drafts, this.db.envelopeMetadata, async () => {
       const entries = ((await this.db.entries.toArray()) as EntryRow[])
         .map(fromRow)
         .sort(chronologically);
       const drafts = (await this.db.drafts.toArray()).sort(byRecency);
+      const envelopeMetadata = (await this.db.envelopeMetadata.get(SETTINGS_KEY))?.sources ?? [];
       return {
         entries,
         drafts,
-        token: journalToken(entries, drafts),
+        envelopeMetadata,
+        token: journalToken(entries, drafts, envelopeMetadata),
         capturedAt: new Date().toISOString(),
       };
     });
@@ -177,12 +191,14 @@ export class DexieStorageProvider implements StorageProvider {
     entries: Entry[],
     drafts: EntryDraft[],
     expectedToken?: string,
+    envelopeMetadata: JournalEnvelopeMetadata = [],
   ): Promise<void> {
-    await this.db.transaction('rw', this.db.entries, this.db.drafts, async () => {
+    await this.db.transaction('rw', this.db.entries, this.db.drafts, this.db.envelopeMetadata, async () => {
       if (expectedToken !== undefined) {
         const currentEntries = ((await this.db.entries.toArray()) as EntryRow[]).map(fromRow);
         const currentDrafts = await this.db.drafts.toArray();
-        if (journalToken(currentEntries, currentDrafts) !== expectedToken) {
+        if (journalToken(currentEntries, currentDrafts,
+          (await this.db.envelopeMetadata.get(SETTINGS_KEY))?.sources ?? []) !== expectedToken) {
           throw new JournalChangedError();
         }
       }
@@ -190,6 +206,7 @@ export class DexieStorageProvider implements StorageProvider {
       await this.db.drafts.clear();
       if (entries.length > 0) await this.db.entries.bulkPut(entries.map(toRow));
       if (drafts.length > 0) await this.db.drafts.bulkPut(drafts);
+      await this.db.envelopeMetadata.put({ key: SETTINGS_KEY, sources: mergeEnvelopeMetadata(envelopeMetadata) });
     });
   }
 
@@ -203,8 +220,16 @@ export class DexieStorageProvider implements StorageProvider {
   // never half-written: either the whole snapshot is there or the previous one
   // still is.
 
-  async putDraft(draft: EntryDraft): Promise<void> {
-    await this.db.drafts.put(draft);
+  async putDraft(draft: EntryDraft, expected?: EntryDraft | null): Promise<void> {
+    await this.db.transaction('rw', this.db.drafts, async () => {
+      if (expected !== undefined) {
+        const current = await this.db.drafts.get(draft.id);
+        if ((expected === null && current) || (expected !== null && (!current || !sameRecord(current, expected)))) {
+          throw new DraftConflictError(draft.id);
+        }
+      }
+      await this.db.drafts.put(draft);
+    });
   }
 
   async getDraft(id: string): Promise<EntryDraft | undefined> {
@@ -213,8 +238,8 @@ export class DexieStorageProvider implements StorageProvider {
 
   async getDraftForEntry(entryId: string): Promise<EntryDraft | undefined> {
     const found = await this.db.drafts.where('entryId').equals(entryId).toArray();
-    // Newest wins if an older build ever left two behind; nothing here writes a
-    // second draft for one entry.
+    // A conflict keeps both versions. Resume the newest; every separately
+    // preserved draft remains in storage and full archives.
     return found.sort(byRecency)[0];
   }
 
@@ -222,8 +247,12 @@ export class DexieStorageProvider implements StorageProvider {
     return (await this.db.drafts.toArray()).sort(byRecency);
   }
 
-  async deleteDraft(id: string): Promise<void> {
-    await this.db.drafts.delete(id);
+  async deleteDraft(id: string, expected?: EntryDraft): Promise<void> {
+    await this.db.transaction('rw', this.db.drafts, async () => {
+      const current = await this.db.drafts.get(id);
+      if (expected && current && !sameRecord(current, expected)) throw new DraftConflictError(id);
+      await this.db.drafts.delete(id);
+    });
   }
 
   async getSettings(): Promise<Settings> {

@@ -30,6 +30,7 @@
 import type { DraftForm, Entry, EntryDraft, EntryKind } from '../types';
 import { assert, assertDefined } from './contract-assert';
 import type { StorageProvider } from './StorageProvider';
+import { mergeEnvelopeMetadata } from './envelope-metadata';
 
 /**
  * How a case gets a provider.
@@ -1144,6 +1145,194 @@ export const CONTRACT_CASES: ContractCase[] = [
       assert.undefined(await storage.getEntry('incoming'), 'the stale replacement wrote nothing');
     },
   },
+  {
+    group: 'journal envelope metadata',
+    name: 'persists complete source maps after reopen including empty journals',
+    run: async (env) => {
+      const id = env.newStoreId();
+      const first = env.create(id); await first.open();
+      const metadata = [JSON.parse('{"__proto__":{"safe":true},"constructor":null,"future":[false,0,""]}')];
+      await first.replaceJournal([], [], undefined, metadata);
+      const reopened = env.create(id); await reopened.open();
+      const after = await reopened.readJournalSnapshot();
+      assert.equal(after.entries, [], 'metadata became an entry');
+      assert.equal(after.drafts, [], 'metadata became a draft');
+      assert.equal(after.envelopeMetadata, metadata, 'empty-journal metadata did not survive reopen');
+      assert.true(await reopened.journalMatches(after.token), 'fresh metadata snapshot does not match');
+      assert.undefined(({} as Record<string, unknown>).safe, 'prototype was modified');
+    },
+  },
+  {
+    group: 'journal envelope metadata',
+    name: 'stores a deterministic deduplicated source union without choosing a collision winner',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const a = { future: 1, _unmigrated: { future: 'older value' } };
+      const b = { future: 2 };
+      await storage.replaceJournal([], [], undefined, [a]);
+      const first = await storage.readJournalSnapshot();
+      await storage.replaceJournal(first.entries, first.drafts, first.token, mergeEnvelopeMetadata(first.envelopeMetadata ?? [], [b, a]));
+      const after = await storage.readJournalSnapshot();
+      assert.equal(after.envelopeMetadata, mergeEnvelopeMetadata([b, a]), 'a conflicting original was lost');
+      await storage.replaceJournal([], [], after.token, mergeEnvelopeMetadata([b, a, b]));
+      assert.true(await storage.journalMatches(after.token), 'a repeat import changed the metadata revision');
+    },
+  },
+  {
+    group: 'journal envelope metadata',
+    name: 'metadata-only changes invalidate both journalMatches and replace tokens',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const stale = await storage.readJournalSnapshot();
+      await storage.replaceJournal([], [], stale.token, [{ concurrent: 'keep' }]);
+      const actual = await storage.readJournalSnapshot();
+      assert.true(!(await storage.journalMatches(stale.token)), 'metadata-only change was invisible to backup freshness');
+      await assert.rejects(() => storage.replaceJournal([entry({ id: 'must-not-land' })], [], stale.token, [{ incoming: 'do not commit' }]),
+        'stale token overwrote metadata');
+      assert.true(await storage.journalMatches(actual.token), 'rejected restore changed existing journal');
+      assert.equal((await storage.readJournalSnapshot()).envelopeMetadata, [{ concurrent: 'keep' }], 'concurrent metadata was erased');
+    },
+  },
+  {
+    group: 'journal envelope metadata',
+    name: 'replace omission clears metadata but keeps device settings',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.updateSettings({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+      await storage.replaceJournal([], [], undefined, [{ old: 'original' }]);
+      const before = await storage.readJournalSnapshot();
+      await storage.replaceJournal([], [], before.token);
+      assert.equal((await storage.readJournalSnapshot()).envelopeMetadata, [], 'omitted replacement metadata was retained');
+      assert.is((await storage.getSettings()).lastExportAt, '2026-01-01T00:00:00.000Z', 'replace changed settings');
+    },
+  },
+  {
+    group: 'journal envelope metadata',
+    name: 'metadata serialization failure rolls back earlier entry and draft writes',
+    run: async (env) => {
+      const storage = await env.fresh();
+      await storage.replaceJournal([entry({ id: 'old' })], [draft({ id: 'old-draft' })], undefined, [{ old: 'metadata' }]);
+      const before = await storage.readJournalSnapshot();
+      await assert.rejects(() => storage.replaceJournal([entry({ id: 'incoming' })], [draft({ id: 'incoming-draft' })], before.token,
+        [{ invalidJson: BigInt(1) }]), 'invalid metadata unexpectedly committed');
+      assert.true(await storage.journalMatches(before.token), 'metadata failure left partial record changes');
+    },
+  },
+  {
+    group: 'journal envelope metadata',
+    name: 'ordinary record lifecycle preserves independent journal metadata',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const metadata = [{ independent: 'retained' }];
+      await storage.replaceJournal([], [], undefined, metadata);
+      const saved = await storage.createEntry({ notes: 'temporary' });
+      await storage.updateEntry(saved.id, { notes: 'edited' });
+      await storage.putDraft(draft({ id: 'temporary-draft', entryId: saved.id }));
+      await storage.deleteEntry(saved.id);
+      await storage.replaceEntries([entry({ id: 'entry-only-replace' })]);
+      await storage.clearEntries();
+      await storage.deleteDraft('temporary-draft');
+      assert.equal((await storage.readJournalSnapshot()).envelopeMetadata, metadata, 'record lifecycle erased envelope');
+    },
+  },
+
+  {
+    group: 'draft preservation concurrency',
+    name: 'promotion composes a receipt against freshest durable metadata instead of a stale patch',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const original = entry({ id: 'promotion-target', _unmigrated: { old: 'retained' } });
+      await storage.putEntries([original]);
+      await storage.updateEntry(original.id, { _unmigrated: { old: 'retained', otherWriter: 'concurrent', journeyPromotedDraft: 'older opaque value' } });
+      const recovery = draft({ id: 'promotion-recovery', _unmigrated: { unknown: 'keep draft-only data' } });
+      const updated = await storage.updateEntry(original.id, { notes: 'saved known fields', _unmigrated: original._unmigrated }, { preserveDraft: recovery });
+      assert.equal(updated._unmigrated, { old: 'retained', otherWriter: 'concurrent', journeyPromotedDraft: 'older opaque value', 'journeyPromotedDraft:1': recovery },
+        'promotion erased current metadata or chose a receipt collision winner');
+      const repeat = await storage.updateEntry(original.id, { notes: 'another known-field edit' }, { preserveDraft: recovery });
+      assert.equal(repeat._unmigrated, updated._unmigrated, 'same receipt grew during a repeat save');
+    },
+  },
+  {
+    group: 'draft preservation concurrency',
+    name: 'requires an exact draft revision and refuses resurrection or accidental id reuse',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const first = draft({ id: 'owned-draft' });
+      await storage.putDraft(first, null);
+      const newer = { ...first, form: { ...first.form, notes: 'newer acknowledged writing' } };
+      await storage.putDraft(newer, first);
+      await assert.rejects(() => storage.putDraft(first, first), 'stale draft overwrote newer writing');
+      await assert.rejects(() => storage.putDraft(first, null), 'new-id claim reused an existing draft');
+      assert.equal(await storage.getDraft(first.id), newer, 'rejected draft changed the acknowledged version');
+      await storage.deleteDraft(first.id);
+      await assert.rejects(() => storage.putDraft(first, newer), 'a retired draft was resurrected');
+      assert.undefined(await storage.getDraft(first.id), 'retired draft reappeared');
+    },
+  },
+  {
+    group: 'draft preservation concurrency',
+    name: 'allows only one acknowledged winner for two concurrent stale draft writers',
+    run: async (env) => {
+      const id = env.newStoreId();
+      const a = env.create(id); const b = env.create(id);
+      await a.open(); await b.open();
+      const before = draft({ id: 'two-writers' });
+      await a.putDraft(before, null);
+      const first = { ...before, form: { ...before.form, notes: 'first writer' } };
+      const second = { ...before, form: { ...before.form, notes: 'second writer' } };
+      const outcomes = await Promise.allSettled([a.putDraft(first, before), b.putDraft(second, before)]);
+      assert.is(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1, 'two stale writers both acknowledged success');
+      const winner = outcomes[0].status === 'fulfilled' ? first : second;
+      assert.equal(await a.getDraft(before.id), winner, 'the acknowledged winner did not remain durable');
+    },
+  },
+
+  {
+    group: 'draft preservation concurrency',
+    name: 'conditional retirement never deletes a newer draft revision and is idempotent if absent',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const before = draft({ id: 'retire-owned-revision' });
+      const newer = { ...before, form: { ...before.form, notes: 'another writer retained' } };
+      await storage.putDraft(before);
+      await storage.putDraft(newer, before);
+      await assert.rejects(() => storage.deleteDraft(before.id, before), 'stale retirement deleted another writer');
+      assert.equal(await storage.getDraft(before.id), newer, 'newer draft was lost');
+      await storage.deleteDraft(newer.id, newer);
+      await storage.deleteDraft(newer.id, newer);
+      assert.undefined(await storage.getDraft(before.id), 'matching retirement did not remove the draft');
+    },
+  },
+
+  {
+    group: 'draft preservation concurrency',
+    name: 'refuses a stale editor patch for any field it would replace, including nested opaque values',
+    run: async (env) => {
+      const storage = await env.fresh();
+      const before = entry({ id: 'stale-editor-entry', _unmigrated: { prior: 'kept' } });
+      const patches: Partial<Entry>[] = [
+        { notes: 'other writer notes' }, { reflection: 'other writer reflection' },
+        { links: [{ url: 'https://example.invalid/fictional', future: 'opaque link' } as Entry['links'][number]] },
+        { anchors: [{ kind: 'book', book: 'genesis', future: 'opaque anchor' } as Entry['anchors'][number]] },
+        { sourceMaterial: { format: 'sermon-notes-json', filename: 'fictional.json', importedAt: before.createdAt,
+          body: 'another provided source', parserVersion: 1, future: 'opaque provided data' } as Entry['sourceMaterial'] },
+      ];
+      for (const change of patches) {
+        await storage.putEntries([before]);
+        const current = await storage.updateEntry(before.id, change);
+        await assert.rejects(() => storage.updateEntry(before.id, { ...before, sourceMaterial: before.sourceMaterial, notes: 'local attempted edit' }, { expectedEntry: before }),
+          'stale Save silently replaced another writer');
+        assert.equal(await storage.getEntry(before.id), current, 'rejected Save mutated the canonical entry');
+      }
+      await storage.putEntries([before]);
+      const metadata = { prior: 'kept', otherWriter: 'opaque addition' };
+      await storage.updateEntry(before.id, { _unmigrated: metadata });
+      const saved = await storage.updateEntry(before.id, { notes: 'local permitted edit' }, { expectedEntry: before });
+      assert.equal(saved._unmigrated, metadata, 'metadata-only update was erased');
+      assert.is(saved.notes, 'local permitted edit', 'metadata-only change incorrectly blocked Save');
+    },
+  },
+
 ];
 
 /**

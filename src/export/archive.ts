@@ -29,9 +29,12 @@ import { renderBook } from './book';
 import { renderCsv, renderExportNote, renderReadme, renderSchema } from './readme';
 import { createZip, sha256, type ZipEntry } from './zip';
 import { CURRENT_VERSION } from './migrate';
+import { exportEnvelopeMetadata, type JournalEnvelopeMetadata } from '../storage/envelope-metadata';
 
 export interface BuildArchiveOptions {
   entries: Entry[];
+  /** Full backups only: opaque journal-wide fields may concern unselected writing. */
+  envelopeMetadata?: JournalEnvelopeMetadata;
   /**
    * Unfinished writing to carry in the canonical JSON.
    *
@@ -142,6 +145,7 @@ export async function buildContext(options: BuildArchiveOptions): Promise<Export
     // Absent for callers that do not have them — a context built for a preview
     // or a test is still a valid one.
     drafts: options.drafts ?? [],
+    envelopeMetadata: options.filter ? [] : options.envelopeMetadata ?? [],
     filter: options.filter,
     excludedCount: Math.max(0, (options.allEntries?.length ?? entries.length) - entries.length),
     exportedAt: now.toISOString(),
@@ -171,6 +175,7 @@ export function buildJourneyJson(ctx: ExportContext): JourneyExport {
     // That is what keeps the format at version 1: the key is additive, and its
     // absence is the v1 reading.
     ...(ctx.drafts.length > 0 ? { drafts: ctx.drafts } : {}),
+    ...exportEnvelopeMetadata(ctx.filter ? [] : ctx.envelopeMetadata),
   };
 }
 

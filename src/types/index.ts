@@ -485,7 +485,9 @@ export interface JourneyExport {
    * not one.
    */
   drafts?: EntryDraft[];
-  _unmigrated?: Record<string, unknown>;
+  /** An original opaque value, or a complete-source-map preservation carrier. */
+  _unmigrated?: unknown;
+  [field: string]: unknown;
 }
 
 /** What a selective export kept. A partial archive must never look complete. */
