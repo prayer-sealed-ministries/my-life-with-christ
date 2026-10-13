@@ -31,7 +31,7 @@ import { stableJson } from '../storage/semantics';
 import { importEnvelopeMetadata, mergeEnvelopeMetadata, type JournalEnvelopeMetadata } from '../storage/envelope-metadata';
 import { JournalChangedError } from '../storage/journal';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
-import { sha256, zipEntryText } from './zip';
+import { sha256 } from './zip';
 import { readZipLimited } from '../import/zip-limits';
 import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from '../platform/file-limits';
 import { verifyArchiveManifest } from './manifest.mjs';
@@ -77,6 +77,15 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
 const looksLikeZip = (data: Uint8Array): boolean =>
   data.length >= 4 && ZIP_MAGIC.every((byte, index) => data[index] === byte);
+
+/** Invalid byte sequences must never become replacement characters in writing. */
+function journalText(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error('That file is not valid UTF-8 journal JSON. Nothing was imported.');
+  }
+}
 
 /**
  * Parse an import file without writing anything.
@@ -128,10 +137,10 @@ export async function parseImport(
         `That archive has no ${CANONICAL_PATH}. If it is a Journey export, the file may be damaged.`,
       );
     }
-    text = zipEntryText(canonical);
+    text = journalText(canonical.bytes);
     source = 'archive';
   } else {
-    text = new TextDecoder().decode(data);
+    text = journalText(data);
     source = 'json';
   }
 
