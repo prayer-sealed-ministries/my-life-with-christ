@@ -159,6 +159,7 @@ const formFromEntry = (entry: Entry): FormState => ({
   prayer: entry.prayer ?? '',
   tagsText: entry.tags.join(', '),
   links: entry.links.map((link) => ({
+    ...link,
     url: link.url,
     label: link.label ?? '',
     capturedTitle: link.capturedTitle ?? '',
@@ -759,7 +760,12 @@ export default function EntryEditor({
       let now = new Date().toISOString();
       draftId.current = id;
       draftCreatedAt.current ??= now;
+      // Keep imported opaque metadata when updating or forking unfinished
+      // writing. Parent identity is selected by the current route below, so a
+      // recovered orphan must not accidentally keep its previous missing parent.
+      const { entryId: _previousParent, ...preservedDraft } = draftVersion.current ?? { entryId: undefined };
       let record: EntryDraft = {
+        ...preservedDraft,
         id,
         ...(parentId ? { entryId: parentId } : {}),
         form: snapshot,
@@ -1395,6 +1401,7 @@ export default function EntryEditor({
     const links: EntryLink[] = submittedForm.links
       .filter(linkHasContent)
       .map((link) => ({
+        ...link,
         url: link.url.trim(),
         label: link.label.trim() || undefined,
         capturedTitle: link.capturedTitle.trim() || undefined,
