@@ -63,7 +63,7 @@ PR creation was not bypassed; any retry requires the newer explicit authority.
 | 8 Preservation | Existing canonical ZIP/Markdown/manifest/printable book retained. Companion full canonical JSON and selectable readable output have distinct privacy promises. Envelope metadata includes empty journals; draft promotion retains opaque source snapshots. | Readable companion output is not falsely called the app's full archival ZIP/book. Actual destination reopening is still needed before relying on an external backup. |
 | 9 Accessibility/offline | Companion labels/status/focus/contrast/local-assets checks, large-journal tests and real desktop cloud-browser smoke. App adds rendered protected-state axe/keyboard/reflow tests to both CI profiles. Existing main hosted cache and native bundled offline behavior preserved. | Real screen readers/voice/switch/phones, 200–400% zoom and 320px companion rendered reflow remain unverified. Companion cold-offline/update lifecycle assessed, not promised; no unsafe new worker added. |
 | 10 Hosting | Existing public companion published, portable relative-path source/tests/lock/build/hosting docs and source bundle retained. Export → import → verify process documented for a future origin. | Ministry repo naming decision pending. No DNS, domain transition, paid service or native publication. Old origin retained. |
-| 11 Complete Sunday | Fictional pastor → recipient → distinct personal writing → plain/protected move → duplicate/conflict → selected sharing → archive → isolated restore harness and pilot. | Prior 16-stage result covers old source; rerun required for integrated main. Programmatic DOM/IndexedDB evidence does not establish phone/browser durability or camera QR. |
+| 11 Complete Sunday | Fictional pastor → recipient → distinct personal writing → plain/protected move → duplicate/conflict → selected sharing → archive → isolated restore harness and pilot. | Integrated-main 16-stage rerun passed with unchanged source fingerprints. Programmatic DOM/IndexedDB evidence does not establish phone/browser durability or camera QR. |
 | 12 Delivery | Focused commits, preserved rollback/source, mandatory local gate, exact remote-tree readback and required CI before merge. Companion live deployment evidence and pilot available. | Integration is not finished until final gates and remote state below are verified; native release remains HOLD afterward. |
 
 ## Important compatibility decisions
@@ -152,3 +152,44 @@ mid-port; source restoration was checked before verification resumed.
 6. Keep the native release HOLD until mandatory device evidence and the
    separate signing-key backup/release decisions are satisfied. Historical A17
    or simulator evidence is not acceptance of this candidate.
+
+## Final frozen-source verification — 23:39 UTC
+
+- Runtime source commit: `83c71561f4461a7f2531e6336b5597c912751e6e`.
+  An ancestry-only merge `d2be7187d416875f5a129d3754cc1263c84ba4fe`
+  preserves the earlier remote checkpoint without changing this tree:
+  `44353eb64c2009d7ccad7e68adfe61eb85a14c73`.
+- Full typecheck, lint (zero errors; six existing refresh warnings), guarded
+  native asset build/sync, both-profile tests, mandatory full-history pre-push
+  gate, public and refs-only bundle/startup gates, and diff checks passed.
+  The pre-push privacy scan examined 625 files and 147 commit messages.
+- Profiles collected 2,335 public and 2,336 refs-only assertions, with no
+  assertion failures. All 2,335 distinct names passed under at least one
+  profile. The existing summary uses name sets, so its six not-run-or-failed
+  count includes two duplicate names as well as four shape skips per profile;
+  it is not a report of six failing tests.
+- Playwright discovered 182 tests across 26 files. Discovery is **not**
+  execution. The six required remote CI jobs still need actual successful
+  completion before merge; inaccessible local Chromium is not a browser pass.
+- The independent integrated-main Sunday harness passed all 16 stages, with
+  zero network calls or unhandled errors. Exact plain/protected transfers,
+  entries, drafts, three opaque source maps, duplicate/conflict handling,
+  reverse ZIP restore and delivery freshness all passed. All 185 examined app
+  and 11 companion files retained their fingerprints. The earlier evidence
+  bundle is also preserved unchanged.
+- Reintroduced defects failed before restoration: declaration validation,
+  unreadable UTF-8, migration preservation, picker ownership, pending/unmount
+  barriers, envelope privacy, metadata tokens, SQLite serialization and
+  editor promotion/concurrent-write/terminal-action safety. Detailed provider
+  mutation counts are in the preservation contracts; final focused run was
+  439 tests in 17 files, followed by 78 provider and 5 helper cleanup checks.
+- Structured records: [final gates](evidence/2026-10-13-final-gates.json) and
+  [integrated Sunday](evidence/2026-10-13-sunday-results.json). Sunday bundle
+  SHA-256: `1103fc2e1fd7d7551867de3b1bc51b2978ae166a21a001f172226c85694c13c0`.
+
+These final documentation/evidence additions do not change runtime source.
+The mandatory pre-push gate is run again after committing them. GitHub's current
+branch-protection read returned403 (integration access); the six documented
+required checks remain mandatory, with no admin bypass. Remote integration and
+CI results are recorded in the review request and final delivery once verified.
+Native release remains **HOLD**.

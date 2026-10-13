@@ -1,0 +1,112 @@
+{
+  "scope": "Frozen current-main integration; all checks listed executed successfully",
+  "completedAt": "2026-10-13T23:39:58Z",
+  "runtimeCommit": "83c71561f4461a7f2531e6336b5597c912751e6e",
+  "testedAncestryCommit": "d2be7187d416875f5a129d3754cc1263c84ba4fe",
+  "testedTree": "44353eb64c2009d7ccad7e68adfe61eb85a14c73",
+  "baseCommit": "e65c1b36535a3d9d2b4dd02e81f4c797f0341ff6",
+  "node": "v24.19.0",
+  "gates": [
+    {
+      "name": "typecheck",
+      "status": "passed",
+      "logSha256": "e1acef98b23a3adca151d775f0e7b347419ba2e825cf218eb82e3c717c01ddbd",
+      "logBytes": 136
+    },
+    {
+      "name": "lint",
+      "status": "passed",
+      "logSha256": "40629f688460d15265a00d5600d94c2e46143f7bed489830d8884101f3febd09",
+      "logBytes": 1501
+    },
+    {
+      "name": "native-assets",
+      "status": "passed",
+      "logSha256": "a8bdec0f6ca2fdf68fbd76640eb213f12ec2217e2e077a0510e1c0221d814e33",
+      "logBytes": 11845
+    },
+    {
+      "name": "native-sync",
+      "status": "passed",
+      "logSha256": "540223c4d7278f16de3c641983ebf9b844f53e4f97636e3fb2c3873178ba1f95",
+      "logBytes": 2560
+    },
+    {
+      "name": "profiles",
+      "status": "passed",
+      "logSha256": "9f3e9fe11f4d95d4f53623257546982bfa8478697ecfcc53b783a1540058baf3",
+      "logBytes": 1770
+    },
+    {
+      "name": "prepush",
+      "status": "passed",
+      "logSha256": "765d7577bdbef628445d0ac6963cf52980ef772e38064c72376e55085426ca62",
+      "logBytes": 768
+    },
+    {
+      "name": "startup-refs",
+      "status": "passed",
+      "logSha256": "5844e09d6a118aa3aedf5705a8a9c1277169fd9f41e45624e06666510e94c203",
+      "logBytes": 874
+    },
+    {
+      "name": "build-public",
+      "status": "passed",
+      "logSha256": "65df264cd0048ee8d6ac5a9351ac738b55ff41f65874b5ac4ea8aa5df00992bc",
+      "logBytes": 10953
+    },
+    {
+      "name": "bundle-public",
+      "status": "passed",
+      "logSha256": "2c4cc0e39410c90a526c141231c39a9026024b9c021632f2122003b15d5c6cab",
+      "logBytes": 677
+    },
+    {
+      "name": "startup-public",
+      "status": "passed",
+      "logSha256": "755c56918051f11e4136b9a6cd283cff2390a90f6c12479c1e4f98af29f94aa3",
+      "logBytes": 872
+    },
+    {
+      "name": "playwright-discovery",
+      "status": "passed",
+      "logSha256": "9dfe82185719c83a4818ccbfe02c84744e90c955cb0ca228cfb7778b1c78fd58",
+      "logBytes": 20725
+    },
+    {
+      "name": "diffcheck",
+      "status": "passed",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logBytes": 0
+    }
+  ],
+  "profileCoverage": {
+    "publicCollected": 2335,
+    "refsOnlyCollected": 2336,
+    "distinctNamesPassingInAtLeastOneProfile": 2335,
+    "assertionFailures": 0,
+    "note": "The existing runner reports distinct full-name sets: 2329 public and 2330 refs-only. Its not-run-or-failed count includes two repeated names per profile. Public JSON confirms 2331 passing assertions, four shape skips, zero failures. Every distinct test name passed in at least one profile."
+  },
+  "playwright": {
+    "discovered": 182,
+    "files": 26,
+    "executedLocally": false,
+    "reason": "Local browser Unix socket unavailable; cloud browser cannot reach executor localhost. Required remote CI remains pending."
+  },
+  "sunday": {
+    "stagesPassed": 16,
+    "stagesSkipped": 0,
+    "evidence": "2026-10-13-sunday-results.json",
+    "bundleSha256": "1103fc2e1fd7d7551867de3b1bc51b2978ae166a21a001f172226c85694c13c0",
+    "limits": [
+      "simulated DOM",
+      "fake IndexedDB",
+      "injected delivery results",
+      "no React-view/native/rendered-browser proof"
+    ]
+  },
+  "productionDependencyAudit": {
+    "vulnerabilities": 0
+  },
+  "nativeRelease": "HOLD"
+}
