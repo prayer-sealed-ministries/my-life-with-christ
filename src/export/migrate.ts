@@ -683,10 +683,21 @@ function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
 export function migrateExport(raw: unknown, context: MigrationContext = {}): MigrationResult {
   const warnings: string[] = [];
 
-  if (!raw || typeof raw !== 'object') {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('This file does not contain a journal: expected a JSON object.');
   }
   const envelope = raw as Record<string, unknown>;
+
+  // Missing declarations are the supported legacy shape. A present declaration
+  // is an identity claim, not an extension that may be ignored: importing a
+  // different format as a journal would silently discard what that claim means.
+  if (Object.hasOwn(envelope, 'format') && envelope.format !== 'journey-export') {
+    throw new Error('This file declares a different or invalid journal format, so nothing was restored.');
+  }
+  if (Object.hasOwn(envelope, 'version') &&
+      (typeof envelope.version !== 'number' || !Number.isSafeInteger(envelope.version) || envelope.version < 1)) {
+    throw new Error('This file declares an invalid journal version, so nothing was restored.');
+  }
 
   if (!Array.isArray(envelope.entries)) {
     throw new Error('This file does not contain a journal: no "entries" list found.');
