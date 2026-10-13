@@ -286,3 +286,17 @@ describe('CI verifies both profiles', () => {
     expect(guard?.run).toMatch(/verify:no-private-data\s+--\s+HEAD/);
   });
 });
+
+
+describe('required browser checks run before merge', () => {
+  it('runs both end-to-end profiles on read-only pull-request events', () => {
+    const triggers = ci.on ?? ci[true];
+    expect(Object.keys(triggers)).toContain('pull_request');
+    expect(Object.keys(triggers)).not.toContain('pull_request_target');
+    expect(ci.jobs.e2e.if, 'a push-only condition would skip required pre-merge evidence').toBeUndefined();
+    expect(ci.jobs.e2e.strategy.matrix.profile).toEqual(['public', 'refs-only']);
+    expect(ci.permissions).toEqual({ contents: 'read' });
+    expect(ci.jobs.e2e.permissions).toBeUndefined();
+    expect(stepsOf(ci, 'e2e').some((step) => /npm run test:e2e/.test(step.run ?? ''))).toBe(true);
+  });
+});
