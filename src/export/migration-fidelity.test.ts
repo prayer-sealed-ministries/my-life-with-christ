@@ -165,6 +165,53 @@ describe('forward migration preserves nested and unfinished-record extensions', 
     expect(second.bytes).toEqual(archive.bytes);
   });
 
+
+  it.each(['futureField', '__proto__', 'constructor'])('keeps both entry extension values when %s already exists in _unmigrated', (key) => {
+    const legacy = { version: 'older opaque value' };
+    const incoming = { version: 'newer opaque value' };
+    const raw = { ...READING, [key]: incoming, _unmigrated: { [key]: legacy } };
+    const { entries: [entry], warnings } = migrateExport({ version: 1, entries: [raw] });
+    expect(Object.hasOwn(entry, key)).toBe(true);
+    expect((entry as unknown as Record<string, unknown>)[key]).toEqual(incoming);
+    expect(entry._unmigrated?.[key]).toEqual(legacy);
+    expect(warnings.join(' ')).toContain('both values are preserved');
+    expect(Object.getPrototypeOf(entry)).toBe(Object.prototype);
+    expect(migrateExport({ version: 1, entries: [entry] }).entries).toEqual([entry]);
+  });
+
+  it.each(['futureField', '__proto__', 'constructor'])('keeps both draft extension values when %s already exists in _unmigrated', (key) => {
+    const legacy = { version: 'older opaque value' };
+    const incoming = { version: 'newer opaque value' };
+    const raw = { ...rawDraft(), [key]: incoming, _unmigrated: { [key]: legacy } };
+    const { drafts: [draft], warnings } = migrateExport({ version: 1, entries: [], drafts: [raw] });
+    expect(Object.hasOwn(draft, key)).toBe(true);
+    expect((draft as unknown as Record<string, unknown>)[key]).toEqual(incoming);
+    expect(draft._unmigrated?.[key]).toEqual(legacy);
+    expect(warnings.join(' ')).toContain('both values are preserved');
+    expect(Object.getPrototypeOf(draft)).toBe(Object.prototype);
+    expect(migrateExport({ version: 1, entries: [], drafts: [draft] }).drafts).toEqual([draft]);
+  });
+
+  it('preserves colliding extension pairs through persisted import and isolated archive restore', async () => {
+    const extra = { futureField: 'current value', _unmigrated: { futureField: 'earlier value' } };
+    const parsed = await parseImport(JSON.stringify({
+      format: 'journey-export', version: 1, entries: [{ ...rawEntry(), ...extra }], drafts: [{ ...rawDraft(), ...extra }],
+    }));
+    const storage = new DexieStorageProvider('fictional-extension-collision-source');
+    await storage.open();
+    await applyImport(parsed, storage, 'merge');
+    const entries = await storage.listEntries();
+    const drafts = await storage.listDrafts();
+    expect(entries[0]).toMatchObject(extra);
+    expect(drafts[0]).toMatchObject(extra);
+    const archive = await buildArchive({ entries, drafts, outlineBooks: [], topics: [], profile: 'refs-only' });
+    const receiving = new DexieStorageProvider('fictional-extension-collision-receiver');
+    await receiving.open();
+    await applyImport(await parseImport(archive.bytes), receiving, 'replace');
+    expect(await receiving.listEntries()).toEqual(entries);
+    expect(await receiving.listDrafts()).toEqual(drafts);
+  });
+
   it('preserves an already validated draft form with extensions on subsequent migrations', () => {
     const first = migrateExport(envelope());
     const second = migrateExport({ version: 1, entries: first.entries, drafts: first.drafts });

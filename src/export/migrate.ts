@@ -5,7 +5,8 @@
  * outlived by its data, which means an archive written by some later version —
  * or by a version that predates a schema change — must import without loss.
  * Unrecognised record fields are preserved verbatim in `_unmigrated` and
- * reported. Extensions inside a validated nested object stay beside that
+ * reported. If that location is occupied, both values remain in their original
+ * locations. Extensions inside a validated nested object stay beside that
  * object's known fields as inert data, rather than being discarded.
  */
 
@@ -53,6 +54,30 @@ const DRAFT_FIELDS = new Set(['id', 'entryId', 'form', 'createdAt', 'updatedAt',
  */
 function extensionFields(value: Record<string, unknown>, known: ReadonlySet<string>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !known.has(key)));
+}
+
+/** Keep both values if an older extension already occupies the migration slot. */
+function preserveRecordExtensions(
+  value: Record<string, unknown>,
+  known: ReadonlySet<string>,
+  unmigrated: Record<string, unknown>,
+  label: string,
+  warnings: string[],
+): Record<string, unknown> {
+  const retained: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(extensionFields(value, known))) {
+    const occupied = Object.hasOwn(unmigrated, key);
+    // Defining an own property does not invoke __proto__ setters. When the
+    // migration destination is occupied, keep this field in its original
+    // location instead of choosing a winner or inventing a reserved namespace.
+    Object.defineProperty(occupied ? retained : unmigrated, key, {
+      value: item, writable: true, enumerable: true, configurable: true,
+    });
+    warnings.push(occupied
+      ? `${label}: unrecognised field "${key}" retained in its original location because _unmigrated already contains that key; both values are preserved.`
+      : `${label}: unrecognised field "${key}" preserved in _unmigrated.`);
+  }
+  return retained;
 }
 
 const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
@@ -311,26 +336,12 @@ export function migrateEntry(raw: unknown, context: MigrationContext, warnings: 
       ? (value._unmigrated as Record<string, unknown>)
       : {}),
   };
-  for (const [key, item] of Object.entries(value)) {
-    if (KNOWN_FIELDS.has(key)) continue;
-    // `JSON.parse` makes "__proto__" an OWN property, and `unmigrated[key] = item`
-    // on a plain object then runs the __proto__ setter: it re-points this
-    // object's prototype and stores nothing. The field would be dropped in
-    // silence, which is precisely what this module exists not to do. (It cannot
-    // reach Object.prototype — the target is a fresh literal — so this is a
-    // loss-of-data bug rather than a privilege one, but it is still a bug.)
-    Object.defineProperty(unmigrated, key, {
-      value: item,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    });
-    warnings.push(`Entry ${id}: unrecognised field "${key}" preserved in _unmigrated.`);
-  }
+  const retainedExtensions = preserveRecordExtensions(value, KNOWN_FIELDS, unmigrated, `Entry ${id}`, warnings);
   if (unmappedAnchors.length > 0) unmigrated.anchors = unmappedAnchors;
 
   const now = new Date().toISOString();
   const entry: Entry = {
+    ...retainedExtensions,
     id,
     kind,
     title: str(value.title),
@@ -512,18 +523,13 @@ function readDrafts(raw: unknown, warnings: string[]): EntryDraft[] {
     if (!Number.isFinite(Date.parse(createdAt)) || !Number.isFinite(Date.parse(updatedAt))) {
       throw new Error(`Draft ${id} has an invalid timestamp. Nothing was restored.`);
     }
-    const extensions = extensionFields(value, DRAFT_FIELDS);
     const existingUnmigrated = value._unmigrated && typeof value._unmigrated === 'object' && !Array.isArray(value._unmigrated)
       ? value._unmigrated as Record<string, unknown>
       : undefined;
-    const unmigrated = {
-      ...existingUnmigrated,
-      ...extensions,
-    };
-    for (const key of Object.keys(extensions)) {
-      warnings.push(`Draft ${id}: unrecognised field "${key}" preserved in _unmigrated.`);
-    }
+    const unmigrated = { ...existingUnmigrated };
+    const retainedExtensions = preserveRecordExtensions(value, DRAFT_FIELDS, unmigrated, `Draft ${id}`, warnings);
     drafts.push({
+      ...retainedExtensions,
       id,
       ...(typeof value.entryId === 'string' ? { entryId: value.entryId } : {}),
       form: readDraftForm(value.form),
