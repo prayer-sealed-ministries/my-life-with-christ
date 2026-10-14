@@ -1,0 +1,171 @@
+{
+  "format": "journey-export",
+  "version": 1,
+  "exportedAt": "2026-10-11T12:32:00.000Z",
+  "entries": [
+    {
+      "id": "fictional-sunday-entry-001",
+      "kind": "sermon",
+      "title": "Fictional Sunday — a shared table",
+      "date": "2026-10-11",
+      "place": "",
+      "speaker": "",
+      "sermonSeries": "",
+      "anchors": [
+        {
+          "kind": "scripture",
+          "book": "luke",
+          "chapterStart": 14,
+          "chapterEnd": 14,
+          "verseStart": 12,
+          "verseEnd": 14
+        }
+      ],
+      "scriptureRefs": [
+        "Luke 14:12–14"
+      ],
+      "notes": "Fictional congregant notes",
+      "reflection": "Fictional private reflection",
+      "prayer": "Fictional private prayer",
+      "links": [],
+      "tags": [
+        "fictional",
+        "Sunday"
+      ],
+      "forDescendants": false,
+      "visibility": "private",
+      "createdAt": "2026-10-11T09:00:00.000Z",
+      "updatedAt": "2026-10-11T12:30:00.000Z",
+      "futureEntry": {
+        "preserve": true
+      },
+      "sourceMaterial": {
+        "format": "sermon-notes-json",
+        "filename": "fictional-sunday.json",
+        "importedAt": "2026-10-11T09:00:00.000Z",
+        "body": "## A shared table\n\nFictional outline for testing only.",
+        "church": "Fictional Example Church",
+        "speaker": "Fictional Pastor",
+        "date": "2026-10-11",
+        "scripture": [
+          "Luke 14:12–14"
+        ],
+        "parserVersion": 1
+      }
+    }
+  ],
+  "drafts": [
+    {
+      "id": "fictional-unfinished-draft-001",
+      "createdAt": "2026-10-11T09:01:00.000Z",
+      "updatedAt": "2026-10-11T12:31:00.000Z",
+      "form": {
+        "kind": "letter",
+        "title": "Fictional unfinished letter",
+        "date": "2026-10-11",
+        "place": "",
+        "speaker": "",
+        "sermonSeries": "",
+        "anchors": [
+          {
+            "kind": "scripture",
+            "book": "luke",
+            "chapterStart": 14,
+            "chapterEnd": 14,
+            "verseStart": 12,
+            "verseEnd": 14
+          }
+        ],
+        "scriptureRefs": [
+          "Luke 14:12–14"
+        ],
+        "notes": "An unfinished thought  ",
+        "reflection": "Fictional private reflection",
+        "prayer": "Fictional private prayer",
+        "links": [],
+        "tags": [
+          "fictional",
+          "Sunday"
+        ],
+        "forDescendants": false,
+        "visibility": "private",
+        "updatedAt": "2026-10-11T12:30:00.000Z",
+        "futureEntry": {
+          "preserve": true
+        },
+        "sourceMaterial": {
+          "format": "sermon-notes-json",
+          "filename": "fictional-sunday.json",
+          "importedAt": "2026-10-11T09:00:00.000Z",
+          "body": "## A shared table\n\nFictional outline for testing only.",
+          "church": "Fictional Example Church",
+          "speaker": "Fictional Pastor",
+          "date": "2026-10-11",
+          "scripture": [
+            "Luke 14:12–14"
+          ],
+          "parserVersion": 1
+        },
+        "tagsText": "fictional, Sunday"
+      },
+      "_unmigrated": {
+        "companionEntry": {
+          "id": "fictional-sunday-entry-001",
+          "kind": "sermon",
+          "title": "Fictional Sunday — a shared table",
+          "date": "2026-10-11",
+          "place": "",
+          "speaker": "",
+          "sermonSeries": "",
+          "anchors": [
+            {
+              "kind": "scripture",
+              "book": "luke",
+              "chapterStart": 14,
+              "chapterEnd": 14,
+              "verseStart": 12,
+              "verseEnd": 14
+            }
+          ],
+          "scriptureRefs": [
+            "Luke 14:12–14"
+          ],
+          "notes": "Fictional congregant notes",
+          "reflection": "Fictional private reflection",
+          "prayer": "Fictional private prayer",
+          "links": [],
+          "tags": [
+            "fictional",
+            "Sunday"
+          ],
+          "forDescendants": false,
+          "visibility": "private",
+          "createdAt": "2026-10-11T09:00:00.000Z",
+          "updatedAt": "2026-10-11T12:30:00.000Z",
+          "futureEntry": {
+            "preserve": true
+          },
+          "sourceMaterial": {
+            "format": "sermon-notes-json",
+            "filename": "fictional-sunday.json",
+            "importedAt": "2026-10-11T09:00:00.000Z",
+            "body": "## A shared table\n\nFictional outline for testing only.",
+            "church": "Fictional Example Church",
+            "speaker": "Fictional Pastor",
+            "date": "2026-10-11",
+            "scripture": [
+              "Luke 14:12–14"
+            ],
+            "parserVersion": 1
+          }
+        }
+      },
+      "futureDraft": {
+        "preserve": true
+      }
+    }
+  ],
+  "futureEnvelope": {
+    "preserve": true
+  }
+}

@@ -8,6 +8,7 @@
  */
 
 import AxeBuilder from '@axe-core/playwright';
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
 import { assertRendered, examinedAtLeast } from './floor';
@@ -228,4 +229,50 @@ test.describe('form controls carry real labels', () => {
     examinedAtLeast(totalControls, 10, 'form controls across all views');
     expect(problems.join('\n')).toBe('');
   });
+});
+
+test.describe('protected-transfer accessibility states', () => {
+  for (const theme of THEMES) {
+    for (const width of [320, 1280]) {
+      test(`password, review and receipt — ${theme} @ ${width}px`, async ({ page }) => {
+        test.setTimeout(120_000);
+        const { password } = JSON.parse(readFileSync('src/export/test-fixtures/protected-v1.metadata.json', 'utf8'));
+        await page.setViewportSize({ width, height: 900 });
+        await dismissWelcome(page);
+        await forceTheme(page, theme);
+        await page.goto('#/data');
+        await page.getByLabel('Journal file to read').setInputFiles('src/export/test-fixtures/protected-v1.lwc');
+        const input = page.getByLabel('Transfer password');
+        await expect(input).toBeFocused();
+        const inspect = async (state: string) => {
+          const { violations, passes } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+          examinedAtLeast(passes.length, 5, `protected transfer ${state}`);
+          expect(violations, state).toEqual([]);
+          const widths = await page.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }));
+          expect(widths.content, `${state} horizontal overflow`).toBeLessThanOrEqual(widths.viewport + 1);
+        };
+        await inspect('password');
+        await input.fill(password);
+        await page.keyboard.press('Tab');
+        await expect(page.getByRole('button', { name: 'Unlock and review' })).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(page.getByRole('heading', { name: 'What this would do' })).toBeFocused();
+        await inspect('review');
+        // Traverse the real tab order from the new preview heading. Do not
+        // programmatically focus the commit button and mistake that for access.
+        const merge = page.getByRole('button', { name: 'Merge 1 entry', exact: true });
+        let reached = false;
+        for (let count = 0; count < 20; count += 1) {
+          await page.keyboard.press('Tab');
+          reached = await merge.evaluate((button) => button === document.activeElement);
+          if (reached) break;
+        }
+        expect(reached, 'keyboard reaches reviewed import confirmation').toBe(true);
+        await page.keyboard.press('Enter');
+        await expect(page.locator('main p').filter({ hasText: /1 entry and 1 unfinished draft written/ }).first()).toBeVisible();
+        await expect(page.getByLabel('Journal file to read')).toBeFocused();
+        await inspect('receipt');
+      });
+    }
+  }
 });

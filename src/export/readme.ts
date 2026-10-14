@@ -740,15 +740,16 @@ export function renderSchema(): string {
           'mid-sentence does not lose the sentence.',
       },
       _unmigrated: {
-        type: 'object',
         description:
-          'Fields written by a newer version of the app that the exporting ' +
-          'version did not understand, preserved word for word so a round trip ' +
-          'through an older version cannot silently lose data. Normally absent.',
+          'Opaque original journal metadata. A companionSourceEnvelopes array ' +
+          'may carry complete original field maps when several sources conflict. ' +
+          'Every map is inert data; preserve it without choosing a winning value. ' +
+          'Other original values at this field remain unchanged or inside those maps.',
       },
     },
     required: ['format', 'version', 'exportedAt', 'entries'],
-    additionalProperties: false,
+    // Future envelope fields retain their original locations when unambiguous.
+    additionalProperties: true,
     $defs: {
       draft: {
         title: 'Draft',

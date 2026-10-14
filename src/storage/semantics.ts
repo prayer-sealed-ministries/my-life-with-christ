@@ -215,3 +215,47 @@ export function applyPatch(existing: Entry, patch: Partial<Entry>, now = new Dat
     : now.toISOString();
   return { ...existing, ...safe, updatedAt: timestamp };
 }
+
+/** Canonical comparison independent of object-key and collection ordering. */
+export function stableJson(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
+
+/** Two writers must not silently replace the same recovery snapshot. */
+export class DraftConflictError extends Error {
+  readonly draftId: string;
+  constructor(draftId: string) {
+    super('This recovery draft changed in another window. Both versions will be kept separately.');
+    this.name = 'DraftConflictError';
+    this.draftId = draftId;
+  }
+}
+
+
+export class EntryConflictError extends Error {
+  constructor() {
+    super('This entry changed in another window. Your changes were not saved over it. Your writing is still here; keep this page open and review the saved entry in another window.');
+    this.name = 'EntryConflictError';
+  }
+}
+
+/**
+ * Guard only fields this Save would replace, including whole nested records.
+ * Root preservation metadata is composed separately; timestamp-only changes
+ * are not evidence that the reader's writing changed.
+ */
+export function assertEntryPatchCurrent(existing: Entry, patch: Partial<Entry>, expected?: Entry): void {
+  if (!expected) return;
+  for (const key of Object.keys(patch) as (keyof Entry)[]) {
+    if (key === 'id' || key === 'createdAt' || key === 'updatedAt' || key === '_unmigrated') continue;
+    if (stableJson(existing[key]) !== stableJson(expected[key])) throw new EntryConflictError();
+  }
+}

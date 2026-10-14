@@ -9,6 +9,7 @@
 
 import type { Entry, EntryDraft, EntryKind, ExportFilter, OutlineBook, OutlineEntry, ScriptureRef, Topic, DataProfile} from '../types';
 import type { PassageVerse } from '../lib/bible';
+import type { JournalEnvelopeMetadata } from '../storage/envelope-metadata';
 
 export interface ExportContext {
   /** Already filtered and sorted oldest-first. */
@@ -22,6 +23,7 @@ export interface ExportContext {
    * check. Only the canonical JSON carries these, and it labels them.
    */
   drafts: EntryDraft[];
+  envelopeMetadata?: JournalEnvelopeMetadata;
   /** Present only when something was filtered out. */
   filter?: ExportFilter;
   /** How many entries the filter excluded. Zero on a full export. */

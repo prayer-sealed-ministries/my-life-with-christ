@@ -1,9 +1,9 @@
 /**
  * Reading a journal back in.
  *
- * Two shapes are accepted: an archive this app wrote (a .zip, from which
- * data/journey.json is read), and a bare journey.json. Both go through the same
- * forward migration, so neither can lose a field this build does not recognise.
+ * Three shapes are accepted: a protected companion .lwc transfer, an archive
+ * this app wrote (a .zip, from which data/journey.json is read), and a bare
+ * journey.json. All go through the same loss-preserving forward migration.
  *
  * Nothing is written until the caller has seen a preview. An import can replace
  * a lifetime of writing; it does not get to surprise anyone.
@@ -27,20 +27,24 @@
 
 import type { Entry, EntryDraft, ImportMode, ImportPreview, JourneyExport } from '../types';
 import type { StorageProvider } from '../storage/StorageProvider';
-import { newId } from '../storage/semantics';
-import { JournalChangedError, sameRecord } from '../storage/journal';
+import { stableJson } from '../storage/semantics';
+import { importEnvelopeMetadata, mergeEnvelopeMetadata, type JournalEnvelopeMetadata } from '../storage/envelope-metadata';
+import { JournalChangedError } from '../storage/journal';
 import { migrateExport, type MigrationContext, type MigrationResult } from './migrate';
-import { zipEntryText } from './zip';
+import { sha256 } from './zip';
 import { readZipLimited } from '../import/zip-limits';
 import { MAX_PICKED_FILE_BYTES, pickedFileTooLargeMessage } from '../platform/file-limits';
 import { verifyArchiveManifest } from './manifest.mjs';
+import { isProtectedTransfer, unlockProtectedTransfer, MAX_PROTECTED_FILE_BYTES } from './protected-transfer';
 
 /** Where journey.json lives inside an archive this app wrote. */
 const CANONICAL_PATH = 'data/journey.json';
 
 export interface ParsedImport extends MigrationResult {
   /** How the file arrived, so the UI can describe what it read. */
-  source: 'archive' | 'json';
+  source: 'archive' | 'json' | 'protected';
+  /** Original journal-level extensions, including metadata-only journals. */
+  envelopeMetadata?: JournalEnvelopeMetadata;
   /** The filter recorded in the archive, when it was a partial export. */
   filter?: JourneyExport['filter'];
   exportedAt?: string;
@@ -74,6 +78,15 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 const looksLikeZip = (data: Uint8Array): boolean =>
   data.length >= 4 && ZIP_MAGIC.every((byte, index) => data[index] === byte);
 
+/** Invalid byte sequences must never become replacement characters in writing. */
+function journalText(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error('That file is not valid UTF-8 journal JSON. Nothing was imported.');
+  }
+}
+
 /**
  * Parse an import file without writing anything.
  *
@@ -82,6 +95,7 @@ const looksLikeZip = (data: Uint8Array): boolean =>
 export async function parseImport(
   data: Uint8Array | string,
   context: MigrationContext = {},
+  password?: string,
 ): Promise<ParsedImport> {
   let text: string;
   let source: ParsedImport['source'];
@@ -123,10 +137,10 @@ export async function parseImport(
         `That archive has no ${CANONICAL_PATH}. If it is a Journey export, the file may be damaged.`,
       );
     }
-    text = zipEntryText(canonical);
+    text = journalText(canonical.bytes);
     source = 'archive';
   } else {
-    text = new TextDecoder().decode(data);
+    text = journalText(data);
     source = 'json';
   }
 
@@ -137,11 +151,27 @@ export async function parseImport(
     throw new Error('That file is not valid JSON, so it cannot be read as a journal.');
   }
 
+  if (isProtectedTransfer(parsed)) {
+    if ((typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength) > MAX_PROTECTED_FILE_BYTES) {
+      throw new Error('This protected file exceeds the supported 16 MiB limit. Nothing was imported.');
+    }
+    const plaintext = await unlockProtectedTransfer(parsed, password);
+    try { parsed = JSON.parse(plaintext); } catch {
+      throw new Error('The unlocked file is not valid journal JSON. Nothing was imported.');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+        (parsed as Record<string, unknown>).format !== 'journey-export' ||
+        (parsed as Record<string, unknown>).version !== 1) {
+      throw new Error('The unlocked file is not a supported journal transfer. Keep the original file.');
+    }
+    source = 'protected';
+  }
   const migrated = migrateExport(parsed, context);
   const envelope = parsed as Partial<JourneyExport>;
 
   return {
     ...migrated,
+    envelopeMetadata: importEnvelopeMetadata(parsed as Record<string, unknown>),
     source,
     filter: envelope.filter,
     exportedAt: typeof envelope.exportedAt === 'string' ? envelope.exportedAt : undefined,
@@ -175,7 +205,7 @@ export function previewImport(
       newEntries += 1;
       continue;
     }
-    if (sameRecord(current, entry)) {
+    if (sameEntryContent(current, entry) || (mode === 'merge' && existingConflictCopy(entry, existing))) {
       unchanged += 1;
       continue;
     }
@@ -192,7 +222,7 @@ export function previewImport(
   const warnings = [...incoming.warnings];
   if (mode === 'replace') {
     warnings.unshift(
-      `Replace mode will delete all ${existing.length} existing ${existing.length === 1 ? 'entry' : 'entries'} and ${existingDrafts.length} unfinished ${existingDrafts.length === 1 ? 'draft' : 'drafts'} before importing.`,
+      `Replace mode will delete all ${existing.length} existing ${existing.length === 1 ? 'entry' : 'entries'} and ${existingDrafts.length} unfinished ${existingDrafts.length === 1 ? 'draft' : 'drafts'}, including journal-level metadata, before importing.`,
     );
   }
   if (incoming.filter) {
@@ -222,6 +252,9 @@ export interface ImportResult {
   imported: number;
   draftsImported: number;
   conflictsPreserved: number;
+  entriesSkipped: number;
+  draftsSkipped: number;
+  draftConflictsPreserved: number;
   replaced: boolean;
   preview: ImportPreview;
 }
@@ -246,71 +279,168 @@ export async function applyImport(
     if (incoming.filter) {
       throw new Error('A partial export cannot replace a whole journal. Choose Merge instead.');
     }
-    await storage.replaceJournal(incoming.entries, incoming.drafts, before.token);
+    await storage.replaceJournal(incoming.entries, incoming.drafts, before.token, incoming.envelopeMetadata ?? []);
     return {
       imported: incoming.entries.length,
       draftsImported: incoming.drafts.length,
       conflictsPreserved: 0,
+      entriesSkipped: 0,
+      draftsSkipped: 0,
+      draftConflictsPreserved: 0,
       replaced: true,
       preview,
     };
   }
 
-  const entries = [...before.entries];
-  const drafts = [...before.drafts];
-  const mine = new Map(entries.map((entry) => [entry.id, entry]));
-  const takenEntryIds = new Set(mine.keys());
+  // Merge never guesses which different same-id record is newer. The incoming
+  // version receives a deterministic conflict id, so its words survive and
+  // importing the same archive twice does not create another copy.
+  const existing = before.entries;
+  const existingDrafts = before.drafts;
+  const mine = new Map(existing.map((entry) => [entry.id, entry]));
+  const toWrite: Entry[] = [];
+  const incomingEntryIds = new Set(incoming.entries.map((entry) => entry.id));
   const remappedEntryIds = new Map<string, string>();
-  let imported = 0;
   let conflictsPreserved = 0;
 
-  const unusedId = (taken: Set<string>): string => {
-    let id = newId();
-    while (taken.has(id)) id = newId();
-    taken.add(id);
-    return id;
-  };
-
-  // A differing same-id entry is never silently discarded. Keep the local
-  // identity in place and import the archived payload under a fresh identity.
   for (const entry of incoming.entries) {
     const current = mine.get(entry.id);
     if (!current) {
-      entries.push(entry);
-      mine.set(entry.id, entry);
-      takenEntryIds.add(entry.id);
-      imported += 1;
+      toWrite.push(entry);
       continue;
     }
-    if (sameRecord(current, entry)) continue;
+    if (sameEntryContent(current, entry)) continue;
 
-    const id = unusedId(takenEntryIds);
-    entries.push({ ...entry, id });
-    remappedEntryIds.set(entry.id, id);
-    imported += 1;
-    conflictsPreserved += 1;
+    const preserved = existingConflictCopy(entry, existing);
+    if (preserved) {
+      remappedEntryIds.set(entry.id, preserved.id);
+      continue;
+    }
+
+    const conflict = await conflictEntry(entry, existing, toWrite, incomingEntryIds);
+    remappedEntryIds.set(entry.id, conflict.id);
+    if (!existing.some((item) => stableJson(item) === stableJson(conflict))) {
+      toWrite.push(conflict);
+      conflictsPreserved += 1;
+    }
   }
 
-  const mineDrafts = new Map(drafts.map((draft) => [draft.id, draft]));
-  const takenDraftIds = new Set(mineDrafts.keys());
-  let draftsImported = 0;
-  for (const draft of incoming.drafts) {
-    const reparented: EntryDraft = draft.entryId && remappedEntryIds.has(draft.entryId)
-      ? { ...draft, entryId: remappedEntryIds.get(draft.entryId) }
-      : draft;
-    const current = mineDrafts.get(reparented.id);
+  const mergedDrafts: EntryDraft[] = [];
+  const knownDrafts = [...existingDrafts];
+  const incomingDraftIds = new Set(incoming.drafts.map((draft) => draft.id));
+  let draftConflictsPreserved = 0;
+  for (const original of incoming.drafts) {
+    const draft = remappedEntryIds.has(original.entryId ?? '')
+      ? { ...original, entryId: remappedEntryIds.get(original.entryId!) }
+      : original;
+    const current = knownDrafts.find((item) => item.id === draft.id);
     if (!current) {
-      drafts.push(reparented);
-      mineDrafts.set(reparented.id, reparented);
-      takenDraftIds.add(reparented.id);
-      draftsImported += 1;
+      mergedDrafts.push(draft);
+      knownDrafts.push(draft);
       continue;
     }
-    if (sameRecord(current, reparented)) continue;
-    drafts.push({ ...reparented, id: unusedId(takenDraftIds) });
-    draftsImported += 1;
+    if (stableJson(current) === stableJson(draft)) continue;
+    const conflict = await conflictDraft(draft, knownDrafts, incomingDraftIds);
+    if (!knownDrafts.some((item) => stableJson(item) === stableJson(conflict))) {
+      mergedDrafts.push(conflict);
+      knownDrafts.push(conflict);
+      draftConflictsPreserved += 1;
+    }
   }
 
-  await storage.replaceJournal(entries, drafts, before.token);
-  return { imported, draftsImported, conflictsPreserved, replaced: false, preview };
+  await storage.replaceJournal(
+    [...existing, ...toWrite], [...existingDrafts, ...mergedDrafts], before.token,
+    mergeEnvelopeMetadata(before.envelopeMetadata ?? [], incoming.envelopeMetadata ?? []),
+  );
+  return {
+    imported: toWrite.length,
+    draftsImported: mergedDrafts.length,
+    conflictsPreserved,
+    entriesSkipped: incoming.entries.length - toWrite.length,
+    draftsSkipped: incoming.drafts.length - mergedDrafts.length,
+    draftConflictsPreserved,
+    replaced: false,
+    preview,
+  };
+}
+
+
+function sameEntryContent(a: Entry, b: Entry): boolean {
+  // Keep main's exact-record rule: timestamps are preserved data too.
+  return stableJson(a) === stableJson(b);
+}
+
+/** A previously kept conflict is a duplicate too, not another new conflict. */
+function existingConflictCopy(entry: Entry, existing: Entry[]): Entry | undefined {
+  return existing.find((saved) => {
+    const marker = saved._unmigrated?.journeyImportConflict;
+    if (!marker || typeof marker !== 'object' || Array.isArray(marker) ||
+        (marker as Record<string, unknown>).originalId !== entry.id) return false;
+    const provenance = marker as Record<string, unknown>;
+    const extensions = { ...saved._unmigrated };
+    if (Object.hasOwn(provenance, 'previous')) extensions.journeyImportConflict = provenance.previous;
+    else delete extensions.journeyImportConflict;
+    const original = { ...saved, id: entry.id };
+    if (Object.keys(extensions).length || entry._unmigrated) original._unmigrated = extensions;
+    else delete original._unmigrated;
+    return sameEntryContent(original, entry);
+  });
+}
+
+async function conflictEntry(
+  entry: Entry,
+  existing: Entry[],
+  pending: Entry[],
+  reservedIds: ReadonlySet<string>,
+): Promise<Entry> {
+  const digest = await sha256(stableJson(entry));
+  const base = `${entry.id}~conflict-${digest.slice(0, 16)}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const id = suffix === 1 ? base : `${base}-${suffix}`;
+    // A later incoming record may already own this deterministic-looking id.
+    // Reserve the whole incoming inventory, not just records visited so far.
+    if (reservedIds.has(id)) continue;
+    const candidate: Entry = {
+      ...entry,
+      id,
+      _unmigrated: {
+        ...entry._unmigrated,
+        journeyImportConflict: conflictProvenance(entry.id, entry._unmigrated),
+      },
+    };
+    const occupying = [...existing, ...pending].find((item) => item.id === id);
+    if (!occupying || stableJson(occupying) === stableJson(candidate)) return candidate;
+  }
+}
+
+async function conflictDraft(
+  draft: EntryDraft,
+  existing: EntryDraft[],
+  reservedIds: ReadonlySet<string>,
+): Promise<EntryDraft> {
+  const digest = await sha256(stableJson(draft));
+  const base = `${draft.id}~conflict-${digest.slice(0, 16)}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const id = suffix === 1 ? base : `${base}-${suffix}`;
+    if (reservedIds.has(id)) continue;
+    const candidate: EntryDraft = {
+      ...draft,
+      id,
+      _unmigrated: {
+        ...draft._unmigrated,
+        journeyImportConflict: conflictProvenance(draft.id, draft._unmigrated),
+      },
+    };
+    const occupying = existing.find((item) => item.id === id);
+    if (!occupying || stableJson(occupying) === stableJson(candidate)) return candidate;
+  }
+}
+
+function conflictProvenance(originalId: string, extensions?: Record<string, unknown>) {
+  return {
+    originalId,
+    ...(extensions && Object.hasOwn(extensions, 'journeyImportConflict')
+      ? { previous: extensions.journeyImportConflict }
+      : {}),
+  };
 }

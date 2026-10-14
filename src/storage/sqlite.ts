@@ -43,10 +43,14 @@ import {
   entryToCreate,
   indexed,
   matches,
+  DraftConflictError,
+  assertEntryPatchCurrent,
 } from './semantics';
+import { mergeEnvelopeMetadata, type JournalEnvelopeMetadata } from './envelope-metadata';
+import { promotedDraftMetadata } from '../lib/entry-draft';
 import { byRecency } from '../lib/drafts';
-import type { AnchorLookup, EntryQuery, StorageProvider } from './StorageProvider';
-import { JournalChangedError, journalToken, type JournalSnapshot } from './journal';
+import type { AnchorLookup, EntryQuery, StorageProvider, UpdateEntryOptions } from './StorageProvider';
+import { JournalChangedError, journalToken, sameRecord, type JournalSnapshot } from './journal';
 
 /**
  * The logical database name.
@@ -64,9 +68,13 @@ import { JournalChangedError, journalToken, type JournalSnapshot } from './journ
 export const DATABASE_NAME = 'journey';
 
 /** What this build of the app understands. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SETTINGS_KEY = 'singleton';
+
+// The plugin shares connections by database name. Preserve the public-operation
+// queue across provider instances as well as within one provider.
+const operationTails = new Map<string, Promise<void>>();
 
 /**
  * Raised when the file was written by a newer version of the app.
@@ -181,6 +189,15 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS drafts_updated_at ON drafts (updated_at);`,
     ],
   },
+  {
+    to: 3,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS journal_envelope_metadata (
+         key TEXT PRIMARY KEY NOT NULL,
+         data TEXT NOT NULL
+       );`,
+    ],
+  },
 ];
 
 /** The subset of the Capacitor plugin this provider uses. */
@@ -291,8 +308,6 @@ export class SqliteStorageProvider implements StorageProvider {
   private readonly targetVersion: number;
   private plugin: SqlitePlugin | null = null;
   private opening: Promise<void> | null = null;
-  /** One connection cannot safely host overlapping multi-statement operations. */
-  private operationTail: Promise<void> = Promise.resolve();
 
   constructor(database: string = DATABASE_NAME, options: SqliteProviderOptions = {}) {
     this.database = database;
@@ -364,7 +379,7 @@ export class SqliteStorageProvider implements StorageProvider {
 
   /** Release the connection. Used by tests and by a controlled shutdown. */
   async close(): Promise<void> {
-    await this.operationTail.catch(() => undefined);
+    await operationTails.get(this.database)?.catch(() => undefined);
     if (!this.plugin) return;
     const plugin = this.plugin;
     this.plugin = null;
@@ -407,6 +422,7 @@ export class SqliteStorageProvider implements StorageProvider {
    * anything but its own throwaway stores before it gets here.
    */
   async deleteStore(): Promise<void> {
+    await operationTails.get(this.database);
     const plugin = this.plugin ?? (await this.loadPlugin());
     this.plugin = null;
     await plugin.close({ database: this.database }).catch(() => undefined);
@@ -506,11 +522,12 @@ export class SqliteStorageProvider implements StorageProvider {
 
   /** Serialize every public operation that touches the single native connection. */
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.operationTail.then(work, work);
-    this.operationTail = run.then(
-      () => undefined,
-      () => undefined,
-    );
+    const run = (operationTails.get(this.database) ?? Promise.resolve()).then(work, work);
+    const settled = run.then(() => undefined, () => undefined);
+    operationTails.set(this.database, settled);
+    void settled.then(() => {
+      if (operationTails.get(this.database) === settled) operationTails.delete(this.database);
+    });
     return run;
   }
 
@@ -644,12 +661,14 @@ export class SqliteStorageProvider implements StorageProvider {
     });
   }
 
-  async updateEntry(id: string, patch: Partial<Entry>): Promise<Entry> {
+  async updateEntry(id: string, patch: Partial<Entry>, options?: UpdateEntryOptions): Promise<Entry> {
     return this.enqueue(() =>
       this.inTransaction(async () => {
         const existing = await this.getEntryRaw(id);
         if (!existing) throw new Error(`No entry with id ${id}`);
+        assertEntryPatchCurrent(existing, patch, options?.expectedEntry);
         const updated = applyPatch(existing, patch);
+        if (options?.preserveDraft) updated._unmigrated = promotedDraftMetadata(existing._unmigrated, options.preserveDraft);
         await this.writeEntry(updated);
         return updated;
       }),
@@ -701,15 +720,28 @@ export class SqliteStorageProvider implements StorageProvider {
     );
   }
 
+  private async readEnvelopeMetadata(): Promise<JournalEnvelopeMetadata> {
+    const rows = await this.select<{ data: string }>(`SELECT data FROM journal_envelope_metadata WHERE key = ?;`, [SETTINGS_KEY]);
+    return JSON.parse(rows[0]?.data ?? '[]') as JournalEnvelopeMetadata;
+  }
+
+  private async writeEnvelopeMetadata(metadata: JournalEnvelopeMetadata): Promise<void> {
+    await this.write(`INSERT INTO journal_envelope_metadata (key, data) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET data = excluded.data;`,
+    [SETTINGS_KEY, JSON.stringify(mergeEnvelopeMetadata(metadata))]);
+  }
+
   async readJournalSnapshot(): Promise<JournalSnapshot> {
     return this.enqueue(() =>
       this.inTransaction(async () => {
         const entries = (await this.allEntries()).sort(chronologically);
         const drafts = (await this.allDrafts()).sort(byRecency);
+        const envelopeMetadata = await this.readEnvelopeMetadata();
         return {
           entries,
           drafts,
-          token: journalToken(entries, drafts),
+          envelopeMetadata,
+          token: journalToken(entries, drafts, envelopeMetadata),
           capturedAt: new Date().toISOString(),
         };
       }),
@@ -721,7 +753,7 @@ export class SqliteStorageProvider implements StorageProvider {
       this.inTransaction(async () => {
         const entries = await this.allEntries();
         const drafts = await this.allDrafts();
-        return journalToken(entries, drafts) === token;
+        return journalToken(entries, drafts, await this.readEnvelopeMetadata()) === token;
       }),
     );
   }
@@ -730,13 +762,14 @@ export class SqliteStorageProvider implements StorageProvider {
     entries: Entry[],
     drafts: EntryDraft[],
     expectedToken?: string,
+    envelopeMetadata: JournalEnvelopeMetadata = [],
   ): Promise<void> {
     await this.enqueue(() =>
       this.inTransaction(async () => {
         if (expectedToken !== undefined) {
           const currentEntries = await this.allEntries();
           const currentDrafts = await this.allDrafts();
-          if (journalToken(currentEntries, currentDrafts) !== expectedToken) {
+          if (journalToken(currentEntries, currentDrafts, await this.readEnvelopeMetadata()) !== expectedToken) {
             throw new JournalChangedError();
           }
         }
@@ -745,6 +778,7 @@ export class SqliteStorageProvider implements StorageProvider {
         await this.write(`DELETE FROM entries;`);
         for (const entry of entries) await this.writeEntry(entry);
         for (const draft of drafts) await this.writeDraft(draft);
+        await this.writeEnvelopeMetadata(envelopeMetadata);
       }),
     );
   }
@@ -757,11 +791,17 @@ export class SqliteStorageProvider implements StorageProvider {
 
   // --- recovery drafts ---------------------------------------------------
 
-  async putDraft(draft: EntryDraft): Promise<void> {
-    // One statement inside one transaction: the snapshot lands whole or not at
-    // all. A half-applied draft would give back a title from one keystroke and
-    // notes from another, which is worse than losing it.
-    await this.enqueue(() => this.inTransaction(() => this.writeDraft(draft)));
+  async putDraft(draft: EntryDraft, expected?: EntryDraft | null): Promise<void> {
+    await this.enqueue(() => this.inTransaction(async () => {
+      if (expected !== undefined) {
+        const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [draft.id]);
+        const current = rows.length ? JSON.parse(rows[0].data) as EntryDraft : undefined;
+        if ((expected === null && current) || (expected !== null && (!current || !sameRecord(current, expected)))) {
+          throw new DraftConflictError(draft.id);
+        }
+      }
+      await this.writeDraft(draft);
+    }));
   }
 
   async getDraft(id: string): Promise<EntryDraft | undefined> {
@@ -785,10 +825,14 @@ export class SqliteStorageProvider implements StorageProvider {
     return this.enqueue(async () => (await this.allDrafts()).sort(byRecency));
   }
 
-  async deleteDraft(id: string): Promise<void> {
-    await this.enqueue(() =>
-      this.inTransaction(() => this.write(`DELETE FROM drafts WHERE id = ?;`, [id])),
-    );
+  async deleteDraft(id: string, expected?: EntryDraft): Promise<void> {
+    await this.enqueue(() => this.inTransaction(async () => {
+      if (expected) {
+        const rows = await this.select<{ data: string }>(`SELECT data FROM drafts WHERE id = ?;`, [id]);
+        if (rows.length && !sameRecord(JSON.parse(rows[0].data), expected)) throw new DraftConflictError(id);
+      }
+      await this.write(`DELETE FROM drafts WHERE id = ?;`, [id]);
+    }));
   }
 
   async getSettings(): Promise<Settings> {

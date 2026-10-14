@@ -155,7 +155,7 @@ export function Field({
   below,
   className = '',
   ...rest
-}: { label: string; hint?: string; below?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; hint?: string; below?: ReactNode; ref?: Ref<HTMLInputElement> } & InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
   const hintId = `${id}-hint`;
 

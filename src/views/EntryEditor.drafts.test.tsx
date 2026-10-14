@@ -319,7 +319,8 @@ describe('explicit Save', () => {
           };
         }
         if (prop === 'putDraft') {
-          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+          return async (...args: Parameters<DexieStorageProvider['putDraft']>) => {
+            const [draft] = args;
             // Fail the first write that identifies the newly-created parent.
             // Counting calls made this test depend on a 400 ms debounce not
             // expiring while createEntry was held, which is not true on a busy
@@ -328,7 +329,7 @@ describe('explicit Save', () => {
               failedParentedWrite = true;
               throw new Error('temporary draft failure');
             }
-            return target.putDraft(draft);
+            return target.putDraft(...args);
           };
         }
         const value = Reflect.get(target, prop, receiver);
@@ -585,13 +586,13 @@ describe('an entry somebody only opened', () => {
     const gated = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === 'putDraft') {
-          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+          return async (...args: Parameters<DexieStorageProvider['putDraft']>) => {
             if (holdNext) {
               holdNext = false;
               started();
               await held;
             }
-            return target.putDraft(draft);
+            return target.putDraft(...args);
           };
         }
         const value = Reflect.get(target, prop, receiver);
@@ -974,14 +975,14 @@ describe('discarding a draft', () => {
     const gated = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === 'putDraft') {
-          return async (draft: Parameters<DexieStorageProvider['putDraft']>[0]) => {
+          return async (...args: Parameters<DexieStorageProvider['putDraft']>) => {
             writes += 1;
             if (holdNext) {
               holdNext = false;
               started();
               await held;
             }
-            return target.putDraft(draft);
+            return target.putDraft(...args);
           };
         }
         const value = Reflect.get(target, prop, receiver);
@@ -1082,10 +1083,10 @@ describe('discarding a draft', () => {
     const ambiguousDelete = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === 'deleteDraft') {
-          return async (id: string) => {
+          return async (...args: Parameters<DexieStorageProvider['deleteDraft']>) => {
             // Model a provider that commits and then loses its connection. A
             // rejection alone cannot tell the editor whether the row survived.
-            await target.deleteDraft(id);
+            await target.deleteDraft(...args);
             throw new Error('storage disconnected after delete');
           };
         }
@@ -1126,10 +1127,10 @@ describe('discarding a draft', () => {
     const slowDelete = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === 'deleteDraft') {
-          return async (id: string) => {
+          return async (...args: Parameters<DexieStorageProvider['deleteDraft']>) => {
             signalStarted();
             await held;
-            return target.deleteDraft(id);
+            return target.deleteDraft(...args);
           };
         }
         const value = Reflect.get(target, prop, receiver);

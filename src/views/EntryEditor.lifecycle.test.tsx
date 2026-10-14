@@ -37,8 +37,8 @@ describe('editor durability on app lifecycle changes', () => {
       written = resolve;
     });
     const original = db.putDraft.bind(db);
-    vi.spyOn(db, 'putDraft').mockImplementation(async (draft) => {
-      await original(draft);
+    vi.spyOn(db, 'putDraft').mockImplementation(async (...args) => {
+      await original(...args);
       written();
     });
 

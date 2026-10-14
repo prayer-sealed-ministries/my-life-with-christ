@@ -14,6 +14,14 @@
 
 import type { Entry, EntryDraft, EntryKind, NewEntry, Settings } from '../types';
 import type { JournalSnapshot } from './journal';
+import type { JournalEnvelopeMetadata } from './envelope-metadata';
+
+/** A narrow draft-retirement operation, composed against current durable metadata. */
+export interface UpdateEntryOptions {
+  preserveDraft?: EntryDraft;
+  /** Refuse to replace fields changed since this editor loaded the entry. */
+  expectedEntry?: Entry;
+}
 
 /** Narrowing applied to a list or search. */
 export interface EntryQuery {
@@ -42,7 +50,7 @@ export interface StorageProvider {
   listEntriesChronological(query?: EntryQuery): Promise<Entry[]>;
 
   createEntry(entry: NewEntry): Promise<Entry>;
-  updateEntry(id: string, patch: Partial<Entry>): Promise<Entry>;
+  updateEntry(id: string, patch: Partial<Entry>, options?: UpdateEntryOptions): Promise<Entry>;
   deleteEntry(id: string): Promise<void>;
 
   /**
@@ -90,15 +98,17 @@ export interface StorageProvider {
    */
   replaceEntries(entries: Entry[]): Promise<void>;
 
-  /** Entries and recovery drafts from one atomic database revision. */
+  /** Entries, recovery drafts and opaque envelope metadata from one atomic database revision. */
   readJournalSnapshot(): Promise<JournalSnapshot>;
   /** Does the journal still contain exactly the snapshot identified by token? */
   journalMatches(token: string): Promise<boolean>;
   /**
    * Atomically replace entries and drafts, refusing if `expectedToken` is stale.
    * Used by both merge and replace import after their non-destructive preview.
+   * Metadata is exact replacement too: merge callers pass the computed union;
+   * omission means empty, never "keep whatever appeared since the preview".
    */
-  replaceJournal(entries: Entry[], drafts: EntryDraft[], expectedToken?: string): Promise<void>;
+  replaceJournal(entries: Entry[], drafts: EntryDraft[], expectedToken?: string, envelopeMetadata?: JournalEnvelopeMetadata): Promise<void>;
 
   /**
    * Work in progress, kept apart from the journal itself.
@@ -112,14 +122,15 @@ export interface StorageProvider {
    * could be half-applied would give back a title from one keystroke and notes
    * from another, which is a worse outcome than losing the draft outright.
    */
-  putDraft(draft: EntryDraft): Promise<void>;
+  /** null requires a new id; a snapshot requires that exact prior revision. */
+  putDraft(draft: EntryDraft, expected?: EntryDraft | null): Promise<void>;
   getDraft(id: string): Promise<EntryDraft | undefined>;
   /** The draft holding unsaved edits to a saved entry, if there is one. */
   getDraftForEntry(entryId: string): Promise<EntryDraft | undefined>;
   /** All drafts, newest first. */
   listDrafts(): Promise<EntryDraft[]>;
-  /** Idempotent: discarding something already gone is not an error. */
-  deleteDraft(id: string): Promise<void>;
+  /** Idempotent if absent; an expected snapshot refuses deletion of a newer revision. */
+  deleteDraft(id: string, expected?: EntryDraft): Promise<void>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;

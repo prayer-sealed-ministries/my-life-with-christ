@@ -184,7 +184,7 @@ describe('the schema and its migrations', () => {
    * So this stands a real v1 database up — the v1 ledger, nothing more — writes
    * an entry through it, and then opens the same file with the current build.
    */
-  it('upgrades a v1 journal to v2 without disturbing it', async () => {
+  it('upgrades a v1 journal to the current schema without disturbing it', async () => {
     const V1_ONLY = MIGRATIONS.filter((migration) => migration.to <= 1);
     expect(V1_ONLY, 'the v1 ledger should exist to migrate from').toHaveLength(1);
 
@@ -233,6 +233,36 @@ describe('the schema and its migrations', () => {
       updatedAt: '2026-03-01T09:00:00.000Z',
     });
     expect((await after.getDraft('d-after-upgrade'))?.form.notes).toBe('Typed after the upgrade.');
+  });
+
+  it('upgrades a populated v2 journal to v3 without altering entries, drafts or settings', async () => {
+    const database = 'schema-v2-envelope-upgrade';
+    const before = new SqliteStorageProvider(database, { loadPlugin, migrations: MIGRATIONS.filter((m) => m.to <= 2) });
+    await before.open();
+    const entry = await before.createEntry({ title: 'Fictional v2 entry', notes: 'Original saved writing' });
+    const draft = { id: 'v2-draft', createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+      form: { kind: 'sermon' as const, title: '', date: '2026-10-13', place: '', speaker: '', sermonSeries: '',
+        notes: 'Fictional unfinished writing', reflection: '', prayer: '', tagsText: '', links: [], anchors: [],
+        forDescendants: false, scriptureRefs: [], sourceMaterial: null } };
+    await before.putDraft(draft);
+    await before.updateSettings({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+    await before.close();
+    const after = new SqliteStorageProvider(database, { loadPlugin });
+    await after.open();
+    expect(await after.schemaVersion()).toBe(3);
+    expect(await after.readJournalSnapshot()).toMatchObject({ entries: [entry], drafts: [draft], envelopeMetadata: [] });
+    expect(await after.getSettings()).toEqual({ lastExportAt: '2026-01-01T00:00:00.000Z' });
+    await after.replaceJournal([entry], [draft], undefined, [{ root: 'preserved' }]);
+    await after.close();
+    const reopened = new SqliteStorageProvider(database, { loadPlugin });
+    await reopened.open();
+    expect((await reopened.readJournalSnapshot()).envelopeMetadata).toEqual([{ root: 'preserved' }]);
+    await reopened.close();
+    const older = new SqliteStorageProvider(database, { loadPlugin, migrations: MIGRATIONS.filter((m) => m.to <= 2) });
+    await expect(older.open()).rejects.toBeInstanceOf(SchemaTooNewError);
+    const intact = new SqliteStorageProvider(database, { loadPlugin });
+    await intact.open();
+    expect((await intact.readJournalSnapshot()).envelopeMetadata).toEqual([{ root: 'preserved' }]);
   });
 
   it('reopening an existing database does not re-run the migration', async () => {
@@ -462,5 +492,50 @@ describe('the migration machinery, proven on a ledger with two steps', () => {
     expect(await second.schemaVersion()).toBe(SCHEMA_VERSION);
     expect(await second.listEntries()).toHaveLength(1);
     await second.close();
+  });
+});
+
+describe('journal snapshots exclude uncommitted SQLite changes', () => {
+  it.each([false, true])('waits across shared providers until a held write commits or rolls back (rollback=%s)', async (rollback) => {
+    const database = `snapshot-held-write-${rollback}`;
+    const base = nodeSqlitePlugin();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const reachedWrite = new Promise<void>((resolve) => { entered = resolve; });
+    let holdWrites = false;
+    const bridge = { ...base, run: async (options: Parameters<typeof base.run>[0]) => {
+      const result = await base.run(options);
+      if (holdWrites && options.statement.includes('INSERT INTO entries')) {
+        entered();
+        await held;
+        if (rollback) throw new Error('held write rolled back');
+      }
+      return result;
+    } };
+    const first = new SqliteStorageProvider(database, { loadPlugin: async () => bridge as never });
+    const second = new SqliteStorageProvider(database, { loadPlugin: async () => bridge as never });
+    await first.open();
+    await second.open();
+    const old = await first.createEntry({ notes: 'original committed writing' });
+    await first.replaceJournal([old], [], undefined, [{ old: 'metadata' }]);
+    const before = await first.readJournalSnapshot();
+    holdWrites = true;
+    const writing = first.replaceJournal([{ ...old, notes: 'replacement' }], [], before.token, [{ incoming: 'metadata' }]);
+    const observedWrite = writing.then(() => 'committed', () => 'rolled back');
+    await reachedWrite;
+    let readSettled = false;
+    const reading = second.readJournalSnapshot().then((value) => { readSettled = true; return value; });
+    // The writer cannot finish until explicitly released. Drain an event-loop
+    // turn so an incorrectly unqueued read definitely gets its opportunity.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const settledWhileWriteWasHeld = readSettled;
+    release();
+    expect(await observedWrite).toBe(rollback ? 'rolled back' : 'committed');
+    const snapshot = await reading;
+    expect(settledWhileWriteWasHeld).toBe(false);
+    expect(snapshot).toMatchObject(rollback ? { entries: before.entries, drafts: before.drafts, envelopeMetadata: before.envelopeMetadata } : {
+      entries: [{ ...old, notes: 'replacement' }], drafts: [], envelopeMetadata: [{ incoming: 'metadata' }],
+    });
   });
 });
