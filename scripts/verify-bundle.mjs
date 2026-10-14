@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 /**
- * Prove that a `refs-only` build is publishable.
+ * Prove that a built artefact is publishable.
+ *
+ * Both profiles are deployable, and every assertion here applies to both. The
+ * `--profile` argument says which build is being verified and appears in the
+ * output so an artefact can be matched to the profile that produced it; it does
+ * not decide which checks run. One check used to be conditional on it while its
+ * PASS line printed regardless — see scripts/lib/assertion-registry.mjs.
  *
  * The DATA_PROFILE flag is not evidence. Neither is a sampled string search.
  * This reads the actual built artefact and asserts, positively and exhaustively,
@@ -17,6 +23,9 @@
  * Usage:
  *   DATA_PROFILE=refs-only npm run build
  *   node scripts/verify-bundle.mjs --profile refs-only
+ *
+ *   npm run build            # unset DATA_PROFILE resolves to public
+ *   node scripts/verify-bundle.mjs --profile public
  */
 
 import { readFile, readdir, stat } from 'node:fs/promises';
@@ -24,6 +33,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createAssertionRegistry } from './lib/assertion-registry.mjs';
 import { LICENSED_SENTINELS } from './lib/licensed-sentinels.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -92,6 +102,21 @@ const FORBIDDEN_DEBUG_SENTINELS = [
   'Remove all listed test entries and drafts',
 ];
 
+/**
+ * Every assertion that must run before this verifier may reach a verdict.
+ *
+ * The summary is generated from the registry, so a line can only be printed by
+ * a check that executed, and any of these that did not run is itself a failure.
+ * See scripts/lib/assertion-registry.mjs for what that replaces.
+ */
+const REQUIRED_ASSERTIONS = [
+  'BUNDLE_WAS_READ',
+  'NO_SOURCE_FILES',
+  'NO_SOURCE_MAPS',
+  'NO_LICENSED_CONTENT',
+  'NO_DEBUG_TOOLS',
+];
+
 async function main() {
   const { profile, dist } = parseArgs(process.argv.slice(2));
   const distDir = resolve(ROOT, dist);
@@ -131,6 +156,9 @@ async function main() {
   /** @type {Array<{assertion: string, detail: string}>} */
   const failures = [];
 
+  // What each check is allowed to claim, recorded by the check itself.
+  const registry = createAssertionRegistry(REQUIRED_ASSERTIONS);
+
   // ---- 1. The verifier is actually reading a build. ----
   // This must come first. Everything below is a "none of X is present" check,
   // and all of them pass on an empty directory.
@@ -162,19 +190,34 @@ async function main() {
       }
     }
   }
+  registry.ran(
+    'NO_SOURCE_FILES',
+    `no source documents or generated reports among ${relPaths.length} paths, against ${FORBIDDEN_PATTERNS.length} patterns`,
+  );
 
   // ---- 2. Source maps. ----
-  // A tree-shaken import can still sit complete inside a .map file, so under
-  // refs-only they must not be emitted at all.
+  /*
+   * A .map file can hold the original module in full, so a tree-shaken import
+   * is still published intact — and so is anything the __DEBUG_TOOLS__ define
+   * was meant to drop. Every profile this repository can build is publishable,
+   * so none of them may carry one.
+   *
+   * This check used to run only for `refs-only` while its PASS line printed
+   * unconditionally, so a `public` build with 112 maps — one carrying the whole
+   * destructive debug cleanup component — was told it had none. The condition is
+   * gone, and the claim is now issued by this block rather than by the summary.
+   */
   const maps = relPaths.filter((path) => path.endsWith('.map'));
-  if (profile === 'refs-only' && maps.length > 0) {
-    for (const path of maps) {
-      failures.push({
-        assertion: 'NO_SOURCE_MAPS',
-        detail: `${path} — source maps can contain the original module in full; disable them for refs-only`,
-      });
-    }
+  for (const path of maps) {
+    failures.push({
+      assertion: 'NO_SOURCE_MAPS',
+      detail: `${path} — a source map can contain the original module in full; no publishable profile may emit one (profile: ${profile})`,
+    });
   }
+  // Phrased as what was examined, not as what was concluded: the summary is
+  // only ever printed on a clean pass, and a line that states its own scope
+  // cannot quietly become false the way "no .map files" did.
+  registry.ran('NO_SOURCE_MAPS', `no .map files among ${relPaths.length} paths examined, any profile`);
 
   // ---- 3. Licensed wording, across every searchable file. ----
   const licensedHits = [];
@@ -209,6 +252,14 @@ async function main() {
       detail: `${hit.path} contains ${JSON.stringify(hit.needle)}`,
     });
   }
+  registry.ran(
+    'NO_LICENSED_CONTENT',
+    `none of ${LICENSED_SENTINELS.length} licensed sentinels present in ${textFiles.length} searchable files`,
+  );
+  registry.ran(
+    'NO_DEBUG_TOOLS',
+    `none of ${FORBIDDEN_DEBUG_SENTINELS.length} debug sentinels present in ${textFiles.length} searchable files`,
+  );
 
   // Known-present content must be found. A count alone can be satisfied by the
   // wrong files; this proves the search reached the content it claims to search.
@@ -219,6 +270,25 @@ async function main() {
         detail: `sentinel ${JSON.stringify(sentinel.needle)} (${sentinel.why}) was not found anywhere in ${dist}/`,
       });
     }
+  }
+  registry.ran(
+    'BUNDLE_WAS_READ',
+    `${files.length} files, ${Math.round(totalBytes / 1024)}kB searched, ${sentinelsFound.size}/${SENTINELS.length} sentinels found`,
+  );
+
+  /*
+   * A verdict is only worth as much as the checks behind it.
+   *
+   * Every assertion above records itself where it runs. If one is ever made
+   * conditional — on a profile, on a flag, on an early return — this turns the
+   * silence into a failure instead of letting the summary speak for a check
+   * that never happened.
+   */
+  for (const assertion of registry.missing()) {
+    failures.push({
+      assertion: 'ASSERTIONS_COMPLETE',
+      detail: `${assertion} never ran for profile ${profile}, so this artefact has not been verified`,
+    });
   }
 
   // ---- Report. ----
@@ -242,16 +312,20 @@ async function main() {
       return;
     }
 
+    /*
+     * Printed from the registry, so each line is the claim of a check that
+     * actually ran. There are no literal summary strings here on purpose: the
+     * five that used to live at this spot were printed unconditionally, and one
+     * of them went on asserting "no .map files" for years of public builds
+     * whose source-map check never executed.
+     */
+    const lines = registry.passLines();
+    const width = Math.max(...lines.map((line) => line.assertion.length)) + 2;
+
     console.log('PASS');
-    console.log(
-      `  BUNDLE_WAS_READ       ${files.length} files, ${Math.round(totalBytes / 1024)}kB searched, ${sentinelsFound.size}/${SENTINELS.length} sentinels found`,
-    );
-    console.log('  NO_SOURCE_FILES       no source documents or generated reports in the build');
-    console.log('  NO_SOURCE_MAPS        no .map files that could carry the original modules');
-    console.log(
-      `  NO_LICENSED_CONTENT   none of ${LICENSED_SENTINELS.length} licensed sentinels present`,
-    );
-    console.log('  NO_DEBUG_TOOLS        no destructive debug cleanup code present');
+    for (const { assertion, summary } of lines) {
+      console.log(`  ${assertion.padEnd(width)}${summary}`);
+    }
     console.log('\nThis build is publishable.');
   }
 }
