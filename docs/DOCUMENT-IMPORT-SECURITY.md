@@ -212,6 +212,35 @@ logged.
 
 ---
 
+## Filenames
+
+A filename never becomes a path here, and nothing is ever executed, so the
+concern is narrower than a server's: the name goes into the entry's provenance
+and is shown to a person, and a record that reads as one thing while being
+another is a lie in the archive.
+
+`safeFilename` reduces a name to its last segment under either separator,
+strips control characters, and strips the characters that change how a name
+*looks* without changing what it is — the bidirectional overrides and isolates,
+zero-width spaces and joiners, and the byte-order mark. The old trick is a
+right-to-left override before a reversed extension, so that `fdp.exe` displays
+as something ending `.pdf`.
+
+Double extensions are decided by the last one: `sermon.pdf.exe` claims `.exe`
+and is refused, while `2026.03.14 handout.pdf` is an ordinary name with dots in
+it and imports.
+
+---
+
+## Dependencies
+
+`pdfjs-dist` **6.3.289**, with no advisories reported by `npm audit` at the
+time of writing. Well past CVE-2024-4367, the arbitrary-script-execution issue
+that affected pdf.js before 4.2.67. Keeping it current is part of this promise:
+the parser is the last word, and parsers have bugs.
+
+---
+
 ## Malformed documents
 
 A deterministic corpus damages a valid PDF and a valid Word package in every

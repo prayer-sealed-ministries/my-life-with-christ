@@ -79,6 +79,33 @@ describe('a name is only a claim', () => {
   });
 });
 
+describe('a name that is not what it looks like', () => {
+  it('reduces a path to the name at the end of it', async () => {
+    const { safeFilename } = await import('./limits');
+    expect(safeFilename('C:\\\\Users\\\\fictional\\\\handout.pdf')).toBe('handout.pdf');
+    expect(safeFilename('/tmp/fictional/handout.pdf')).toBe('handout.pdf');
+    expect(safeFilename('../../fictional/handout.pdf')).toBe('handout.pdf');
+  });
+
+  it('strips what makes a name read differently from what it is', async () => {
+    const { safeFilename } = await import('./limits');
+    // A right-to-left override before a reversed extension: this displays as
+    // "handoutfdp.exe" reversed into something ending .pdf, while being .exe.
+    expect(safeFilename('handout\u202efdp.exe')).toBe('handoutfdp.exe');
+    // Zero-width characters hiding inside an extension.
+    expect(safeFilename('handout.p\u200bdf')).toBe('handout.pdf');
+    expect(safeFilename('\ufeffhandout.pdf')).toBe('handout.pdf');
+  });
+
+  it('refuses a double extension whose last part is not one we read', () => {
+    for (const name of ['sermon.pdf.exe', 'sermon.docx.exe', 'sermon.pdf.scr']) {
+      expect(claimedKind(name), name).toBe('unknown');
+    }
+    // And an ordinary name with several dots is not a trick.
+    expect(claimedKind('2026.03.14 handout.pdf')).toBe('pdf');
+  });
+});
+
 describe('MIME is a hint, and only when it says something', () => {
   it('says nothing when it is absent, empty or generic', () => {
     expect(mimeKind(undefined)).toBeNull();

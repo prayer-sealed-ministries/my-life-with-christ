@@ -93,6 +93,18 @@ export function safeFilename(name: string): string {
     // Control characters have no business in a filename we display.
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
+    /*
+      Characters that change what a name LOOKS like without changing what it
+      is: the bidirectional overrides and isolates, the zero-width spaces and
+      joiners, and the byte-order mark.
+
+      The old trick is a right-to-left override before a reversed extension, so
+      that `fdp.exe` displays as `exe.pdf`. Nothing here executes a file, so
+      this is not about running something by accident — it is that the name
+      goes into the entry's provenance and is shown to a person, and a record
+      that reads as one thing while being another is a lie in the archive.
+    */
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
     .trim();
   if (!cleaned || cleaned === '.' || cleaned === '..') return 'imported file';
   return cleaned.slice(0, 200);
