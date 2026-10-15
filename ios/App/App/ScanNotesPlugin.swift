@@ -113,9 +113,11 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Recognition
 
     @objc func recognise(_ call: CAPPluginCall) {
+        // `try?` on a throwing function that already returns URL? flattens to a
+        // single optional, so one unwrap is both necessary and sufficient.
         guard let handle = call.getString("handle"),
               let location = try? url(for: handle),
-              let location, FileManager.default.fileExists(atPath: location.path) else {
+              FileManager.default.fileExists(atPath: location.path) else {
             call.resolve(["failure": "failed"])
             return
         }
@@ -199,7 +201,7 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Cleanup
 
     @objc func discard(_ call: CAPPluginCall) {
-        if let handle = call.getString("handle"), let location = try? url(for: handle), let location {
+        if let handle = call.getString("handle"), let location = try? url(for: handle) {
             try? FileManager.default.removeItem(at: location)
         }
         call.resolve()
