@@ -13,7 +13,7 @@
  */
 import { registerPlugin } from '@capacitor/core';
 
-import type { PageScanner, Recognition, ScanFailure, ScannedPage } from './ports';
+import type { PageScanner, PreparedPage, Recognition, ScanFailure, ScannedPage } from './ports';
 import { nativePlatform } from './runtime';
 
 /**
@@ -30,6 +30,8 @@ interface ScanNotesPlugin {
   choose(): Promise<NativePage | NativeFailure>;
   /** Recognise text in a page the plugin is holding. */
   recognise(options: { handle: string }): Promise<NativeRecognition | NativeFailure>;
+  /** Recognise an image this app rendered. No file, no handle, nothing kept. */
+  recogniseImage(options: { base64: string }): Promise<NativeRecognition | NativeFailure>;
   /** Delete our temporary copy. Never touches a photo in the person's library. */
   discard(options: { handle: string }): Promise<void>;
   /** Remove temporary scans left behind by a previous run that crashed. */
@@ -153,6 +155,11 @@ export const nativePageScanner: PageScanner = {
 
   async recognise(page: ScannedPage) {
     const result = await guard(() => ScanNotes.recognise({ handle: page.handle }));
+    return 'reason' in result ? result : toRecognition(result);
+  },
+
+  async recognisePrepared(image: PreparedPage) {
+    const result = await guard(() => ScanNotes.recogniseImage({ base64: image.base64 }));
     return 'reason' in result ? result : toRecognition(result);
   },
 

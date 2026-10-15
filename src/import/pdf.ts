@@ -41,7 +41,9 @@
  * needs a CMap yields worse text instead, which is the right trade.
  */
 
-import { ImportError, MAX_PDF_PAGES, MAX_TEXT_CHARS } from './limits';
+import { ImportError, MAX_PDF_PAGES, MAX_PDF_TOTAL_PIXELS, MAX_TEXT_CHARS } from './limits';
+import { renderPdfPage, type CanvasFactory, type RenderablePage } from './pdf-render';
+import { pageHasOwnText, type PreparedImage } from './pdf-scan';
 
 /** Said when a document is locked rather than broken. */
 export const ENCRYPTED_PDF =
@@ -51,6 +53,16 @@ export interface PdfPage {
   /** 1-based. */
   page: number;
   text: string;
+  /**
+   * Where the words came from.
+   *
+   * `text` is what the person who made the handout actually typed. `recognised`
+   * is this device's reading of a photocopied page, which may be wrong and
+   * which the review screen therefore shows differently. The distinction has
+   * to survive all the way to the person: presenting a guess beside exact text
+   * without saying which is which is the one thing this feature must not do.
+   */
+  source: 'text' | 'recognised';
 }
 
 export interface PdfExtraction {
@@ -68,6 +80,17 @@ export interface PdfExtraction {
    * order to guess at them.
    */
   emptyPageNumbers: number[];
+  /** Pages read by recognition rather than from their own text. */
+  recognisedPageNumbers: number[];
+  /**
+   * Pages with no readable text, which recognition also could not read.
+   *
+   * Reported, never dropped. A body that is quietly short of a page is data
+   * loss wearing the clothes of success.
+   */
+  unreadablePageNumbers: number[];
+  /** Scanned pages past the recognition ceiling. Nobody tried these. */
+  skippedPageNumbers: number[];
   truncated: boolean;
 }
 
@@ -107,7 +130,41 @@ function itemsToText(items: TextItem[]): string {
     .join('\n');
 }
 
-export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
+/**
+ * How to read a page that carries no text of its own.
+ *
+ * Absent means do not try: the web edition has no on-device recogniser, and a
+ * scanned page is reported as a page that could not be read rather than
+ * quietly skipped.
+ */
+export interface PdfScanning {
+  recognise(image: PreparedImage, page: number): Promise<string | null>;
+  maxPages: number;
+  canvases?: CanvasFactory;
+}
+
+/**
+ * Render a page and read it, or say why not.
+ *
+ * `'over-budget'` and `null` are different answers and are kept apart all the
+ * way to the person: one means there are more scanned pages here than can be
+ * read at once, the other means this page was tried and could not be read.
+ */
+async function recognisePage(
+  page: RenderablePage,
+  number: number,
+  scan: PdfScanning,
+  budget: { remaining: number },
+  overBudget: boolean,
+): Promise<string | null | 'over-budget'> {
+  if (overBudget) return 'over-budget';
+  const image = await renderPdfPage(page, budget, scan.canvases);
+  if (!image) return null;
+  const text = await scan.recognise(image, number);
+  return text && text.trim().length > 0 ? text.trim() : null;
+}
+
+export async function parsePdf(data: Uint8Array, scan?: PdfScanning): Promise<PdfExtraction> {
   let getDocument: (typeof import('pdfjs-dist'))['getDocument'];
   try {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -182,20 +239,59 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
   const limit = Math.min(total, MAX_PDF_PAGES);
   const pages: PdfPage[] = [];
   const emptyPageNumbers: number[] = [];
+  const recognisedPageNumbers: number[] = [];
+  const unreadablePageNumbers: number[] = [];
+  const skippedPageNumbers: number[] = [];
   let characters = 0;
+  /*
+    How many pages have been ATTEMPTED, not how many succeeded.
+
+    The ceiling is a resource control, and the resource is spent by trying: a
+    page that is rendered and then fails to be read has already cost the canvas
+    and the render. Counting successes would mean a document of five hundred
+    unreadable pages rendering all five hundred of them — the exact exhaustion
+    the ceiling exists to prevent, reached by failing rather than succeeding.
+  */
+  let attempted = 0;
+  const budget = { remaining: MAX_PDF_TOTAL_PIXELS };
 
   try {
     for (let number = 1; number <= limit; number += 1) {
       const page = await document.getPage(number);
       const content = await page.getTextContent();
       const text = itemsToText(content.items as TextItem[]);
-      page.cleanup();
 
-      if (!text) emptyPageNumbers.push(number);
-      else {
+      if (pageHasOwnText(text)) {
+        /*
+          The page's own words, used exactly as written.
+
+          Recognition is never called here, and that is the point of the whole
+          feature: guessing at words somebody actually typed would be a
+          downgrade dressed up as an improvement.
+        */
         characters += text.length;
-        pages.push({ page: number, text });
+        pages.push({ page: number, text, source: 'text' });
+        page.cleanup();
+      } else {
+        emptyPageNumbers.push(number);
+        const overBudget = scan ? attempted >= scan.maxPages : false;
+        if (scan && !overBudget) attempted += 1;
+        const read = scan
+          ? await recognisePage(page as unknown as RenderablePage, number, scan, budget, overBudget)
+          : null;
+        page.cleanup();
+
+        if (read === 'over-budget') {
+          skippedPageNumbers.push(number);
+        } else if (read === null) {
+          unreadablePageNumbers.push(number);
+        } else {
+          characters += read.length;
+          recognisedPageNumbers.push(number);
+          pages.push({ page: number, text: read, source: 'recognised' });
+        }
       }
+
       if (characters > MAX_TEXT_CHARS) {
         throw new ImportError('That PDF contains more text than can be imported at once.');
       }
@@ -228,6 +324,9 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
     pages,
     emptyPages: emptyPageNumbers.length,
     emptyPageNumbers,
+    recognisedPageNumbers,
+    unreadablePageNumbers,
+    skippedPageNumbers,
     truncated: total > limit,
   };
 }

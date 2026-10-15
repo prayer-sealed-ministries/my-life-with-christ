@@ -292,6 +292,14 @@ export type ScanFailure =
  * path and no cloud fallback: if the device cannot read the page, the answer is
  * that it could not read the page.
  */
+/** An image this application rendered, on its way to the recogniser. */
+export interface PreparedPage {
+  /** Encoded image bytes, base64, with no data: prefix. */
+  base64: string;
+  width: number;
+  height: number;
+}
+
 export interface PageScanner {
   /** False on the web, where there is no on-device recogniser to promise. */
   readonly supported: boolean;
@@ -301,6 +309,18 @@ export interface PageScanner {
   choose(): Promise<ScannedPage | ScanFailure>;
   /** Read the page. No journal data is written by this call. */
   recognise(page: ScannedPage): Promise<Recognition | ScanFailure>;
+  /**
+   * Read an image this app produced, rather than one the person photographed.
+   *
+   * The scanned-PDF path. A page rendered from a PDF has no handle and no file
+   * behind it — it is bytes we made a moment ago and will drop a moment later,
+   * so there is nothing to store and nothing to clean up afterwards.
+   *
+   * The same engine as `recognise`, deliberately: one Apple Vision
+   * implementation and one ML Kit implementation exist in this product, and a
+   * second for PDFs would be two things to keep honest instead of one.
+   */
+  recognisePrepared(image: PreparedPage): Promise<Recognition | ScanFailure>;
   /**
    * Throw away our temporary copy. Safe to call twice, and it never touches a
    * photo the person chose from their own library.

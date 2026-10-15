@@ -59,6 +59,7 @@ const fakeScanner = (over: Partial<PageScanner> = {}): FakeScanner => {
     capture: async () => page(),
     choose: async () => page({ handle: 'fictional-chosen' }),
     recognise: async () => recognition(),
+    recognisePrepared: async () => ({ reason: 'unsupported' } as const),
     async discard(scanned: ScannedPage) {
       discarded.push(scanned.handle);
     },

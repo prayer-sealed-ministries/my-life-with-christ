@@ -286,20 +286,25 @@ describe('PDF', () => {
     expect(proposal.material.date).toBeUndefined();
   }, 20_000);
 
-  it('refuses a scanned PDF, and says both what it is and what we cannot do', async () => {
+  it('explains a PDF it could read nothing from, without blaming the reader', async () => {
+    /*
+      Scanned pages ARE read now, on this device. This is what is left when
+      that has been tried and still produced nothing — a blank document, a
+      photocopy too faint to read, or a runtime with no recogniser at all.
+
+      The wording therefore says what happened rather than naming a feature
+      that does or does not exist, because the person's next step is the same
+      either way: find a better copy.
+    */
     const message = await refuses(
       latin1(SCANNED_PDF_NOTES),
       'scan.pdf',
-      /scanned pages rather than selectable text/i,
+      /No readable text was found in this PDF/i,
     );
-    // Two facts, in the order a reader needs them. Saying only the second
-    // leaves somebody holding a photocopy to work out why a PDF full of words
-    // is "not readable".
-    expect(message).toMatch(/text recognition is not available yet/i);
-    // "not available yet", not "not supported": it was measured and deferred
-    // on package size, not decided against.
-    expect(message).not.toMatch(/not supported/i);
-  }, 20_000);
+    expect(message).toMatch(/a clearer copy may work better/i);
+    // No longer true, and a promise this app now keeps.
+    expect(message).not.toMatch(/not available yet|not supported/i);
+  });
 
   it('refuses a file that is not a PDF', async () => {
     await refuses(bytes(BROKEN_PDF), 'broken.pdf', /could not|damaged|not a/i);

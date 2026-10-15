@@ -49,6 +49,7 @@ const scanner: PageScanner = {
   capture: async () => page,
   choose: async () => page,
   recognise: async () => recognition,
+  recognisePrepared: async () => ({ reason: 'unsupported' } as const),
   async discard() {},
 };
 

@@ -36,6 +36,7 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "capture", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "choose", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "recognise", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recogniseImage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discard", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cleanupStale", returnType: CAPPluginReturnPromise),
     ]
@@ -141,53 +142,86 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["failure": "unreadable"])
                 return
             }
+            self.read(call, cgImage)
+        }
+    }
 
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            // Measured, not assumed. See the note at the top of this file.
-            request.usesLanguageCorrection = false
-            request.recognitionLanguages = ["en-US"]
+    /**
+     Recognise an image handed over directly, with no file behind it.
 
-            let started = DispatchTime.now()
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                call.resolve(["failure": "failed"])
+     This is the scanned-PDF path. A page rendered from a PDF never becomes a
+     file: it arrives as encoded bytes, is decoded here, read, and dropped.
+     Writing it to disk first would leave a picture of somebody's handout in a
+     cache for no reason, and give us a second thing to clean up.
+
+     The SAME Vision request as a photographed page. There is one Apple Vision
+     implementation in this product, and adding a second for PDFs would be two
+     things to keep honest instead of one.
+     */
+    @objc func recogniseImage(_ call: CAPPluginCall) {
+        guard let base64 = call.getString("base64"), !base64.isEmpty else {
+            call.resolve(["failure": "unreadable"])
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let data = Data(base64Encoded: base64), data.count <= Self.maxSourceBytes,
+                  let image = UIImage(data: data),
+                  let cgImage = self.normalise(image)?.cgImage else {
+                call.resolve(["failure": "unreadable"])
                 return
             }
-            let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+            self.read(call, cgImage)
+        }
+    }
 
-            var lines: [[String: Any]] = []
-            var joined: [String] = []
-            for observation in request.results ?? [] {
-                guard let best = observation.topCandidates(1).first else { continue }
-                joined.append(best.string)
-                lines.append([
-                    "text": best.string,
-                    "confidence": best.confidence,
-                    // Vision reports a bottom-left origin; the shared layer and
-                    // the review screen use top-left, so convert here rather
-                    // than leak a platform convention upwards.
-                    "box": [
-                        "x": observation.boundingBox.origin.x,
-                        "y": 1 - observation.boundingBox.origin.y - observation.boundingBox.height,
-                        "width": observation.boundingBox.width,
-                        "height": observation.boundingBox.height,
-                    ],
-                ])
-            }
+    /// The one place an image is turned into text, whatever produced it.
+    private func read(_ call: CAPPluginCall, _ cgImage: CGImage) {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        // Measured, not assumed. See the note at the top of this file.
+        request.usesLanguageCorrection = false
+        request.recognitionLanguages = ["en-US"]
 
-            // Deliberately no logging of recognised text anywhere in this file.
-            call.resolve([
-                "text": joined.joined(separator: "\n"),
-                "lines": lines,
-                "imageWidth": cgImage.width,
-                "imageHeight": cgImage.height,
-                "engine": "AppleVision",
-                "elapsedMs": elapsedMs,
+        let started = DispatchTime.now()
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            call.resolve(["failure": "failed"])
+            return
+        }
+        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+
+        var lines: [[String: Any]] = []
+        var joined: [String] = []
+        for observation in request.results ?? [] {
+            guard let best = observation.topCandidates(1).first else { continue }
+            joined.append(best.string)
+            lines.append([
+                "text": best.string,
+                "confidence": best.confidence,
+                // Vision reports a bottom-left origin; the shared layer and
+                // the review screen use top-left, so convert here rather
+                // than leak a platform convention upwards.
+                "box": [
+                    "x": observation.boundingBox.origin.x,
+                    "y": 1 - observation.boundingBox.origin.y - observation.boundingBox.height,
+                    "width": observation.boundingBox.width,
+                    "height": observation.boundingBox.height,
+                ],
             ])
         }
+
+        // Deliberately no logging of recognised text anywhere in this file.
+        call.resolve([
+            "text": joined.joined(separator: "\n"),
+            "lines": lines,
+            "imageWidth": cgImage.width,
+            "imageHeight": cgImage.height,
+            "engine": "AppleVision",
+            "elapsedMs": elapsedMs,
+        ])
     }
 
     /**

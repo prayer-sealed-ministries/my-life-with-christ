@@ -235,6 +235,52 @@ public class ScanNotesPlugin extends Plugin {
             return;
         }
 
+        read(call, bitmap);
+    }
+
+    /**
+     * Recognise an image handed over directly, with no file behind it.
+     *
+     * This is the scanned-PDF path. A page rendered from a PDF never becomes a
+     * file: it arrives as encoded bytes, is decoded here, read, and dropped.
+     * Writing it to disk first would mean a picture of somebody's handout
+     * sitting in a cache for no reason, and a second thing to clean up.
+     *
+     * The SAME recogniser as a photographed page. There is one Apple Vision
+     * implementation and one ML Kit implementation in this product, and adding
+     * a second for PDFs would be two things to keep honest instead of one.
+     */
+    @PluginMethod
+    public void recogniseImage(PluginCall call) {
+        String base64 = call.getString("base64");
+        if (base64 == null || base64.isEmpty()) {
+            call.resolve(failure("unreadable"));
+            return;
+        }
+
+        byte[] bytes;
+        try {
+            bytes = Base64.decode(base64, Base64.DEFAULT);
+        } catch (IllegalArgumentException malformed) {
+            call.resolve(failure("unreadable"));
+            return;
+        }
+        if (bytes.length > MAX_SOURCE_BYTES) {
+            call.resolve(failure("too-large"));
+            return;
+        }
+
+        Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        if (bitmap == null) {
+            call.resolve(failure("unreadable"));
+            return;
+        }
+
+        read(call, bitmap);
+    }
+
+    /** The one place a bitmap is turned into text, whatever produced it. */
+    private void read(PluginCall call, Bitmap bitmap) {
         // DEFAULT_OPTIONS is the bundled Latin recogniser. Changing this to the
         // Play-Services variant would silently make first use require a model
         // download; ScanNotesBundledModelTest exists to catch that.

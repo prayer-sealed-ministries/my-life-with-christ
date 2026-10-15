@@ -32,6 +32,7 @@ import { describeBytes } from '../import/limits';
 import { describeProvenance } from '../lib/provided-notes';
 import { formatDay } from '../lib/dates';
 import type { PickedFile } from '../platform/ports';
+import { usePlatform } from '../platform/context';
 
 /** How much of the material the preview shows. Enough to recognise, not to read. */
 const PREVIEW_CHARS = 700;
@@ -79,10 +80,28 @@ export function SermonNotesImport({
   onUse: (proposal: SermonNotesProposal) => void;
   onCancel: () => void;
 }) {
+  /*
+    The device's own recogniser, for the scanned pages of a PDF.
+
+    A capability, not a platform question: this view asks whether a page can be
+    read on this device and never asks which device it is. On the web there is
+    no recogniser, and a scanned page is reported as one that could not be read
+    rather than quietly skipped.
+  */
+  const { scanner } = usePlatform();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [proposal, setProposal] = useState<SermonNotesProposal | null>(null);
   const [confirmingReplace, setConfirmingReplace] = useState(false);
+  /**
+   * Whether the person has said they accept a handout with a page missing.
+   *
+   * Telling somebody a page could not be read is necessary and not sufficient:
+   * a sentence in a preview is easy to scroll past, and what is being kept is
+   * a record of somebody's words that will outlive the import. So the page
+   * they are about to lose has to be acknowledged, not merely displayed.
+   */
+  const [acceptingGaps, setAcceptingGaps] = useState(false);
 
   async function onFile(file: PickedFile | null) {
     // Cancelling is an ordinary outcome. No error, no state, nothing changed.
@@ -92,7 +111,7 @@ export function SermonNotesImport({
     setProposal(null);
     setBusy(true);
     try {
-      setProposal(await readSermonNotes(file.bytes, file.name, file.mimeType));
+      setProposal(await readSermonNotes(file.bytes, file.name, file.mimeType, scanner));
     } catch (cause) {
       // An ImportError carries wording written for a person. Anything else is
       // a library's internal message and must not reach the screen.
@@ -132,7 +151,7 @@ export function SermonNotesImport({
         // hints, and the bytes settle any disagreement — then the same parser
         // a picked file reaches.
         const accepted = acceptIncomingDocument(incoming);
-        const result = await readSermonNotes(accepted.bytes, accepted.filename);
+        const result = await readSermonNotes(accepted.bytes, accepted.filename, undefined, scanner);
         if (!cancelled) setProposal(result);
       } catch (cause) {
         if (cancelled) return;
@@ -149,7 +168,9 @@ export function SermonNotesImport({
     return () => {
       cancelled = true;
     };
-  }, [incoming]);
+    // The scanner is the platform's own and does not change for the life of
+    // the app; it is listed so the dependency is honest rather than omitted.
+  }, [incoming, scanner]);
 
   const material = proposal?.material;
   const facts: Array<[string, string]> = [];
@@ -171,6 +192,20 @@ export function SermonNotesImport({
   }
 
   const preview = material ? previewOf(material.body) : null;
+
+  /*
+    What to say about a PDF that held scanned pages.
+
+    Three separate facts, and they are kept apart because the sentence a person
+    needs is different for each: pages read from their own text, pages this
+    device read from a picture and may have got wrong, and pages that could not
+    be read at all. The last one is the reason this exists — a proposal that is
+    quietly short of a page is data loss wearing the clothes of success.
+  */
+  const scan = proposal?.scan;
+  const unread = scan ? [...scan.unreadablePages, ...scan.skippedPages].sort((a, b) => a - b) : [];
+  const pageList = (pages: number[]) =>
+    pages.length === 1 ? `page ${pages[0]}` : `pages ${pages.slice(0, -1).join(', ')} and ${pages.at(-1)}`;
 
   return (
     <section
@@ -240,6 +275,45 @@ export function SermonNotesImport({
             ))}
           </dl>
 
+          {scan ? (
+            <div className="mt-4 rounded-control border border-line bg-app p-3 text-sm">
+              {scan.recognisedPages.length > 0 ? (
+                <>
+                  <p className="text-ink">
+                    This PDF includes scanned pages. Text recognition happened on this device.{' '}
+                    {scan.recognisedPages.length === 1
+                      ? 'One page was recognised'
+                      : `${scan.recognisedPages.length} pages were recognised`}
+                    {' '}({pageList(scan.recognisedPages)}).
+                  </p>
+                  <p className="mt-1 text-ink-soft">
+                    Check the recognised pages before using these notes. Nothing is uploaded for
+                    text recognition.
+                  </p>
+                </>
+              ) : null}
+
+              {unread.length > 0 ? (
+                /*
+                  The page nobody can read, said out loud.
+
+                  role="alert" because this is the one thing in the preview a
+                  person must not scroll past: the notes they are about to keep
+                  are missing a page, and they get to decide whether that is
+                  acceptable rather than discovering it in 2060.
+                */
+                <p role="alert" className="mt-2 font-medium text-ink">
+                  {unread.length === 1
+                    ? `Page ${unread[0]} couldn’t be read clearly and is not included.`
+                    : `${pageList(unread)} couldn’t be read clearly and are not included.`}
+                  {scan.skippedPages.length > 0
+                    ? ' This PDF contains more scanned pages than can be recognised safely at once.'
+                    : ''}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <h4 className="mt-4 text-sm font-medium text-ink-soft">
             {preview!.truncated ? 'The first part of these notes' : 'These notes'}
           </h4>
@@ -257,7 +331,20 @@ export function SermonNotesImport({
           ) : null}
 
           <div className="mt-4 flex flex-wrap gap-3">
-            {replacing && !confirmingReplace ? (
+            {unread.length > 0 && !acceptingGaps ? (
+              /*
+                The page that could not be read, acknowledged rather than
+                noticed. Pressing this is the person saying they know the
+                handout they are keeping is short of a page — which is a
+                decision they are entitled to make, and not one to make for
+                them by letting the ordinary button through.
+              */
+              <Button variant="primary" onClick={() => setAcceptingGaps(true)}>
+                {unread.length === 1
+                  ? `Continue without page ${unread[0]}`
+                  : `Continue without ${unread.length} pages`}
+              </Button>
+            ) : replacing && !confirmingReplace ? (
               <Button variant="primary" onClick={() => setConfirmingReplace(true)}>
                 Replace the provided notes
               </Button>
@@ -270,6 +357,7 @@ export function SermonNotesImport({
               onClick={() => {
                 setProposal(null);
                 setConfirmingReplace(false);
+                setAcceptingGaps(false);
               }}
             >
               Choose a different file

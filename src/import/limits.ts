@@ -51,6 +51,44 @@ export const MAX_ZIP_TOTAL_BYTES = 120 * 1024 * 1024;
 /** PDF: pages read. Past this the remainder is skipped and the user is told. */
 export const MAX_PDF_PAGES = 500;
 
+/*
+  Recognising a scanned page is a different cost from reading a typed one.
+
+  Reading text from five hundred pages is a few seconds of parsing. Rendering
+  five hundred pages to images and recognising each one is minutes of work and
+  a great deal of memory, and it is not what this feature is for: a church
+  handout is a few pages, and a five-hundred-page scanned book is somebody
+  trying to do something else.
+
+  Twenty is generous for a handout — a bulletin, a study guide, an order of
+  service — and small enough that the worst case is bounded. Past it the person
+  is told there are more scanned pages than can be read at once, rather than
+  being given a partial import nobody mentioned.
+*/
+export const MAX_SCANNED_PDF_OCR_PAGES = 20;
+
+/**
+ * The most pixels a single page may be rendered at.
+ *
+ * Checked BEFORE allocation, because the allocation is the attack: an RGBA
+ * bitmap costs width x height x 4 bytes in the canvas, again when it is
+ * encoded, and again crossing the bridge to the recogniser. A page declaring
+ * an enormous MediaBox must be refused rather than rendered and regretted.
+ *
+ * 4.2 megapixels is roughly A4 at 220 dpi, which the resolution study found
+ * sufficient for small print; the ceiling is set above the working resolution
+ * so an unusually large page is scaled down rather than refused.
+ */
+export const MAX_PDF_PAGE_PIXELS = 4_200_000;
+
+/**
+ * And the most pixels the whole document may be rendered at, across pages.
+ *
+ * A per-page ceiling alone permits twenty maximum-size pages, which is twenty
+ * times the per-page cost. This bounds the document rather than the page.
+ */
+export const MAX_PDF_TOTAL_PIXELS = 40_000_000;
+
 /** Bumped whenever extraction changes in a way that alters what it produces. */
 export const PARSER_VERSION = 1;
 
