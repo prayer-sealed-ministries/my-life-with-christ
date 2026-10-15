@@ -129,7 +129,7 @@ A church handout is often part typed and part photocopied. The decision is made
 | --- | --- |
 | carries its own text | used exactly as written; the recogniser is never called |
 | no text of its own | rendered and read on this device |
-| rendered but unreadable | **named in the review**, never dropped |
+| rendered but unreadable | named in the review, and must be **acknowledged** before the notes can be used |
 | past the recognition ceiling | reported as not attempted, which is a different sentence |
 
 Guessing at words somebody actually typed would be a downgrade dressed as a

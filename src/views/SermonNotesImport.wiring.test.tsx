@@ -72,6 +72,29 @@ async function chooseFile(name: string, text: string) {
   fireEvent.change(input);
 }
 
+/**
+ * A mixed PDF whose scanned page cannot be read in this runtime.
+ *
+ * jsdom has no canvas, so the scanned page is rendered by nothing and reported
+ * as a page that could not be read — which is exactly the state this test is
+ * about, and the same state a device reaches when a photocopy is too faint.
+ */
+async function choosePdfWithAnUnreadablePage() {
+  const { pdf } = await import('../import/fixtures');
+  const source = pdf([
+    ['BT /F1 12 Tf 60 700 Td (FICTIONAL-EXACT-PAGE one typed) Tj ET'],
+    [],
+    ['BT /F1 12 Tf 60 700 Td (FICTIONAL-EXACT-PAGE three typed) Tj ET'],
+  ]);
+  const bytes = new Uint8Array(source.length);
+  for (let i = 0; i < source.length; i += 1) bytes[i] = source.charCodeAt(i) & 0xff;
+
+  const input = screen.getByLabelText('Sermon notes file') as HTMLInputElement;
+  const file = new File([bytes], 'handout.pdf', { type: 'application/pdf' });
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  fireEvent.change(input);
+}
+
 async function openImport() {
   await notesBox();
   fireEvent.click(screen.getByRole('button', { name: 'Import church notes' }));
@@ -104,6 +127,46 @@ afterEach(() => {
   cleanup();
   registerOverlay(null);
   localStorage.clear();
+});
+
+describe('a handout with a page that could not be read', () => {
+  it('says which page, and will not let it through unacknowledged', async () => {
+    /*
+      Telling somebody a page is missing is necessary and not sufficient. A
+      sentence in a preview is easy to scroll past, and what is being kept is a
+      record of somebody's words that will outlive this import — so the page
+      they are about to lose has to be acknowledged rather than merely shown.
+    */
+    renderApp();
+    await openImport();
+    await choosePdfWithAnUnreadablePage();
+
+    // The page is named, in an alert rather than a footnote.
+    const alert = await screen.findByRole('alert', {}, { timeout: 5_000 });
+    expect(alert.textContent).toMatch(/Page 2 couldn’t be read clearly and is not included/i);
+
+    // And the ordinary way forward is not offered yet.
+    expect(screen.queryByRole('button', { name: 'Use these notes' })).toBeNull();
+
+    const acknowledge = screen.getByRole('button', { name: 'Continue without page 2' });
+    fireEvent.click(acknowledge);
+
+    // Only now, and the text that lands is the two pages that could be read.
+    const use = await screen.findByRole('button', { name: 'Use these notes' });
+    fireEvent.click(use);
+    await screen.findByRole('heading', { name: 'Provided notes' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => expect(await db.listEntries()).toHaveLength(1));
+    const entry = (await db.listEntries())[0];
+    expect(entry.sourceMaterial?.body).toBe(
+      'FICTIONAL-EXACT-PAGE one typed\n\nFICTIONAL-EXACT-PAGE three typed',
+    );
+    // The reader's own fields are untouched, as they are for every import.
+    expect(entry.notes).toBe('');
+    expect(entry.reflection ?? '').toBe('');
+    expect(entry.prayer ?? '').toBe('');
+  });
 });
 
 describe('before anything is chosen', () => {

@@ -93,6 +93,15 @@ export function SermonNotesImport({
   const [error, setError] = useState('');
   const [proposal, setProposal] = useState<SermonNotesProposal | null>(null);
   const [confirmingReplace, setConfirmingReplace] = useState(false);
+  /**
+   * Whether the person has said they accept a handout with a page missing.
+   *
+   * Telling somebody a page could not be read is necessary and not sufficient:
+   * a sentence in a preview is easy to scroll past, and what is being kept is
+   * a record of somebody's words that will outlive the import. So the page
+   * they are about to lose has to be acknowledged, not merely displayed.
+   */
+  const [acceptingGaps, setAcceptingGaps] = useState(false);
 
   async function onFile(file: PickedFile | null) {
     // Cancelling is an ordinary outcome. No error, no state, nothing changed.
@@ -322,7 +331,20 @@ export function SermonNotesImport({
           ) : null}
 
           <div className="mt-4 flex flex-wrap gap-3">
-            {replacing && !confirmingReplace ? (
+            {unread.length > 0 && !acceptingGaps ? (
+              /*
+                The page that could not be read, acknowledged rather than
+                noticed. Pressing this is the person saying they know the
+                handout they are keeping is short of a page — which is a
+                decision they are entitled to make, and not one to make for
+                them by letting the ordinary button through.
+              */
+              <Button variant="primary" onClick={() => setAcceptingGaps(true)}>
+                {unread.length === 1
+                  ? `Continue without page ${unread[0]}`
+                  : `Continue without ${unread.length} pages`}
+              </Button>
+            ) : replacing && !confirmingReplace ? (
               <Button variant="primary" onClick={() => setConfirmingReplace(true)}>
                 Replace the provided notes
               </Button>
@@ -335,6 +357,7 @@ export function SermonNotesImport({
               onClick={() => {
                 setProposal(null);
                 setConfirmingReplace(false);
+                setAcceptingGaps(false);
               }}
             >
               Choose a different file
