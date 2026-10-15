@@ -92,7 +92,36 @@ function zip(members: Array<[string, string]>): Buffer {
 }
 
 /** A Word document that also contains a macro and a remote relationship. */
-export function docx(): Buffer {
+/** The content types a real Word package declares for its main document. */
+const CONTENT_TYPES =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+  '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+  '<Default Extension="xml" ContentType="application/xml"/>' +
+  '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+  '</Types>';
+
+/** The root relationships a real Word package declares. */
+const ROOT_RELS =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+  '</Relationships>';
+
+/**
+ * A relationship pointing at somebody else's server.
+ *
+ * Entirely legal in a real Word document, and it must never be followed: the
+ * egress watcher in the spec is what proves it is not. Kept out of the root
+ * relationships on purpose — a package whose STARTING POINT is external is a
+ * different thing, and is refused.
+ */
+const DOCUMENT_RELS =
+  '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" ' +
+  'Target="https://tracker.invalid/pixel.png" TargetMode="External"/></Relationships>';
+
+function documentBody(): string {
   const paragraphs = [
     { text: 'Sunday Sermons 2019', style: 'Heading1' },
     { text: 'Grace and peace to you.' },
@@ -114,18 +143,44 @@ export function docx(): Buffer {
     })
     .join('');
 
+  return `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`;
+}
+
+/**
+ * An ordinary Word document, as Word actually writes one.
+ *
+ * A real Open Packaging Convention package: content types that declare the
+ * main part, and a root relationship naming it. It used to be a bare ZIP with
+ * a body in it, which the importer now refuses — correctly, because anybody
+ * can build that and it is no evidence Word produced anything.
+ *
+ * It still carries an external image relationship, because the thing worth
+ * proving is that a legitimate document containing one is read without that
+ * relationship ever being followed.
+ */
+export function docx(): Buffer {
   return zip([
-    ['[Content_Types].xml', '<?xml version="1.0"?><Types/>'],
-    [
-      'word/document.xml',
-      `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`,
-    ],
-    // Neither of these may be opened, and the relationship must not be followed.
+    ['[Content_Types].xml', CONTENT_TYPES],
+    ['_rels/.rels', ROOT_RELS],
+    ['word/document.xml', documentBody()],
+    ['word/_rels/document.xml.rels', DOCUMENT_RELS],
+  ]);
+}
+
+/**
+ * The same document, with a macro project in it.
+ *
+ * Refused outright rather than read-with-the-macro-ignored. Opening the text
+ * of a macro-enabled document and silently leaving the macro behind means
+ * carrying a file this app cannot account for; the person is told to save a
+ * copy without macros, which is something they can act on.
+ */
+export function macroDocx(): Buffer {
+  return zip([
+    ['[Content_Types].xml', CONTENT_TYPES],
+    ['_rels/.rels', ROOT_RELS],
+    ['word/document.xml', documentBody()],
     ['word/vbaProject.bin', 'MACRO-BYTES-THAT-MUST-NOT-RUN'],
-    [
-      'word/_rels/document.xml.rels',
-      '<?xml version="1.0"?><Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://tracker.invalid/pixel.png" TargetMode="External"/></Relationships>',
-    ],
   ]);
 }
 
@@ -153,6 +208,7 @@ export function writeFixtures(): string {
   writeFileSync(join(dir, 'Sunday Sermons 2019.docx'), docx());
   writeFileSync(join(dir, 'sermon notes.pdf'), TEXT_PDF, 'latin1');
   writeFileSync(join(dir, 'scanned.pdf'), SCANNED_PDF, 'latin1');
+  writeFileSync(join(dir, 'macros.docx'), macroDocx());
   writeFileSync(join(dir, 'broken.docx'), 'this is not a zip archive');
   writeFileSync(join(dir, 'empty.txt'), '');
   return dir;

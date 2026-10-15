@@ -104,9 +104,39 @@ test('a damaged file is explained without leaking anything internal', async ({ p
   const alert = page.getByRole('alert');
   await expect(alert).toBeVisible();
   const text = (await alert.innerText()).trim();
-  expect(text).toMatch(/damaged|not a readable/i);
+  // Refused by the type check now, before anything tries to open it as a
+  // package — so the sentence names the mismatch rather than the damage.
+  expect(text).toMatch(/named as a Word document, but its contents are not a supported .docx/i);
   // No stack frame, no file path, no byte offset.
   expect(text).not.toMatch(/\.ts:\d|at \w+ \(|RangeError|byte \d/);
+});
+
+test('a Word document with macros is refused, and says what to do about it', async ({ page }) => {
+  /*
+    This document's text is perfectly readable. It is refused anyway, because
+    reading it would mean carrying a file the app cannot account for: the macro
+    is left behind, unexamined, inside something the person was told was fine.
+
+    The fixture used to be the ordinary import case, with the macro present to
+    prove it was never opened. Refusing the whole document is the stronger
+    promise, and the wording gives somebody a way forward.
+  */
+  const offsite = watchEgress(page);
+  await openImport(page);
+  await page.setInputFiles('input[type=file]', `${DIR}/macros.docx`);
+
+  const alert = page.getByRole('alert');
+  await expect(alert).toBeVisible();
+  const text = (await alert.innerText()).trim();
+  expect(text).toMatch(/doesn.t import safely/i);
+  expect(text).toMatch(/without macros/i);
+  // Not an accusation, and nothing internal.
+  expect(text).not.toMatch(/malware|virus|malicious/i);
+  expect(text).not.toMatch(/\.ts:\d|at \w+ \(|vbaProject/i);
+
+  // Nothing imported, and nothing fetched.
+  await expect(page.getByRole('heading', { name: 'Imported' })).toBeHidden();
+  expect(offsite).toEqual([]);
 });
 
 test('nothing is written until the button is pressed', async ({ page }) => {
