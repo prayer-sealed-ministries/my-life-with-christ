@@ -428,9 +428,22 @@ export const OFFICE_DOCUMENT_REL =
 export const ACTIVE_MEMBERS = [
   'word/vbaproject.bin',
   'word/vbadata.xml',
-  'customui/',
   'word/activex/',
 ];
+
+/*
+  `customUI/` is deliberately NOT here.
+
+  Ribbon customisation is XML describing buttons. It can appear in a document
+  saved from a template, it carries nothing executable, and without a macro
+  project there is nothing for a button to call — the project itself is on the
+  list above, which is what actually matters.
+
+  The deciding argument is the wording. A document refused for this would be
+  told to "save a copy without macros", and that advice would not fix it,
+  because there were none. A refusal a person cannot act on is worse than the
+  thing it was guarding against.
+*/
 
 /**
  * Normalise a ZIP member path for comparison.

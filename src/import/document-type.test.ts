@@ -370,6 +370,31 @@ describe('DOCX is a package, not a zip', () => {
     expect(verdict.rejection).toBe('unsupported-feature');
   });
 
+  it('keeps reading a document with ribbon customisation but no macros', async () => {
+    /*
+      Ribbon XML describes buttons. It carries nothing executable, and with no
+      macro project there is nothing for a button to call. Refusing it would
+      also mean telling somebody to "save a copy without macros" when there
+      were none — advice they cannot act on.
+    */
+    const ribbon = await makeDocx(
+      [{ text: 'FICTIONAL-DOC handout' }],
+      [{ path: 'customUI/customUI.xml', content: '<customUI xmlns="http://fictional.invalid/ui"/>' }],
+    );
+    expect((await inspectDocxPackage(ribbon)).ok).toBe(true);
+  });
+
+  it('still refuses the macro project itself, alongside ribbon XML', async () => {
+    const both = await makeDocx(
+      [{ text: 'FICTIONAL-DOC handout' }],
+      [
+        { path: 'customUI/customUI.xml', content: '<customUI/>' },
+        { path: 'word/vbaProject.bin', content: 'FICTIONAL-DOC not a real macro' },
+      ],
+    );
+    expect((await inspectDocxPackage(both)).ok).toBe(false);
+  });
+
   it('keeps reading a document that merely contains a picture', async () => {
     // Church handouts are full of logos. The text parser never opens them, and
     // refusing them would refuse the documents this feature exists for.

@@ -140,7 +140,8 @@ zipped something.
 | `_rels/.rels` | required; its root relationship must name the main part |
 | Main part content type | the **ordinary, non-macro** WordprocessingML type |
 | Macro-enabled type, anywhere | refused |
-| `word/vbaProject.bin`, ActiveX, custom UI | refused |
+| `word/vbaProject.bin`, `word/vbaData.xml`, ActiveX | refused |
+| Ribbon customisation (`customUI/`) | **allowed** |
 | External root relationship | refused |
 | `<!DOCTYPE` / `<!ENTITY` in a structural part | refused |
 | Member paths | normalised; traversal, absolute, drive-letter and control characters refused; duplicates after normalisation refused |
@@ -149,6 +150,14 @@ zipped something.
 Images are allowed deliberately. Church handouts are full of logos and
 photographs, the text parser never opens them, and refusing them would refuse
 the very documents this feature exists to read.
+
+Ribbon customisation is allowed for a related reason. It is XML describing
+buttons, it carries nothing executable, and with no macro project there is
+nothing for a button to call — the project itself is refused, which is what
+matters. The deciding argument was the wording: a document refused for ribbon
+XML would be told to save a copy without macros, and that advice would not fix
+it, because there were none. A refusal a person cannot act on is worse than the
+thing it guards against.
 
 Only four small members are ever inflated: the content types, the root
 relationships, and the document body. Embedded images, fonts and headers are
