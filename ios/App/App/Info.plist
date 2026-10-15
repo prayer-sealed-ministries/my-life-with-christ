@@ -43,6 +43,8 @@
       </array>
     </dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>My Life With Christ uses the camera only when you choose to scan notes. Photos are read on this device and are not uploaded.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

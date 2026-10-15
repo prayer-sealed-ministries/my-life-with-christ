@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import PhotosUI
 import UIKit
 import Vision
 import VisionKit
@@ -101,10 +102,21 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func choose(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.pendingCall = call
-            // The photo library picker hands over only what was selected. The
-            // app never gains access to the library itself.
-            let picker = UIImagePickerController()
-            picker.sourceType = .photoLibrary
+            /*
+              PHPickerViewController, not UIImagePickerController.
+
+              The picker runs out of process and hands back only the one image
+              that was selected, so the app holds no photo-library permission
+              and Info.plist carries no NSPhotoLibraryUsageDescription — there
+              is nothing to ask for. This is the same choice the Android side
+              makes with ACTION_PICK_IMAGES, which matters: a journal that
+              promises little should not be reading someone's whole library to
+              scan one page of notes.
+            */
+            var configuration = PHPickerConfiguration()
+            configuration.filter = .images
+            configuration.selectionLimit = 1
+            let picker = PHPickerViewController(configuration: configuration)
             picker.delegate = self
             self.bridge?.viewController?.present(picker, animated: true)
         }
@@ -259,6 +271,30 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
 
 // MARK: - Picker delegates
 
+extension ScanNotesPlugin: PHPickerViewControllerDelegate {
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+
+        guard let provider = results.first?.itemProvider,
+              provider.canLoadObject(ofClass: UIImage.self) else {
+            // No selection is a cancellation, not a failure.
+            cancel()
+            return
+        }
+
+        provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+            // The provider answers on a background queue; everything after this
+            // writes a file and resolves a bridge call, so come back to main.
+            DispatchQueue.main.async {
+                self?.finish(with: object as? UIImage)
+            }
+        }
+    }
+}
+
+// The camera path still uses UIImagePickerController, on the devices where
+// VNDocumentCameraViewController is unavailable. It needs these delegates and
+// nothing else.
 extension ScanNotesPlugin: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     public func imagePickerController(
         _ picker: UIImagePickerController,
