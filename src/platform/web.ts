@@ -277,6 +277,8 @@ export const webSharer: Sharer = {
 };
 
 /** The web platform, assembled. */
+import { webPageScanner } from './web-scanner';
+
 export const webPlatform: Platform = {
   files: webFileSaver,
   picker: webFilePicker,
@@ -284,6 +286,7 @@ export const webPlatform: Platform = {
   unsavedWork: webUnsavedWorkGuard,
   sharer: webSharer,
   appLock: webAppLock,
+  scanner: webPageScanner,
 };
 
 /**

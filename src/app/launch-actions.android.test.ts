@@ -41,6 +41,11 @@ function androidString(value: string | null | undefined): string | null {
 }
 
 const NS = 'http://schemas.android.com/apk/res/android';
+/** The tools namespace, where `tools:node="remove"` lives. */
+const TOOLS_NS = 'http://schemas.android.com/tools';
+const toolsAttr = (node: Element | null | undefined, name: string): string | null =>
+  node?.getAttributeNS(TOOLS_NS, name) ?? null;
+
 const attr = (node: Element | null | undefined, name: string): string | null =>
   node?.getAttributeNS(NS, name) ?? null;
 
@@ -161,7 +166,22 @@ describe('what an outside intent may reach', () => {
     // serve the local webview. It does not: proved on an API 35 emulator by
     // removing it and watching the app launch, the assets serve, the lazily
     // imported Scripture chunk fetch and Fast Capture work, with no net::ERR.
-    expect(permissions).toEqual([]);
+    /*
+     * One permission is ours — CAMERA, for Scan notes, requested when someone
+     * taps Take photo and never at launch. The entries ML Kit would otherwise
+     * have merged in (INTERNET, ACCESS_NETWORK_STATE) are present only as
+     * `tools:node="remove"`, so they are stripped rather than granted:
+     * recognition is local and the app should not hold the permission that
+     * would let it be otherwise.
+     */
+    const granted = permissions.filter((name) => {
+      const node = [...manifest.querySelectorAll('uses-permission')].find(
+        (candidate) => attr(candidate, 'name') === name,
+      );
+      return node && toolsAttr(node, 'node') !== 'remove';
+    });
+    expect(granted).toEqual(['android.permission.CAMERA']);
+    expect(granted).not.toContain('android.permission.INTERNET');
   });
 
   it('keeps singleTask, so a second tap reaches the running app', () => {

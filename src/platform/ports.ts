@@ -201,6 +201,103 @@ export interface Sharer {
 
 import type { AppLock } from './app-lock';
 
+
+// ---------------------------------------------------------------------------
+// Scanning paper notes
+// ---------------------------------------------------------------------------
+
+/**
+ * One line the recogniser read, with where it sat on the page.
+ *
+ * `box` is normalised 0-1 from the top-left so the two engines agree on a
+ * coordinate system; Vision reports bottom-left origin and ML Kit reports
+ * pixels, and both are converted at the adapter rather than leaking a platform
+ * convention into the review screen.
+ */
+export interface RecognisedLine {
+  text: string;
+  box?: { x: number; y: number; width: number; height: number };
+  /**
+   * Only when the engine genuinely supplies it. Transient, for ordering and
+   * diagnostics — never persisted into a journal, because confidence is not
+   * truth and a stored number invites treating it as one.
+   */
+  confidence?: number;
+}
+
+/** What the device read off a page. Nothing here has touched the journal. */
+export interface Recognition {
+  /** Lines joined in reading order. This is what the review screen shows. */
+  text: string;
+  lines: RecognisedLine[];
+  imageWidth: number;
+  imageHeight: number;
+  /** `AppleVision` or `MLKitTextRecognitionV2`, for diagnostics only. */
+  engine: string;
+  /** Milliseconds the recognition itself took. */
+  elapsedMs: number;
+}
+
+/** A page the person captured or chose, held only long enough to review. */
+export interface ScannedPage {
+  /**
+   * The image as a data URL, for display in the review screen.
+   *
+   * Deliberately not a file path: the review UI must not be able to reach into
+   * the file system, and a path is also the thing most likely to end up in a
+   * log. The adapter holds the temporary file and deletes it on `discard`.
+   */
+  preview: string;
+  /** Opaque handle the adapter uses to find its own temporary copy. */
+  handle: string;
+  width: number;
+  height: number;
+  /**
+   * Set when the capture looks too blurred to read. The person is always
+   * allowed to proceed anyway — this warns, it does not refuse, and it never
+   * comments on anybody's handwriting.
+   */
+  blurWarning?: boolean;
+}
+
+/** Why a scan produced nothing. Each maps to wording a person can act on. */
+export type ScanFailure =
+  | { reason: 'cancelled' }
+  | { reason: 'no-text' }
+  | { reason: 'unreadable' }
+  | { reason: 'too-large' }
+  | { reason: 'permission-denied' }
+  | { reason: 'unsupported' }
+  | { reason: 'failed' };
+
+/**
+ * Reading text off a photograph of a page, on this device.
+ *
+ * The whole capability is deliberately shaped so that nothing it returns has
+ * been written anywhere. It acquires an image, it reads text from it, and it
+ * throws its own temporary copy away when told to. Putting approved text into a
+ * journal is the editor's job and happens only when a person says so.
+ *
+ * Recognition is local on every edition that supports it. There is no network
+ * path and no cloud fallback: if the device cannot read the page, the answer is
+ * that it could not read the page.
+ */
+export interface PageScanner {
+  /** False on the web, where there is no on-device recogniser to promise. */
+  readonly supported: boolean;
+  /** Photograph a page. Asks for camera permission only at this moment. */
+  capture(): Promise<ScannedPage | ScanFailure>;
+  /** Choose an existing photo through the system picker. */
+  choose(): Promise<ScannedPage | ScanFailure>;
+  /** Read the page. No journal data is written by this call. */
+  recognise(page: ScannedPage): Promise<Recognition | ScanFailure>;
+  /**
+   * Throw away our temporary copy. Safe to call twice, and it never touches a
+   * photo the person chose from their own library.
+   */
+  discard(page: ScannedPage): Promise<void>;
+}
+
 /**
  * Everything the application needs from the platform it is running on.
  *
@@ -220,4 +317,10 @@ export interface Platform {
    * edition cannot keep.
    */
   appLock: AppLock;
+  /**
+   * Optional paper-note scanning. `supported` is false where there is no
+   * on-device recogniser, and the editor hides Scan notes rather than offering
+   * something the edition cannot do.
+   */
+  scanner: PageScanner;
 }

@@ -1,0 +1,236 @@
+[
+  {
+    "height" : 2200,
+    "id" : "A-clean-print",
+    "image" : "A-clean-print.png",
+    "kind" : "printed",
+    "label" : "clean laser-printed page",
+    "truth" : "A-clean-print.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2214,
+    "id" : "B-phone-photo",
+    "image" : "B-phone-photo.png",
+    "kind" : "printed",
+    "label" : "phone photo of printed page",
+    "truth" : "B-phone-photo.txt",
+    "width" : 1736
+  },
+  {
+    "height" : 2314,
+    "id" : "C-rotated",
+    "image" : "C-rotated.png",
+    "kind" : "printed",
+    "label" : "slight rotation",
+    "truth" : "C-rotated.txt",
+    "width" : 1850
+  },
+  {
+    "height" : 2170,
+    "id" : "D-perspective",
+    "image" : "D-perspective.png",
+    "kind" : "printed",
+    "label" : "perspective distortion",
+    "truth" : "D-perspective.txt",
+    "width" : 1678
+  },
+  {
+    "height" : 2200,
+    "id" : "E-dim",
+    "image" : "E-dim.png",
+    "kind" : "printed",
+    "label" : "moderately dim lighting",
+    "truth" : "E-dim.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "F-shadow",
+    "image" : "F-shadow.png",
+    "kind" : "printed",
+    "label" : "shadow across page",
+    "truth" : "F-shadow.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "G-small-text",
+    "image" : "G-small-text.png",
+    "kind" : "printed",
+    "label" : "small text",
+    "truth" : "G-small-text.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "H-heading-body",
+    "image" : "H-heading-body.png",
+    "kind" : "printed",
+    "label" : "large heading plus body",
+    "truth" : "H-heading-body.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "I-bullets",
+    "image" : "I-bullets.png",
+    "kind" : "printed",
+    "label" : "bulleted sermon outline",
+    "truth" : "I-bullets.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "J-numbered",
+    "image" : "J-numbered.png",
+    "kind" : "printed",
+    "label" : "numbered outline",
+    "truth" : "J-numbered.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "K-scripture",
+    "image" : "K-scripture.png",
+    "kind" : "printed",
+    "label" : "multiple Scripture references",
+    "truth" : "K-scripture.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "L-mixed-case",
+    "image" : "L-mixed-case.png",
+    "kind" : "printed",
+    "label" : "mixed uppercase\/lowercase",
+    "truth" : "L-mixed-case.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "M-punctuation",
+    "image" : "M-punctuation.png",
+    "kind" : "printed",
+    "label" : "punctuation",
+    "truth" : "M-punctuation.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "N-two-column",
+    "image" : "N-two-column.png",
+    "kind" : "printed",
+    "label" : "two-column handout",
+    "truth" : "N-two-column.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2221,
+    "id" : "O-photocopy",
+    "image" : "O-photocopy.png",
+    "kind" : "printed",
+    "label" : "low-quality photocopy-style image",
+    "truth" : "O-photocopy.txt",
+    "width" : 1727
+  },
+  {
+    "height" : 2273,
+    "id" : "P-hard-blur",
+    "image" : "P-hard-blur.png",
+    "kind" : "printed",
+    "label" : "HARD: heavy motion blur",
+    "truth" : "P-hard-blur.txt",
+    "width" : 1795
+  },
+  {
+    "height" : 2200,
+    "id" : "Q-low-res",
+    "image" : "Q-low-res.png",
+    "kind" : "printed",
+    "label" : "HARD: low-resolution capture",
+    "truth" : "Q-low-res.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2200,
+    "id" : "R-jpeg",
+    "image" : "R-jpeg.png",
+    "kind" : "printed",
+    "label" : "HARD: heavy JPEG artefacts",
+    "truth" : "R-jpeg.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2236,
+    "id" : "S-very-dim",
+    "image" : "S-very-dim.png",
+    "kind" : "printed",
+    "label" : "HARD: very dim with shadow",
+    "truth" : "S-very-dim.txt",
+    "width" : 1747
+  },
+  {
+    "height" : 2183,
+    "id" : "T-severe-skew",
+    "image" : "T-severe-skew.png",
+    "kind" : "printed",
+    "label" : "HARD: severe perspective and blur",
+    "truth" : "T-severe-skew.txt",
+    "width" : 1674
+  },
+  {
+    "height" : 2200,
+    "id" : "U-hard-small",
+    "image" : "U-hard-small.png",
+    "kind" : "printed",
+    "label" : "HARD: small text, dim, blurred",
+    "truth" : "U-hard-small.txt",
+    "width" : 1700
+  },
+  {
+    "height" : 2218,
+    "id" : "HS1-noteworthy",
+    "image" : "HS1-noteworthy.png",
+    "kind" : "synthetic-handwriting",
+    "label" : "SYNTHETIC handwriting: neat print style",
+    "truth" : "HS1-noteworthy.txt",
+    "width" : 1724
+  },
+  {
+    "height" : 2227,
+    "id" : "HS2-bradley",
+    "image" : "HS2-bradley.png",
+    "kind" : "synthetic-handwriting",
+    "label" : "SYNTHETIC handwriting: casual print style",
+    "truth" : "HS2-bradley.txt",
+    "width" : 1735
+  },
+  {
+    "height" : 2215,
+    "id" : "HS3-marker",
+    "image" : "HS3-marker.png",
+    "kind" : "synthetic-handwriting",
+    "label" : "SYNTHETIC handwriting: marker style",
+    "truth" : "HS3-marker.txt",
+    "width" : 1720
+  },
+  {
+    "height" : 2212,
+    "id" : "HS4-cursive",
+    "image" : "HS4-cursive.png",
+    "kind" : "synthetic-handwriting",
+    "label" : "SYNTHETIC handwriting: cursive script",
+    "truth" : "HS4-cursive.txt",
+    "width" : 1716
+  },
+  {
+    "height" : 2215,
+    "id" : "HS5-chalk",
+    "image" : "HS5-chalk.png",
+    "kind" : "synthetic-handwriting",
+    "label" : "SYNTHETIC handwriting: rounded hand",
+    "truth" : "HS5-chalk.txt",
+    "width" : 1720
+  }
+]

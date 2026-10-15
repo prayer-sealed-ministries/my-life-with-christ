@@ -1,0 +1,28 @@
+{
+    "logs": [
+        {
+            "outputFile": "org.prayersealed.ocrlab.test.app-mergeDebugAndroidTestResources-2:/values-v18/values-v18.xml",
+            "map": [
+                {
+                    "source": "/Users/gmcas/.gradle/caches/8.14.3/transforms/b6ba2bb297ccd161482b09660f1ae75f/transformed/core-1.6.1/res/values-v18/values.xml",
+                    "from": {
+                        "startLines": "4,12",
+                        "startColumns": "0,0",
+                        "startOffsets": "146,562",
+                        "endLines": "11,19",
+                        "endColumns": "8,8",
+                        "endOffsets": "561,975"
+                    },
+                    "to": {
+                        "startLines": "2,10",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,475",
+                        "endLines": "9,17",
+                        "endColumns": "8,8",
+                        "endOffsets": "470,888"
+                    }
+                }
+            ]
+        }
+    ]
+}

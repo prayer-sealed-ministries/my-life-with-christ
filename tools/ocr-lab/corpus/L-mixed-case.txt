@@ -1,0 +1,6 @@
+FICTIONAL-COMPAT MIXED CASE
+
+ALL CAPS HEADING FOR THE MORNING
+Sentence case body text follows here.
+camelCase and PascalCase words appear.
+A Title In Headline Case Appears Here.

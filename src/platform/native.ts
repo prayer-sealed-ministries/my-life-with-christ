@@ -178,6 +178,8 @@ export const nativeSharer: Sharer = {
 const appLockForPlatform = () => (nativePlatform() === 'android' ? nativeAppLock : webAppLock);
 
 /** The native platform, assembled. */
+import { nativePageScanner } from './native-scan';
+
 export const nativePlatformAdapters: Platform = {
   files: nativeFileSaver,
   picker: nativeFilePicker,
@@ -185,4 +187,5 @@ export const nativePlatformAdapters: Platform = {
   unsavedWork: nativeUnsavedWorkGuard,
   sharer: nativeSharer,
   appLock: appLockForPlatform(),
+  scanner: nativePageScanner,
 };

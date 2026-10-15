@@ -1,0 +1,7 @@
+FICTIONAL-COMPAT Heading
+
+The Weight of a Single Word
+
+This paragraph sits beneath a large heading. The heading is set much larger
+than the body so that the recognizer has to cope with two very different text
+sizes on one page without losing either of them.

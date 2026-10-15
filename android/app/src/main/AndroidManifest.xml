@@ -1,5 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Scan notes: the camera, and only when asked.
+
+      Requested at the moment someone taps Take photo, never at launch and never
+      during onboarding. Denying it costs only that one button; choosing an
+      existing photo still works, and the rest of the app is untouched.
+
+      `required="false"` so the app still installs on a device without a camera.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
+      ML Kit arrives with permissions this app does not want and does not need.
+
+      Adding com.google.mlkit:text-recognition pulls in play-services-base and
+      play-services-basement, which merge INTERNET, ACCESS_NETWORK_STATE,
+      BIND_JOB_SERVICE and DUMP into an application that previously declared
+      none at all. Text recognition itself is entirely local — the bundled Latin
+      model was proven to recognise all 26 benchmark pages with airplane mode on
+      and every radio disabled — so the permissions are removed rather than
+      inherited.
+
+      This is not cosmetic. A journal that promises nothing leaves the device
+      should not ship holding the permission that would let it.
+
+      If recognition ever stops working after a dependency upgrade, the honest
+      response is to investigate what started needing the network, not to quietly
+      restore these lines.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.BIND_JOB_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.DUMP" tools:node="remove" />
+
 
     <application
         android:allowBackup="true"

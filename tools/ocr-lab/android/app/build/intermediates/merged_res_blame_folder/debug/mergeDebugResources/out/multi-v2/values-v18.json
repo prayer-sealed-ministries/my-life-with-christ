@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "org.prayersealed.ocrlab.app-mergeDebugResources-20:/values-v18/values-v18.xml",
+            "map": [
+                {
+                    "source": "/Users/gmcas/.gradle/caches/8.14.3/transforms/773a01b0764debea6dc17e4cb711e044/transformed/appcompat-1.6.1/res/values-v18/values-v18.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "48",
+                        "endOffsets": "99"
+                    }
+                }
+            ]
+        }
+    ]
+}
