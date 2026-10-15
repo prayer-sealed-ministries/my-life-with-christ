@@ -42,7 +42,26 @@ export {
   sermonNotesFormat,
   type SermonNotesFormat,
 };
-import { hasUsableText, parsePdf } from './pdf';
+import { parsePdf, type PdfScanning } from './pdf';
+import { MAX_SCANNED_PDF_OCR_PAGES } from './limits';
+import type { PageScanner } from '../platform/ports';
+
+/**
+ * The device's recogniser, in the shape the PDF reader expects.
+ *
+ * A failure is `null` — a page that could not be read — rather than an
+ * exception, because one unreadable page in a handout is a thing to tell
+ * somebody about, not a reason to refuse the whole document.
+ */
+function pdfScanning(scanner: PageScanner): PdfScanning {
+  return {
+    maxPages: MAX_SCANNED_PDF_OCR_PAGES,
+    async recognise(image) {
+      const result = await scanner.recognisePrepared(image);
+      return 'reason' in result ? null : result.text;
+    },
+  };
+}
 import { docxToText, parseDocx } from './docx';
 import { classifyDocument, inspectDocxPackage, inspectPdfActiveContent, refuse } from './document-type';
 
@@ -78,6 +97,20 @@ export interface SermonNotesProposal {
   };
   /** Pages read, for a PDF. Absent for the other formats. */
   pages?: number;
+  /**
+   * What happened page by page, for a PDF that held scanned pages.
+   *
+   * Absent when nothing was recognised, so an ordinary typed handout reviews
+   * exactly as it always has. Present means the person has to be told which
+   * pages were read by this device rather than typed — and, more importantly,
+   * which pages could not be read at all. A proposal that is quietly short of
+   * a page is data loss wearing the clothes of success.
+   */
+  scan?: {
+    recognisedPages: number[];
+    unreadablePages: number[];
+    skippedPages: number[];
+  };
   /** Characters of provided text, so a preview can say how much there is. */
   characters: number;
 }
@@ -268,6 +301,15 @@ export async function readSermonNotes(
   bytes: Uint8Array,
   rawFilename: string,
   mimeType?: string,
+  /**
+   * The device's own recogniser, for the scanned pages of a PDF.
+   *
+   * Passed in rather than imported so this module keeps no opinion about what
+   * platform it is on, and so a test can hand it a recogniser that counts how
+   * many times it was called — which is how "typed pages never reach it"
+   * becomes a fact rather than an intention.
+   */
+  scanner?: PageScanner,
 ): Promise<SermonNotesProposal> {
   const filename = safeFilename(rawFilename);
   const format = sermonNotesFormat(filename);
@@ -306,8 +348,14 @@ export async function readSermonNotes(
     const active = await inspectPdfActiveContent(bytes);
     if (!active.ok) refuse(active);
 
-    const extraction = await parsePdf(bytes);
-    if (!hasUsableText(extraction)) throw new ImportError(NO_READABLE_TEXT);
+    /*
+      Scanned pages are read on this device, and only the scanned ones.
+
+      A page that carries its own text is used exactly as written — the
+      recogniser is never asked about it. See `pdf-scan.ts` for why that is the
+      rule rather than an optimisation.
+    */
+    const extraction = await parsePdf(bytes, scanner ? pdfScanning(scanner) : undefined);
 
     // Deterministic page order, with a blank line between pages so a reader can
     // see where one ended. No attempt at columns or visual layout: a PDF has
@@ -319,6 +367,10 @@ export async function readSermonNotes(
       .join('\n\n');
     if (!body) throw new ImportError(NO_READABLE_TEXT);
     guardLength(body);
+
+    const recognisedAnything = extraction.recognisedPageNumbers.length > 0;
+    const somethingUnread =
+      extraction.unreadablePageNumbers.length > 0 || extraction.skippedPageNumbers.length > 0;
 
     return {
       material: {
@@ -332,6 +384,15 @@ export async function readSermonNotes(
       suggested: {},
       pages: extraction.pages.length + extraction.emptyPages,
       characters: body.length,
+      ...(recognisedAnything || somethingUnread
+        ? {
+            scan: {
+              recognisedPages: extraction.recognisedPageNumbers,
+              unreadablePages: extraction.unreadablePageNumbers,
+              skippedPages: extraction.skippedPageNumbers,
+            },
+          }
+        : {}),
     };
   }
 

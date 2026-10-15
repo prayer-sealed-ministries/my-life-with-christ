@@ -15,6 +15,9 @@ export const webPageScanner: PageScanner = {
   capture: unsupported,
   choose: unsupported,
   recognise: unsupported,
+  // The web has no on-device recogniser, so a scanned PDF page is reported as
+  // a page that could not be read rather than quietly skipped.
+  recognisePrepared: unsupported,
   async discard() {
     // Nothing was ever created, so there is nothing to throw away.
   },

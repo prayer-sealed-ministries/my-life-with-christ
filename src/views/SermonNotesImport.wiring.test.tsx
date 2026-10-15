@@ -155,7 +155,7 @@ describe('before anything is chosen', () => {
 
   it('reports a native picker failure instead of treating it as cancellation', async () => {
     const platform: Platform = {
-      scanner: { supported: false, capture: async () => ({ reason: 'unsupported' } as const), choose: async () => ({ reason: 'unsupported' } as const), recognise: async () => ({ reason: 'unsupported' } as const), discard: async () => {} },
+      scanner: { supported: false, capture: async () => ({ reason: 'unsupported' } as const), choose: async () => ({ reason: 'unsupported' } as const), recognise: async () => ({ reason: 'unsupported' } as const), recognisePrepared: async () => ({ reason: 'unsupported' } as const), discard: async () => {} },
       appLock: webAppLock,
       files: { save: async () => ({ status: 'cancelled' }) },
       picker: {

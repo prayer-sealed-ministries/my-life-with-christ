@@ -64,7 +64,7 @@ function fakePlatform(): Platform & { saved: OutgoingFile[]; printed: number } {
     },
     // Unsupported, which is what a platform with no App Lock reports. The
     // gate must start the app unchanged when this is the answer.
-    scanner: { supported: false, capture: async () => ({ reason: 'unsupported' } as const), choose: async () => ({ reason: 'unsupported' } as const), recognise: async () => ({ reason: 'unsupported' } as const), discard: async () => {} },
+    scanner: { supported: false, capture: async () => ({ reason: 'unsupported' } as const), choose: async () => ({ reason: 'unsupported' } as const), recognise: async () => ({ reason: 'unsupported' } as const), recognisePrepared: async () => ({ reason: 'unsupported' } as const), discard: async () => {} },
     appLock: webAppLock,
     files: {
       save: async (file) => {

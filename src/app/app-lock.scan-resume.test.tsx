@@ -82,6 +82,7 @@ function fakeScanner() {
       state.recognised += 1;
       return recognition;
     },
+    recognisePrepared: async () => ({ reason: 'unsupported' } as const),
     async discard(scanned: ScannedPage) {
       state.discarded.push(scanned.handle);
     },
@@ -315,6 +316,7 @@ describe('App Lock set to Immediately, with the camera open', () => {
         state.recognised += 1;
         return recognition;
       },
+      recognisePrepared: async () => ({ reason: 'unsupported' } as const),
       async discard() {},
     };
     const appState = fakeAppState();
