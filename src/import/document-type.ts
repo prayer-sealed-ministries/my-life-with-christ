@@ -35,6 +35,7 @@
 
 import { ImportError } from './limits';
 import { DecompressionLimit, listZipPaths, readZipLimited } from './zip-limits';
+import { findActiveContent } from './pdf-active-content';
 
 /**
  * Ceilings for the structural parts of a Word package.
@@ -354,6 +355,19 @@ export function classifyDocument(input: DocumentInput): TypeVerdict {
   }
 
   return ok(claimed);
+}
+
+/**
+ * Does this PDF want to run something?
+ *
+ * Separate from the structural check and asynchronous, because it inflates
+ * compressed streams: most of a modern PDF lives inside them, and a scan that
+ * never opens one reports clean for the wrong reason.
+ */
+export async function inspectPdfActiveContent(bytes: Uint8Array): Promise<TypeVerdict> {
+  const finding = await findActiveContent(bytes);
+  if (finding.found.length > 0) return no('active-content', TYPE_MESSAGES.activePdf);
+  return ok('pdf');
 }
 
 /** Refuse, as the error the import paths already raise. */

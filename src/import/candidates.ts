@@ -12,7 +12,7 @@ import { sha256 } from '../export/zip';
 import type { Entry, EntryKind, EntrySource, ScriptureRef } from '../types';
 import { detectDate, detectKind, detectReferences, labelRef, type DetectedRef } from './detect';
 import { docxToText, parseDocx } from './docx';
-import { classifyDocument, inspectDocxPackage, refuse } from './document-type';
+import { classifyDocument, inspectDocxPackage, inspectPdfActiveContent, refuse } from './document-type';
 import {
   ImportError,
   MAX_BODY_CHARS,
@@ -178,6 +178,11 @@ export async function parseDocument(
   const pageOf = new Map<number, number>();
 
   if (format === 'pdf') {
+    // A handout's words are all this needs. A document that wants to run a
+    // script or launch a program is refused before it is opened.
+    const active = await inspectPdfActiveContent(bytes);
+    if (!active.ok) refuse(active);
+
     const extraction = await parsePdf(bytes);
     if (!hasUsableText(extraction)) {
       throw new ImportError(

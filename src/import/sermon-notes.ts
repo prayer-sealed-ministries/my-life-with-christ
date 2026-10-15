@@ -44,7 +44,7 @@ export {
 };
 import { hasUsableText, parsePdf } from './pdf';
 import { docxToText, parseDocx } from './docx';
-import { classifyDocument, inspectDocxPackage, refuse } from './document-type';
+import { classifyDocument, inspectDocxPackage, inspectPdfActiveContent, refuse } from './document-type';
 
 /** The identifier a structured file must carry to be one of these. */
 export const SERMON_NOTES_FORMAT = 'my-life-with-christ-sermon-notes';
@@ -303,6 +303,9 @@ export async function readSermonNotes(
   const digest = await sha256(bytes);
 
   if (format === 'pdf') {
+    const active = await inspectPdfActiveContent(bytes);
+    if (!active.ok) refuse(active);
+
     const extraction = await parsePdf(bytes);
     if (!hasUsableText(extraction)) throw new ImportError(NO_READABLE_TEXT);
 

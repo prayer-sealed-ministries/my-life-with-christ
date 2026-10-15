@@ -68,7 +68,42 @@ agreement and refused ordinary sermon-notes JSON. The existing tests caught it.
 | Termination | a final `%%EOF` must exist |
 | Tail | only whitespace may follow it, and not much |
 | Cross-reference | a `startxref` must be present |
+| Active content | lexed name objects, **inside compressed streams too** |
 | Parser | pdf.js must then open it; any failure refuses |
+
+### Active content
+
+Refused: `/JS`, `/JavaScript`, `/Launch`, `/EmbeddedFile`, `/RichMedia`,
+`/XFA`, `/Movie`, `/Sound`, `/3D`.
+
+Deliberately **allowed**: `/XObject`, which is in virtually every PDF with an
+image; `/URI`, an ordinary hyperlink, because church handouts are full of them
+and nothing here follows one; and `/OpenAction` and `/AA`, because a document
+that opens at a particular page is normal — they are dangerous only as a
+trigger for something already on the list above.
+
+**This is not a substring search, and could not be.** Searching for the text
+`/JS` is wrong in both directions:
+
+- *False positives.* A handout about a programming course contains the word
+  JavaScript in its visible text; the key `/JSON` contains `/JS`.
+- *False negatives, which are worse.* Names may be written with hex escapes —
+  `/J#53` is `/JS` — and most of a modern PDF lives inside compressed streams,
+  where a raw search sees only deflate output. A scanner that never inflates
+  one reports clean.
+
+So names are **lexed**: strings, hex strings and comments are skipped so their
+contents cannot be mistaken for structure, `#xx` escapes are decoded, and
+FlateDecode streams are inflated and scanned with the same lexer, under byte
+and count ceilings. The scan reports how many streams it actually opened, so a
+run that inflated nothing cannot be mistaken for a document that has nothing.
+
+Two bugs were found by writing the tests rather than by reading the code: the
+`<<` of a dictionary was being read as the start of a hex string, which
+swallowed every name inside it; and the end-of-line that writers conventionally
+place before `endstream` was being counted as stream data, which left one byte
+too many on every payload and made every compressed stream fail to inflate.
+Both reported clean.
 
 Offset zero is the whole point: `%PDF-` appearing somewhere inside a file is
 exactly what a polyglot arranges. `MZ…%PDF-`, `PK…%PDF-` and
@@ -195,10 +230,11 @@ Prayer. File type never decides authorship; the route does.
 - **Checks are structural, not semantic.** A genuine, well-formed Word document
   containing something unpleasant in its prose is a document, and this layer
   will pass it. What it stops is files that are not what they claim to be.
-- **Active-content detection for PDF is currently at the structural layer**
-  (header, termination, tail, parser) rather than a full name-object lexer over
-  inflated object streams. That is the next increment, and the shape it should
-  take is recorded below.
+- **Active-content detection is structural, not exhaustive.** It reads name
+  objects, including inside FlateDecode streams, under bounds. A document using
+  a filter chain this build does not inflate (LZW, ASCII85, a Crypt filter) is
+  not searched inside those streams; it still has to satisfy every other check
+  and the parser.
 - **No antivirus, no quarantine, no server.** This application is local-first
   and stores no uploaded file; the controls that make sense for a server upload
   pipeline were deliberately not copied.
