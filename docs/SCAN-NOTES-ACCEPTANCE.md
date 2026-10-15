@@ -9,6 +9,77 @@ stated.
 
 ---
 
+## App Lock and the camera — resolved 2026-10-15
+
+The decision that was waiting here has been made, and it was neither of the two
+obvious options.
+
+**The problem.** Opening the camera or the photo picker backgrounds the app. With
+App Lock on and its timeout at "Immediately" — the default when somebody first
+switches App Lock on — the journal locked the moment that happened, and the gate
+unmounts the journal rather than hiding it. The scan session lived inside that
+subtree, so coming back with a photograph destroyed it.
+
+**What was not done.** Staying unlocked while the camera is open. A person who
+chose "Immediately" asked for the journal to be unreadable the moment the app
+leaves the screen, and a scan in progress does not change what they asked for.
+Nothing exempts the camera, the picker, Vision, ML Kit or this feature from the
+timeout policy.
+
+**What was done.** The photograph now waits outside the React tree, in
+`src/scan/pending.ts`, so the gate can take the tree down without taking the
+page with it. After a successful unlock the editor offers it back.
+
+Three properties make that safe rather than merely convenient:
+
+- **No recognised text is ever held behind the lock.** Recognition is started
+  only by the mounted sheet, which does not exist while the gate is shut. On
+  resume the page is read again from scratch. The record has nowhere to put a
+  transcription, and `pending.test.ts` pins its shape so it cannot grow one.
+- **A page is only ever offered back to the editor that took it.** A saved entry
+  is matched by id; unsaved writing by its draft record, falling back to the
+  address only while one side has not written a draft yet. The editor also
+  reopens the exact draft the page was taken for, so the scan lands in the
+  person's unfinished note rather than in a blank one beside it.
+- **It is bounded.** One page at a time, ten minutes, deleted on cancel, on
+  accept, on being replaced, when it expires, or by the sweep at the next cold
+  start — which now removes everything in the scan directory, because nothing
+  there can belong to a process that is only now starting.
+
+The cost is stated plainly: a photograph is no longer deleted the instant the
+screen goes away, because "the screen went away" is exactly what a lock looks
+like. It is app-private, mode 0600, and bounded by the rules above.
+
+### Proven on a device, not only in jsdom
+
+Driven through the real APK on the emulator (API 35, arm64), over the app's own
+WebView, with App Lock on and its timeout at "Immediately":
+
+| Step | Result |
+| --- | --- |
+| Editor offers **Scan notes** | yes, with the on-device privacy line |
+| System picker returns a page | yes; the picker itself says the app can only access the photos you select |
+| Return from picker | **"App locked"** — no journal, no notes, no transcription |
+| Temporary page while locked | one file, `0600`, UUID name, app-private cache |
+| Wrong PIN | still locked; no review, no image, no notes; page not thrown away |
+| Correct PIN | review resumes, source image shown, **and the typed draft comes back with it** |
+| Use text | notes become the typed text + blank line + the edited transcription |
+| Temp file after accept | gone |
+| Cancel after editing and choosing | notes unchanged; temp file gone |
+| Whole flow in airplane mode | passes, device unable to reach 8.8.8.8 |
+| `logcat` for scanned prose | 0 occurrences of any synthetic marker, 0 scan paths |
+| ML Kit initialised at launch | no — 0 log lines until a page is scanned |
+
+Ten mutations were applied to the new boundary and every one was watched
+failing, including "bypass the lock while a scan is pending", "show the page
+before the unlock", "throw the page away whenever the app locks", "attach the
+page to a different entry" and "write the recognised text before Use text".
+
+One of those mutations exposed a defect in the mutation harness itself: a
+mutation that stopped the suite compiling was being scored as PROVEN, because
+the run "failed". It proved nothing — no assertion had been evaluated. The
+harness now requires that tests actually ran and that at least one failed.
+
 ## What needs a decision
 
 **1. App Lock and the camera, on Android.** Opening the camera or the photo
