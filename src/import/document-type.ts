@@ -100,7 +100,9 @@ export const TYPE_MESSAGES = {
   macroWord:
     'This Word document contains features this app doesn\u2019t import safely. Save a copy as a standard .docx file without macros and try again.',
   damaged: 'This document appears to be damaged and couldn’t be read. Nothing was imported.',
-  encryptedPdf: 'This PDF is password-protected and can’t be imported here. Nothing was imported.',
+  // The encrypted case is detected by the parser, which is the only thing that
+  // can tell a locked document from a broken one, so its wording lives beside
+  // that detection in `pdf.ts` — one sentence rather than two that can drift.
   activePdf:
     'This PDF contains interactive features this app doesn’t open. Nothing was imported.',
 } as const;

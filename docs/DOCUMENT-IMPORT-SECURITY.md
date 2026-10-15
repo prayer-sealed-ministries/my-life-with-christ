@@ -168,7 +168,7 @@ Plain sentences that say nothing happened, and do not accuse anybody:
 - *This file is named as a Word document, but its contents are not a supported .docx file. Nothing was imported.*
 - *This Word document contains features this app doesn't import safely. Save a copy as a standard .docx file without macros and try again.*
 - *This document appears to be damaged and couldn't be read. Nothing was imported.*
-- *This PDF is password-protected and can't be imported here. Nothing was imported.*
+- *This PDF is password-protected and can’t be imported here. Nothing was imported.* — raised by the parser, which is the only thing that can tell a locked document from a broken one.
 
 No message says "malware". Internally the reason is one of `type-mismatch`,
 `malformed`, `unsupported-feature`, `active-content`, `encrypted` or

@@ -43,6 +43,10 @@
 
 import { ImportError, MAX_PDF_PAGES, MAX_TEXT_CHARS } from './limits';
 
+/** Said when a document is locked rather than broken. */
+export const ENCRYPTED_PDF =
+  'This PDF is password-protected and can\u2019t be imported here. Nothing was imported.';
+
 export interface PdfPage {
   /** 1-based. */
   page: number;
@@ -159,8 +163,18 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
   let document;
   try {
     document = await loadingTask.promise;
-  } catch {
+  } catch (cause) {
     await loadingTask.destroy().catch(() => undefined);
+    /*
+      A password-protected PDF is a different situation from a damaged one, and
+      somebody holding a locked handout can act on being told which it is. The
+      library signals it by name rather than by type, so the name is what is
+      read — and nothing else from the exception reaches the person, because an
+      exception can carry a path or a fragment of the document.
+    */
+    if (cause instanceof Error && cause.name === 'PasswordException') {
+      throw new ImportError(ENCRYPTED_PDF);
+    }
     throw new ImportError('That PDF could not be opened. It may be damaged or password-protected.');
   }
 
