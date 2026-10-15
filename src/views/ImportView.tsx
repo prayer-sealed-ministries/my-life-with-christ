@@ -118,7 +118,7 @@ export default function ImportView() {
       setMessage(`Reading ${file.name}.`);
 
       try {
-        const parsed = await parseDocument(file.bytes, file.name);
+        const parsed = await parseDocument(file.bytes, file.name, file.mimeType);
         const existing = await storage.listEntries();
         const report = await findDuplicates(parsed, parsed.candidates, existing);
 

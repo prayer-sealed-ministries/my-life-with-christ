@@ -237,7 +237,9 @@ describe('ImportView — refusals are explained', () => {
     await choose('broken.docx', 'this is not a zip archive at all');
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toMatch(/damaged|not a readable/i);
+    expect(alert.textContent).toMatch(
+      /named as a Word document, but its contents are not a supported .docx/i,
+    );
     // No stack, no offsets, no paths.
     expect(alert.textContent).not.toMatch(/at .*\(|\.ts:|RangeError|byte \d/);
   });

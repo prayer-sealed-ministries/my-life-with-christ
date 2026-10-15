@@ -187,13 +187,18 @@ describe('docx', () => {
 
   it('refuses a file that is not a Word document', async () => {
     await expect(parseDocument(bytes('this is not a zip'), 'fake.docx')).rejects.toThrow(
-      /not a readable Word document|damaged/i,
+      // The refusal now comes from the type check rather than from the ZIP
+      // reader: a file named .docx that is not a package is refused before
+      // anything tries to open it as one.
+      /named as a Word document, but its contents are not a supported .docx/i,
     );
   });
 
   it('refuses an archive with no document body', async () => {
     const file = await makeDeflatedZip([{ path: 'other.xml', content: bytes('<x/>') }]);
-    await expect(parseDocument(file, 'empty.docx')).rejects.toThrow(/does not look like a Word/i);
+    await expect(parseDocument(file, 'empty.docx')).rejects.toThrow(
+      /named as a Word document, but its contents are not a supported .docx/i,
+    );
   });
 
   it('reads a genuinely deflated document, not only a stored one', async () => {

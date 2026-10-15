@@ -109,6 +109,16 @@ export interface PickedFile {
   /** The user-visible name. Path components are stripped before it is stored. */
   name: string;
   bytes: Uint8Array;
+  /**
+   * What the provider said the file is, when it said anything.
+   *
+   * Optional, untrusted, and frequently absent or generic — operating-system
+   * file providers routinely return nothing or `application/octet-stream`.
+   * Treated as one more signal that must agree when it is specific, and as no
+   * evidence at all when it is not. It is never stored in the journal: it is a
+   * fact about one pick, not about the material.
+   */
+  mimeType?: string;
 }
 
 /**

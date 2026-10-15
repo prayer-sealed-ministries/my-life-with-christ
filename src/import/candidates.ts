@@ -12,6 +12,7 @@ import { sha256 } from '../export/zip';
 import type { Entry, EntryKind, EntrySource, ScriptureRef } from '../types';
 import { detectDate, detectKind, detectReferences, labelRef, type DetectedRef } from './detect';
 import { docxToText, parseDocx } from './docx';
+import { classifyDocument, inspectDocxPackage, refuse } from './document-type';
 import {
   ImportError,
   MAX_BODY_CHARS,
@@ -136,7 +137,11 @@ async function toCandidate(
  * @param bytes the file's contents, already read by the caller
  * @param rawName the name the browser reported
  */
-export async function parseDocument(bytes: Uint8Array, rawName: string): Promise<ParsedDocument> {
+export async function parseDocument(
+  bytes: Uint8Array,
+  rawName: string,
+  mimeType?: string,
+): Promise<ParsedDocument> {
   const filename = safeFilename(rawName);
   const format = formatFromName(filename);
   if (!format) {
@@ -152,6 +157,18 @@ export async function parseDocument(bytes: Uint8Array, rawName: string): Promise
       `That file is ${describeBytes(bytes.byteLength)}, larger than the ${describeBytes(MAX_FILE_BYTES)} import limit.`,
     );
   }
+
+  /*
+    What the bytes are, before any parser is trusted with them.
+
+    Until this ran, the extension alone decided which parser to use: a file
+    named `.pdf` reached pdf.js whatever was inside it. The verdict has to be
+    taken here rather than inside each parser, because the point is to refuse
+    a file BEFORE handing it to code that is designed to interpret structure.
+  */
+  const verdict = classifyDocument({ name: filename, bytes, mimeType });
+  if (!verdict.ok) refuse(verdict);
+  if (verdict.kind !== format) refuse({ ...verdict, ok: false, rejection: 'type-mismatch' });
 
   const notices: string[] = [];
   const fileFingerprint = await sha256(bytes);
@@ -200,6 +217,9 @@ export async function parseDocument(bytes: Uint8Array, rawName: string): Promise
   } else {
     let text: string;
     if (format === 'docx') {
+      // A ZIP is not a Word document. The package has to say so itself.
+      const packaged = await inspectDocxPackage(bytes);
+      if (!packaged.ok) refuse(packaged);
       text = docxToText(await parseDocx(bytes));
     } else {
       text = new TextDecoder().decode(bytes);
