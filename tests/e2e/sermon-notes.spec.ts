@@ -254,16 +254,27 @@ test.describe('E — a file that cannot be used', () => {
     await expect(page.getByRole('button', { name: 'Use these notes' })).toHaveCount(0);
   });
 
-  test('refuses a scanned PDF in words a person can act on', async ({ page }) => {
+  test('explains a PDF it could read nothing from, and writes nothing', async ({ page }) => {
+    /*
+      Scanned pages ARE read now — on a phone, by the device's own recogniser.
+      The browser has none, so this fixture reaches the end of every path there
+      is and produces nothing, which is what this asserts.
+
+      The wording changed with the feature: it says what happened rather than
+      naming a capability, because the person's next step is the same whether
+      the page was blank, too faint, or on a device that cannot read pictures.
+      Claiming "recognition is not available yet" is simply no longer true.
+    */
     test.setTimeout(90_000);
     await newEntry(page);
     await choose(page, 'scanned.pdf');
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible({ timeout: 30_000 });
-    // What it is, then what we cannot do about it — in that order.
-    await expect(alert).toContainText('scanned pages rather than selectable text');
-    await expect(alert).toContainText('text recognition is not available yet');
+    await expect(alert).toContainText('No readable text was found in this PDF');
+    await expect(alert).toContainText('a clearer copy may work better');
+    // And nothing it says is a promise this app no longer keeps.
+    await expect(alert).not.toContainText('not available yet');
     expect(await entryCount(page)).toBe(0);
   });
 });
