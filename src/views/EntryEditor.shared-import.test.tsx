@@ -111,9 +111,10 @@ describe('a shared document opens for review, and only for review', () => {
     offerIncomingDocument(handout({ name: 'photo.jpg', mimeType: 'image/jpeg' }));
     mount(db);
 
-    expect(
-      await screen.findByText(/\.txt, \.md, \.json or text-based \.pdf/),
-    ).toBeInTheDocument();
+    // Scoped to the alert: the same sentence is also announced in a polite
+    // live region, so an unscoped query matches twice and resolves neither.
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/\.txt, \.md, \.json, \.docx or text-based \.pdf/);
     expect(await journal(db)).toEqual({ entries: [], drafts: [] });
   });
 });

@@ -101,6 +101,7 @@
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="application/json" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
             </intent-filter>
 
             <!-- "Open in", from a file manager or a mail attachment. -->
@@ -112,6 +113,7 @@
                 <data android:scheme="content" android:mimeType="text/markdown" />
                 <data android:scheme="content" android:mimeType="application/json" />
                 <data android:scheme="content" android:mimeType="application/pdf" />
+                <data android:scheme="content" android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
             </intent-filter>
 
             <!-- Long-press the app icon. See res/xml/shortcuts.xml. -->

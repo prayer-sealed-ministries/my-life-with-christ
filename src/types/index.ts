@@ -289,8 +289,15 @@ export interface EntrySource {
  * reader's own file on their own disk.
  */
 export interface SourceMaterial {
-  /** What the material was read out of. */
-  format: 'txt' | 'markdown' | 'pdf' | 'sermon-notes-json';
+  /**
+   * What the material was read out of.
+   *
+   * `docx` was added when churches began handing people ordinary Word
+   * documents. Calling one `txt` because extraction produced text would be a
+   * lie on the record about where somebody's words came from, and the record
+   * is the thing this application exists to keep.
+   */
+  format: 'txt' | 'markdown' | 'pdf' | 'docx' | 'sermon-notes-json';
   /** The name of the file it came from, as the user saw it. Never a path. */
   filename: string;
   /** ISO timestamp of the import. */

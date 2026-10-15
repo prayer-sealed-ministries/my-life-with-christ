@@ -59,6 +59,7 @@ export const SHARED_MIME_TYPES = [
   'text/markdown',
   'application/json',
   'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
 
 /** Where a media type can stand in for a missing or unhelpful extension. */
@@ -69,6 +70,7 @@ const EXTENSION_FOR_MIME: Record<string, string> = {
   'application/json': '.json',
   'text/json': '.json',
   'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
 };
 
 /** `%PDF-`, which every PDF starts with. */
@@ -141,7 +143,7 @@ export function acceptIncomingDocument(incoming: IncomingDocument): AcceptedDocu
 
   if (!format) {
     throw new ImportError(
-      'Sermon notes can be a .txt, .md, .json or text-based .pdf file. That file is something else.',
+      'Sermon notes can be a .txt, .md, .json, .docx or text-based .pdf file. That file is something else.',
     );
   }
 

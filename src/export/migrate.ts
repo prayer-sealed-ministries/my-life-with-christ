@@ -101,7 +101,7 @@ function preserveRecordExtensions(
 
 const SOURCE_FORMATS = new Set(['txt', 'markdown', 'docx', 'pdf']);
 
-const MATERIAL_FORMATS = new Set(['txt', 'markdown', 'pdf', 'sermon-notes-json']);
+const MATERIAL_FORMATS = new Set(['txt', 'markdown', 'pdf', 'docx', 'sermon-notes-json']);
 
 /**
  * Read a block of provided material, or nothing.

@@ -77,8 +77,12 @@ describe('it offers to open exactly what it can read', () => {
     }
   });
 
-  it('does not claim DOCX, which the sermon importer does not read', () => {
-    expect(declared()).not.toContain(
+  it('claims DOCX, because the sermon importer now reads one', () => {
+    // Churches hand out Word documents. The manifest may claim a type exactly
+    // when the importer can open it, and not a moment before: appearing in the
+    // share sheet for a file this app refuses is a promise broken at the point
+    // somebody takes it up.
+    expect(declared()).toContain(
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     );
   });
