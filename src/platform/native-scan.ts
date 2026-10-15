@@ -14,6 +14,7 @@
 import { registerPlugin } from '@capacitor/core';
 
 import type { PageScanner, Recognition, ScanFailure, ScannedPage } from './ports';
+import { nativePlatform } from './runtime';
 
 /**
  * What the native plugins implement.
@@ -169,15 +170,23 @@ export const nativePageScanner: PageScanner = {
 /**
  * Sweep temporary scans a previous run left behind.
  *
- * Called once at startup. Scoped to our own scan directory — it never deletes
+ * Called once at startup, and a no-op off native, where there is no plugin and
+ * nothing was ever written. Scoped to our own scan directory — it never deletes
  * anything a person chose from their own photo library, and never touches the
  * rest of the cache.
+ *
+ * A crash mid-scan is the case this exists for: the sheet never got to call
+ * `discard`, so a photograph of somebody's notebook would otherwise sit in the
+ * cache until the OS felt like reclaiming it.
  */
 export async function cleanupStaleScans(): Promise<number> {
+  // `null` means not a native shell: no plugin, and nothing was ever written.
+  if (nativePlatform() === null) return 0;
   try {
     const { removed } = await ScanNotes.cleanupStale();
     return removed;
   } catch {
+    // Startup must not fail because a tidy-up did. The next launch tries again.
     return 0;
   }
 }
