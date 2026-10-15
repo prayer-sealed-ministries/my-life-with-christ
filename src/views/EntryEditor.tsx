@@ -28,6 +28,12 @@ import { CollapseIcon, ExpandIcon } from '../components/icons';
 import { Markdown } from '../components/Markdown';
 import { ScanNotes } from './ScanNotes';
 import {
+  expiredPendingScan,
+  forgetPendingScan,
+  resumablePendingScan,
+  type ScanOwner,
+} from '../scan/pending';
+import {
   applyToField,
   SCAN_PARSER_VERSION,
   SCAN_SOURCE_FILENAME,
@@ -440,7 +446,58 @@ export default function EntryEditor({
   const { scanner } = usePlatform();
 
   const [form, setForm] = useState<FormState | null>(null);
-  const [scanning, setScanning] = useState(false);
+
+  /**
+   * Which editor a scan belongs to.
+   *
+   * Read fresh each time rather than memoised: `draftId` is a ref that is
+   * filled in by the first autosave, so a scan started after somebody has
+   * typed carries the draft's id and a scan started on an untouched page does
+   * not. Both are correct, and both have to be the value at that moment.
+   *
+   * The address comes from `window.location.hash` because that is the thing
+   * that genuinely survives a lock — the gate unmounts the router, the hash
+   * stays, and the router reads it again on the way back.
+   */
+  const scanOwner = (): ScanOwner => ({
+    entryId,
+    draftId: draftId.current ?? undefined,
+    route: window.location.hash,
+  });
+
+  /**
+   * Open the scan sheet straight away when a photograph is waiting.
+   *
+   * This is the other half of the App Lock round trip: the camera backgrounded
+   * the app, the lock unmounted this editor, and the page has been waiting
+   * outside the tree ever since. A lazy initialiser rather than an effect, so
+   * the sheet is there in the first commit and the person does not watch the
+   * editor appear and then rearrange itself.
+   */
+  const [scanning, setScanning] = useState(() =>
+    Boolean(
+      resumablePendingScan(
+        { entryId, draftId: draftParam ?? undefined, route: window.location.hash },
+        Date.now(),
+      ),
+    ),
+  );
+  /**
+   * Delete a photograph nobody came back for.
+   *
+   * A page waiting through an App Lock round trip is held outside the React
+   * tree, so nothing unmounts it away. That is the point, and it is also why
+   * it needs an owner: this is the sweep for the person who photographed a
+   * page, locked the phone and went to lunch. The cold-start sweep catches the
+   * rest.
+   */
+  useEffect(() => {
+    const stale = expiredPendingScan(Date.now());
+    if (!stale) return;
+    forgetPendingScan();
+    void scanner.discard(stale.page);
+  }, [scanner]);
+
   const currentEntryId = useRef(entryId);
   currentEntryId.current = entryId;
   const mounted = useRef(false);
@@ -1010,8 +1067,20 @@ export default function EntryEditor({
         // draft IS the entry as far as the reader is concerned.
         let resuming;
         let resumedParent: Entry | undefined;
+        /*
+          A photograph waiting from before an App Lock round trip names the
+          draft it was taken for, and reopening that draft is the difference
+          between the scan landing in the person's unfinished note and landing
+          in a blank one beside it. The id is a record of what this process
+          actually did a moment ago, not a guess about which entry was meant.
+        */
+        const waitingFor = resumablePendingScan(
+          { entryId, draftId: draftParam ?? undefined, route: window.location.hash },
+          Date.now(),
+        )?.owner.draftId;
         try {
-          resuming = draftParam ? await storage.getDraft(draftParam) : undefined;
+          const resumeId = draftParam ?? waitingFor;
+          resuming = resumeId ? await storage.getDraft(resumeId) : undefined;
           if (resuming?.entryId) resumedParent = await storage.getEntry(resuming.entryId);
         } catch (cause) {
           if (!cancelled) {
@@ -2213,6 +2282,7 @@ export default function EntryEditor({
               notes: form.notes.trim().length > 0,
               providedNotes: (form.sourceMaterial?.body ?? '').trim().length > 0,
             }}
+            owner={scanOwner()}
             onAccept={acceptScanned}
             onClose={() => setScanning(false)}
           />
