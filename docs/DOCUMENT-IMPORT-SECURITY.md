@@ -212,6 +212,28 @@ logged.
 
 ---
 
+## Malformed documents
+
+A deterministic corpus damages a valid PDF and a valid Word package in every
+way a broken document actually arrives — truncated at six points, two dozen
+single-byte flips, runs of bytes zeroed, size fields made impossible, XML cut
+off mid-tag, a relationship with no target — and drives all of it through both
+doorways.
+
+The claim is not that each one is refused for the right reason. It is the
+weaker and more important one: the importer always ends either in a proposal
+or in a sentence a person can read, never in a crash, an unbounded allocation
+or a half-written journal. Every refusal must be an `ImportError` whose message
+contains no file path, stack frame, offset or library type name.
+
+It found a leak immediately. Opening a PDF was wrapped, but reading its pages
+was not, so a document damaged deeply enough threw pdf.js's own
+`UnknownErrorException` straight out to the caller, carrying whatever the
+library had put in its message. Page extraction now refuses in the same words
+as any other damaged file.
+
+---
+
 ## Review before write
 
 Unchanged, and worth restating: importing produces a **proposal**. Nothing

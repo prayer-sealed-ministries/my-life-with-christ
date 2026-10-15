@@ -200,6 +200,25 @@ export async function parsePdf(data: Uint8Array): Promise<PdfExtraction> {
         throw new ImportError('That PDF contains more text than can be imported at once.');
       }
     }
+  } catch (cause) {
+    /*
+      Opening a document is not the only place the library throws.
+
+      A page that is damaged deeply enough — a broken cross-reference, a
+      content stream that will not decode — throws out of getPage or
+      getTextContent, and before this those exceptions escaped raw. The
+      malformed-document corpus found it: an UnknownErrorException reached the
+      caller instead of a sentence, carrying whatever the library had put in
+      its message.
+
+      Our own refusals pass through unchanged; anything else becomes the same
+      content-free sentence a damaged file always gets.
+    */
+    if (cause instanceof ImportError) throw cause;
+    if (cause instanceof Error && cause.name === 'PasswordException') {
+      throw new ImportError(ENCRYPTED_PDF);
+    }
+    throw new ImportError('That PDF could not be read. It appears to be damaged.');
   } finally {
     // Destroying the loading task tears down the document and its worker.
     await loadingTask.destroy().catch(() => undefined);
