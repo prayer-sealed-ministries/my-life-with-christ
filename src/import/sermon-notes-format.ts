@@ -17,7 +17,7 @@
  * Nothing here parses anything, and nothing here may grow to.
  */
 
-export type SermonNotesFormat = 'txt' | 'markdown' | 'pdf' | 'sermon-notes-json';
+export type SermonNotesFormat = 'txt' | 'markdown' | 'pdf' | 'docx' | 'sermon-notes-json';
 
 /**
  * The file, before anything is read.
@@ -42,6 +42,10 @@ export function sermonNotesFormat(filename: string): SermonNotesFormat | null {
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
   if (lower.endsWith('.txt')) return 'txt';
   if (lower.endsWith('.pdf')) return 'pdf';
+  // Churches hand out Word documents. The route decides authorship, not the
+  // file type: anything imported here is somebody else's material and goes to
+  // Provided notes, exactly as a .txt or a PDF taken through this door does.
+  if (lower.endsWith('.docx')) return 'docx';
   return null;
 }
 
@@ -52,8 +56,10 @@ export const SERMON_NOTES_ACCEPT = [
   '.markdown',
   '.json',
   '.pdf',
+  '.docx',
   'text/plain',
   'text/markdown',
   'application/json',
   'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];

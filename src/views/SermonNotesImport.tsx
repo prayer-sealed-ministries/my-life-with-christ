@@ -92,7 +92,7 @@ export function SermonNotesImport({
     setProposal(null);
     setBusy(true);
     try {
-      setProposal(await readSermonNotes(file.bytes, file.name));
+      setProposal(await readSermonNotes(file.bytes, file.name, file.mimeType));
     } catch (cause) {
       // An ImportError carries wording written for a person. Anything else is
       // a library's internal message and must not reach the screen.

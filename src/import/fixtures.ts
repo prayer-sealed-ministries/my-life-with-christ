@@ -31,25 +31,53 @@ export function documentXml(
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`;
 }
 
+/** The content types a real Word package declares for its main document. */
+export const CONTENT_TYPES_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+  '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+  '<Default Extension="xml" ContentType="application/xml"/>' +
+  '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+  '</Types>';
+
+/** The root relationships a real Word package declares. */
+export const ROOT_RELS_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+  '</Relationships>';
+
 /**
  * A .docx containing the given paragraphs, plus any extra members.
  *
- * `extra` exists so a test can put a macro, an embedded object or a
- * relationships file into the archive and assert that none of it is opened.
+ * A real Open Packaging Convention package, not merely a ZIP with a body in
+ * it: the content types declare what the main part IS, and the root
+ * relationship says where the package starts. Both are now required, because a
+ * ZIP carrying only `word/document.xml` is something anybody can build and is
+ * not evidence that Word produced anything.
+ *
+ * `extra` exists so a test can put a macro, an embedded object or an external
+ * relationship into the package and assert what happens. `omit` and `replace`
+ * exist so a test can build the adversarial packages — one with no content
+ * types, one whose main part claims to be something else — that the inspector
+ * has to refuse.
  */
 export async function makeDocx(
   paragraphs: Array<{ text: string; style?: string; list?: boolean }>,
   extra: Array<{ path: string; content: string | Uint8Array }> = [],
+  options: { omit?: string[]; replace?: Record<string, string> } = {},
 ): Promise<Uint8Array> {
-  return createZip([
+  const omit = new Set(options.omit ?? []);
+  const replace = options.replace ?? {};
+  const base: Array<{ path: string; content: string | Uint8Array }> = [
+    { path: '[Content_Types].xml', content: replace['[Content_Types].xml'] ?? CONTENT_TYPES_XML },
+    { path: '_rels/.rels', content: replace['_rels/.rels'] ?? ROOT_RELS_XML },
     {
-      path: '[Content_Types].xml',
-      content:
-        '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+      path: 'word/document.xml',
+      content: replace['word/document.xml'] ?? documentXml(paragraphs),
     },
-    { path: 'word/document.xml', content: documentXml(paragraphs) },
-    ...extra,
-  ]);
+  ];
+  return createZip([...base.filter((member) => !omit.has(member.path)), ...extra]);
 }
 
 /**

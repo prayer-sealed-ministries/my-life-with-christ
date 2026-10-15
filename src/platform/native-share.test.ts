@@ -130,7 +130,7 @@ describe('every way it can fail leaves the journal alone', () => {
     const h = host();
 
     await expect(collectSharedDocument(h)).resolves.toBe(false);
-    expect(h.said[0]).toMatch(/\.txt, \.md, \.json or text-based \.pdf/);
+    expect(h.said[0]).toMatch(/\.txt, \.md, \.json, \.docx or text-based \.pdf/);
     expect(hasIncomingDocument()).toBe(false);
   });
 

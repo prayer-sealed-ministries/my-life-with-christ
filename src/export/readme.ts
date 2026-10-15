@@ -1108,7 +1108,7 @@ export function renderSchema(): string {
         properties: {
           format: {
             type: 'string',
-            enum: ['txt', 'markdown', 'pdf', 'sermon-notes-json'],
+            enum: ['txt', 'markdown', 'pdf', 'docx', 'sermon-notes-json'],
             description: 'What the text was read out of.',
           },
           filename: {

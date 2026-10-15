@@ -62,7 +62,7 @@ describe('which parser a file asks for', () => {
     expect(sermonNotesFormat('notes.markdown')).toBe('markdown');
     expect(sermonNotesFormat('notes.json')).toBe('sermon-notes-json');
     expect(sermonNotesFormat('notes.pdf')).toBe('pdf');
-    expect(sermonNotesFormat('notes.docx')).toBeNull();
+    expect(sermonNotesFormat('notes.docx')).toBe('docx');
     expect(sermonNotesFormat('notes')).toBeNull();
     expect(sermonNotesFormat('notes.pdf.exe')).toBeNull();
   });
@@ -121,7 +121,7 @@ describe('plain text', () => {
   });
 
   it('refuses a name it does not read', async () => {
-    await refuses(bytes(TXT_NOTES), 'handout.docx', /\.txt, \.md, \.json or text-based \.pdf/);
+    await refuses(bytes(TXT_NOTES), 'handout.rtf', /\.txt, \.md, \.json, \.docx or text-based \.pdf/);
   });
 });
 

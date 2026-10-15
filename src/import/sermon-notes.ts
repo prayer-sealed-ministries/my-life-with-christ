@@ -43,6 +43,8 @@ export {
   type SermonNotesFormat,
 };
 import { hasUsableText, parsePdf } from './pdf';
+import { docxToText, parseDocx } from './docx';
+import { classifyDocument, inspectDocxPackage, inspectPdfActiveContent, refuse } from './document-type';
 
 /** The identifier a structured file must carry to be one of these. */
 export const SERMON_NOTES_FORMAT = 'my-life-with-christ-sermon-notes';
@@ -265,12 +267,13 @@ const NO_READABLE_TEXT =
 export async function readSermonNotes(
   bytes: Uint8Array,
   rawFilename: string,
+  mimeType?: string,
 ): Promise<SermonNotesProposal> {
   const filename = safeFilename(rawFilename);
   const format = sermonNotesFormat(filename);
   if (!format) {
     throw new ImportError(
-      'Sermon notes can be a .txt, .md, .json or text-based .pdf file. That file is something else.',
+      'Sermon notes can be a .txt, .md, .json, .docx or text-based .pdf file. That file is something else.',
     );
   }
   if (bytes.byteLength === 0) {
@@ -284,10 +287,25 @@ export async function readSermonNotes(
     );
   }
 
+  /*
+    What the bytes are, before a parser is trusted with them.
+
+    The same verdict the general importer takes, from the same module. These
+    are two doorways onto one operation, and a file refused at one of them must
+    be refused at the other — a secure picker route and a permissive share
+    route would simply move the problem rather than solve it.
+  */
+  const verdict = classifyDocument({ name: filename, bytes, mimeType });
+  if (!verdict.ok) refuse(verdict);
+  if (verdict.kind !== format) refuse({ ...verdict, ok: false, rejection: 'type-mismatch' });
+
   const importedAt = new Date().toISOString();
   const digest = await sha256(bytes);
 
   if (format === 'pdf') {
+    const active = await inspectPdfActiveContent(bytes);
+    if (!active.ok) refuse(active);
+
     const extraction = await parsePdf(bytes);
     if (!hasUsableText(extraction)) throw new ImportError(NO_READABLE_TEXT);
 
@@ -313,6 +331,37 @@ export async function readSermonNotes(
       },
       suggested: {},
       pages: extraction.pages.length + extraction.emptyPages,
+      characters: body.length,
+    };
+  }
+
+  if (format === 'docx') {
+    // A ZIP is not a Word document; the package has to say what it is.
+    const packaged = await inspectDocxPackage(bytes);
+    if (!packaged.ok) refuse(packaged);
+
+    const body = docxToText(await parseDocx(bytes)).trim();
+    if (!body) throw new ImportError(NO_READABLE_TEXT);
+    guardLength(body);
+
+    /*
+      Nothing is read out of the prose about who provided it.
+
+      A Word document gives us its text, its name and when it was imported.
+      Church, speaker and date are claims about people, and a heading that
+      looks like a name is not a statement that it is one — the structured
+      sermon-notes format exists for saying those things outright.
+    */
+    return {
+      material: {
+        format: 'docx',
+        filename,
+        importedAt,
+        sha256: digest,
+        body,
+        parserVersion: SERMON_NOTES_PARSER_VERSION,
+      },
+      suggested: {},
       characters: body.length,
     };
   }

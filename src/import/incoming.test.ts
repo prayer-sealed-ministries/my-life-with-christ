@@ -59,13 +59,10 @@ describe('what arrives, and which parser it reaches', () => {
     expect([...SHARED_MIME_TYPES].sort()).toEqual([
       'application/json',
       'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/markdown',
       'text/plain',
     ]);
-    // DOCX belongs to the document importer, which is a different feature.
-    expect(SHARED_MIME_TYPES as readonly string[]).not.toContain(
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    );
   });
 
   it('uses the media type only when the name cannot answer', () => {
@@ -119,9 +116,21 @@ describe('what is refused before anything is parsed', () => {
     expect(attempt).toThrow(/larger than the/);
   });
 
-  it('refuses a format this build does not read, including DOCX', () => {
+  it('accepts a shared Word document, like every other doorway', () => {
+    // Churches hand out .docx. The share doorway and the picker must agree
+    // about what is readable, or the same file succeeds one way and fails the
+    // other for no reason a person could predict.
+    const accepted = acceptIncomingDocument(
+      incoming({
+        name: 'sermon.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+    expect(accepted.filename.endsWith('.docx')).toBe(true);
+  });
+
+  it('refuses a format this build does not read', () => {
     for (const [name, mimeType] of [
-      ['sermon.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
       ['photo.jpg', 'image/jpeg'],
       ['archive.zip', 'application/zip'],
       ['notes.rtf', 'application/rtf'],

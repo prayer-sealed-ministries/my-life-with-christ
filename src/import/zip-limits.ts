@@ -132,11 +132,30 @@ export async function readZipLimited(
   }
 
   if (eocd + 22 > data.length) throw new ImportError('That file is damaged and cannot be read.');
+  const diskNumber = view.getUint16(eocd + 4, true);
+  const centralDisk = view.getUint16(eocd + 6, true);
   const countOnDisk = view.getUint16(eocd + 8, true);
   const count = view.getUint16(eocd + 10, true);
   const centralSize = view.getUint32(eocd + 12, true);
   const centralOffset = view.getUint32(eocd + 16, true);
   const commentLength = view.getUint16(eocd + 20, true);
+
+  /*
+    Features this reader does not implement, refused rather than half-parsed.
+
+    A split archive has its members on other volumes that are simply not here,
+    and ZIP64 puts the real counts and offsets in a different record — so the
+    16-bit fields read above would be sentinels rather than values, and every
+    bound derived from them would be meaningless. A sermon handout needs
+    neither. Failing closed is the difference between "this is not supported"
+    and parsing an archive by numbers that were never the numbers.
+  */
+  if (diskNumber !== 0 || centralDisk !== 0) {
+    throw new ImportError('That archive is split across volumes, which is not supported. Nothing was read.');
+  }
+  if (count === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
+    throw new ImportError('That archive uses a ZIP64 format this app does not read. Nothing was read.');
+  }
   if (countOnDisk !== count || eocd + 22 + commentLength > data.length ||
       centralOffset > data.length || centralSize > data.length - centralOffset ||
       centralOffset + centralSize > eocd) {
@@ -163,6 +182,7 @@ export async function readZipLimited(
 
     const flags = view.getUint16(cursor + 8, true);
     const method = view.getUint16(cursor + 10, true);
+    const declaredCrc = view.getUint32(cursor + 16, true);
     const compressedSize = view.getUint32(cursor + 20, true);
     const uncompressedSize = view.getUint32(cursor + 24, true);
     const nameLength = view.getUint16(cursor + 28, true);
@@ -213,8 +233,35 @@ export async function readZipLimited(
         view.getUint32(localOffset, true) !== SIGNATURE_LOCAL) {
       throw new ImportError('That file is damaged and cannot be read.');
     }
+    /*
+      The central directory and the local header must tell the same story.
+
+      They are two descriptions of one member, written in two places, and a
+      reader that trusts whichever it happens to consult can be shown a
+      different file from the one its checks approved. Name, method and
+      compressed size are the three that decide what gets inflated and what it
+      is called, so all three are compared before anything is read.
+    */
+    const localFlags = view.getUint16(localOffset + 6, true);
+    const localMethod = view.getUint16(localOffset + 8, true);
+    const localCompressed = view.getUint32(localOffset + 18, true);
     const localNameLength = view.getUint16(localOffset + 26, true);
     const localExtraLength = view.getUint16(localOffset + 28, true);
+    if (localOffset + 30 + localNameLength > data.length) {
+      throw new ImportError('That file is damaged and cannot be read.');
+    }
+    const localName = decoder.decode(
+      data.subarray(localOffset + 30, localOffset + 30 + localNameLength),
+    );
+    const usesDataDescriptor = (localFlags & 0x0008) !== 0;
+    if (localName !== path || localMethod !== method) {
+      throw new ImportError('That file is damaged: two parts of it disagree. Nothing was read.');
+    }
+    // A data descriptor legitimately leaves the local sizes at zero and puts
+    // them after the data, so only compare when the header claims to know.
+    if (!usesDataDescriptor && localCompressed !== compressedSize) {
+      throw new ImportError('That file is damaged: two parts of it disagree. Nothing was read.');
+    }
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     if (dataStart > data.length || compressedSize > data.length - dataStart) {
       throw new ImportError('That file is damaged and cannot be read.');
@@ -243,10 +290,68 @@ export async function readZipLimited(
     if (bytes.byteLength !== uncompressedSize) {
       throw new ImportError('That file is damaged: a ZIP member has the wrong size. Nothing was read.');
     }
+    /*
+      And it must be the bytes the archive says it is.
+
+      Size agreement alone cannot tell a corrupted member from an intact one,
+      and a document whose body has been altered in transit should be reported
+      as damaged rather than interpreted. The CRC is the archive's own claim
+      about its contents, so checking it costs one pass and closes the gap
+      between "the right length" and "the right bytes".
+    */
+    if (crc32(bytes) !== declaredCrc) {
+      throw new ImportError('That file is damaged and cannot be read.');
+    }
 
     inflatedTotal += bytes.byteLength;
     entries.push({ path, bytes });
   }
 
   return entries;
+}
+
+/*
+  CRC-32, the ordinary ZIP polynomial.
+
+  Written out rather than pulled in: it is twenty lines, the table is built
+  once at module load, and a dependency for a checksum is a dependency to keep
+  current forever.
+*/
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+export function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * The member names a ZIP declares, without inflating anything.
+ *
+ * The cheapest possible look at an archive: the central directory alone, so a
+ * package can be refused for what it contains before a single byte is
+ * decompressed. Used by the DOCX inspector to reject active members and
+ * colliding paths up front.
+ */
+export async function listZipPaths(data: Uint8Array): Promise<string[]> {
+  const paths: string[] = [];
+  await readZipLimited(data, {
+    only: (path) => {
+      paths.push(path);
+      return false;
+    },
+  });
+  return paths;
 }

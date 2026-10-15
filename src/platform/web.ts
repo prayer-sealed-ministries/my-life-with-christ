@@ -179,7 +179,9 @@ export const webFilePicker: FilePicker = {
         }
         void file
           .arrayBuffer()
-          .then((buffer) => finish({ name: file.name, bytes: new Uint8Array(buffer) }))
+          .then((buffer) =>
+            finish({ name: file.name, bytes: new Uint8Array(buffer), mimeType: file.type || undefined }),
+          )
           .catch((cause) => {
             if (settled) return;
             settled = true;
@@ -301,5 +303,11 @@ export const webPlatform: Platform = {
  */
 export async function pickedFromDomFile(file: File): Promise<PickedFile> {
   if (file.size > MAX_PICKED_FILE_BYTES) throw new Error(pickedFileTooLargeMessage);
-  return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+  return {
+    name: file.name,
+    bytes: new Uint8Array(await file.arrayBuffer()),
+    // `File.type` is empty for plenty of ordinary files, which is why the
+    // validator treats absence as silence rather than as disagreement.
+    mimeType: file.type || undefined,
+  };
 }
