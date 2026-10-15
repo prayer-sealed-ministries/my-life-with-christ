@@ -217,6 +217,20 @@ describe('the church-notes reader, end to end', () => {
     expect(proposal.material.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('counts every page once, however it was read', async () => {
+    /*
+      A recognised page carried no text layer AND is now a page with text, so
+      adding "pages" to "empty pages" counted it twice. A three-page handout
+      reported four pages on a real device, which is the kind of small wrong
+      number that makes a person doubt everything else on the screen.
+    */
+    const document = latin1(
+      pdf([typed('FICTIONAL-EXACT-PAGE one'), photocopied(), typed('FICTIONAL-EXACT-PAGE three')]),
+    );
+    const proposal = await readSermonNotes(document, 'handout.pdf', undefined, recogniser().scanner);
+    expect(proposal.pages).toBe(3);
+  });
+
   it('reports a scanned page as unread where there is nothing to render with', async () => {
     /*
       This runtime has no canvas, so a scanned page cannot be rendered and

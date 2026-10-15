@@ -120,10 +120,41 @@ not to police what came with it. Only the type check refuses it. There is a
 test that proves exactly this, by parsing the file successfully and then
 watching the import refuse it.
 
-### Scanned PDFs
+### Scanned and mixed PDFs
 
-Still reported honestly as scanned pages with no selectable text. **No OCR is
-performed on them in this work.**
+A church handout is often part typed and part photocopied. The decision is made
+**per page, never per document**:
+
+| Page | What happens |
+| --- | --- |
+| carries its own text | used exactly as written; the recogniser is never called |
+| no text of its own | rendered and read on this device |
+| rendered but unreadable | **named in the review**, never dropped |
+| past the recognition ceiling | reported as not attempted, which is a different sentence |
+
+Guessing at words somebody actually typed would be a downgrade dressed as a
+feature, so embedded text always wins. Pages go back together in the order the
+document has them — not the order recognition finished in.
+
+**Rendering happens last, and only to a document that has already passed every
+gate above.** Rendering is parsing attacker-controlled structure; "we are only
+rendering it" is not a reason to skip the type verdict, the structural policy or
+the active-content scan.
+
+Bounds are checked **before** allocation, because a page declares its own size
+and the allocation is the attack — an RGBA bitmap costs width x height x 4 bytes
+in the canvas, again when encoded, and again crossing to the recogniser:
+
+- a per-page pixel ceiling, with oversized pages scaled down rather than refused
+- a whole-document pixel ceiling, so twenty large pages cannot cost twenty times
+- at most twenty pages recognised per document
+- pages rendered one at a time, released immediately
+- the ceiling counts pages **attempted**, not pages successfully read — a
+  document whose scanned pages all fail to render must not render all of them
+
+Recognition uses the same Apple Vision request and the same bundled ML Kit
+recogniser as a photographed page. Nothing is uploaded, no page image is kept,
+and the original PDF is not stored.
 
 ---
 

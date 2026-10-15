@@ -274,21 +274,18 @@ function guardLength(body: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * What a scan is told, and why it is worded this way.
+ * Said when a PDF yielded nothing readable at all.
  *
- * Two facts, in the order a reader needs them: what this file appears to be,
- * and what this app can do about it. The previous wording said only the
- * second, which left somebody holding a photocopy to work out for themselves
- * why a PDF full of words was "not readable".
- *
- * "not available yet" rather than "not supported": recognising text on the
- * device is a real possibility that was measured and deferred on package size,
- * not a thing this product has decided against. See the OCR investigation in
- * the lane report.
+ * Scanned pages ARE read now, on this device — see `pdf-scan.ts`. This is what
+ * is left when that has been tried and still produced nothing: a blank
+ * document, a photocopy too faint or too crooked to read, or a device with no
+ * recogniser at all. The wording says what happened rather than naming a
+ * feature, because the person's next step is the same either way: find a
+ * better copy.
  */
 const NO_READABLE_TEXT =
-  'This PDF appears to contain scanned pages rather than selectable text. ' +
-  'Scanned-document text recognition is not available yet.';
+  'No readable text was found in this PDF. If its pages are scanned, a clearer ' +
+  'copy may work better.';
 
 /**
  * Read a chosen file into a proposal.
@@ -382,7 +379,19 @@ export async function readSermonNotes(
         parserVersion: SERMON_NOTES_PARSER_VERSION,
       },
       suggested: {},
-      pages: extraction.pages.length + extraction.emptyPages,
+      /*
+        How many pages the document has, counted once each.
+
+        `emptyPages` means "carried no text layer", and a recognised page is
+        both of those things — it had no text layer AND it is now a page with
+        text. Adding the two counted every scanned page twice, so a three-page
+        handout reported four pages on a real device. Pages that were read, plus
+        pages nobody could read, plus pages nobody tried.
+      */
+      pages:
+        extraction.pages.length +
+        extraction.unreadablePageNumbers.length +
+        extraction.skippedPageNumbers.length,
       characters: body.length,
       ...(recognisedAnything || somethingUnread
         ? {

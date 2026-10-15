@@ -133,7 +133,9 @@ lose anything by being read here.
 - **No runtime network calls.** Scripture, section data and topics are vendored
   into the build. Nothing is fetched at runtime, there is no analytics or
   telemetry, and imported documents are parsed entirely on the device.
-- **Scanned pages are read on the device.** The phone apps can photograph a
+- **Scanned pages are read on the device** — photographed notes, and the
+  scanned pages of a church PDF. A PDF that is part typed and part photocopied
+  uses its typed pages exactly as written and only recognises the rest. The phone apps can photograph a
   page of notes and turn it into text using the recogniser built into the
   operating system — Apple Vision on iOS, a model bundled inside the app on
   Android. There is no cloud recognition and no fallback to one: if the device
