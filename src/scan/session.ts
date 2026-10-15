@@ -235,3 +235,23 @@ export function failureMessage(failure: ScanFailure): string {
 export function isScanFailure(value: unknown): value is ScanFailure {
   return typeof value === 'object' && value !== null && 'reason' in value;
 }
+
+/**
+ * The provenance a scanned page carries into `sourceMaterial`.
+ *
+ * `SourceMaterial.format` is a closed union the web companion validates with
+ * the identical list, so a scan cannot invent a value of its own without
+ * breaking a reader; plain text is what recognition produces, so `txt` is the
+ * truthful member. `filename` is what actually distinguishes a photographed
+ * page from an imported `.txt` file to a person reading the archive.
+ *
+ * `parserVersion` is nominally "which parser produced `body`, so a later fix
+ * can find what an older one wrote". For a scan that question has no answer
+ * worth acting on: the photograph is deleted when the sheet closes, and the
+ * text was edited and approved by a person before it was stored. There is
+ * nothing to re-derive, so this number exists to satisfy the schema and to say
+ * which build wrote the row — not to authorise re-parsing anything.
+ */
+export const SCAN_SOURCE_FORMAT = 'txt' as const;
+export const SCAN_SOURCE_FILENAME = 'Scanned page';
+export const SCAN_PARSER_VERSION = 1;

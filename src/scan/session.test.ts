@@ -93,6 +93,39 @@ describe('nothing reaches the journal before a person accepts', () => {
     expect(canAccept(session)).toBe(true);
   });
 
+  it('refuses acceptance once a review has stopped being a review', () => {
+    /*
+      The case the stage check actually exists for, and it was not covered.
+
+      Walking idle -> acquiring -> acquired proves nothing about the stage,
+      because the transcription is empty at all three and acceptance is already
+      refused for that reason. Mutation showed it: relaxing the stage condition
+      to `!== 'idle'` left every test in this file passing.
+
+      This is the session that has text AND a destination AND is not in review:
+      a page was read and approved, a retake was attempted, and the retake
+      failed. The earlier text is still here. Accepting it would commit words
+      from a photograph the person is no longer looking at.
+    */
+    let session = reviewing();
+    session = reduceScan(session, { type: 'destination', destination: 'notes' });
+    session = reduceScan(session, { type: 'edited', text: 'FICTIONAL-SCAN approved earlier' });
+    expect(canAccept(session)).toBe(true);
+
+    session = reduceScan(session, {
+      type: 'failed',
+      failure: { reason: 'unreadable' },
+      generation: session.generation,
+    });
+    expect(session.stage).toBe('failed');
+    // The text and the destination survive — that is what makes this the
+    // dangerous case rather than an uninteresting one.
+    expect(session.draftText).toBe('FICTIONAL-SCAN approved earlier');
+    expect(session.destination).toBe('notes');
+    expect(canAccept(session)).toBe(false);
+    expect(acceptScan(session)).toBeNull();
+  });
+
   it('cancelling discards everything, leaving nothing to commit', () => {
     let session = reviewing();
     session = reduceScan(session, { type: 'destination', destination: 'notes' });

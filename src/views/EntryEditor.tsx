@@ -22,10 +22,18 @@ import { registerOverlay } from '../app/overlay';
 import { Link, useRouter } from '../app/router';
 import { nextFrame } from '../app/deferred-navigation';
 import { useStorage } from '../app/storage';
-import { useUnsavedWorkGuard } from '../platform/context';
+import { useUnsavedWorkGuard, usePlatform } from '../platform/context';
 import { capacitorAppState } from '../platform/app-state';
 import { CollapseIcon, ExpandIcon } from '../components/icons';
 import { Markdown } from '../components/Markdown';
+import { ScanNotes } from './ScanNotes';
+import {
+  applyToField,
+  SCAN_PARSER_VERSION,
+  SCAN_SOURCE_FILENAME,
+  SCAN_SOURCE_FORMAT,
+  type ScanAcceptance,
+} from '../scan/session';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { CONTROL_COMPACT, FOCUS } from '../components/styles';
 import { Button, EmptyState, Field, FieldRow, LiveRegion, Select, Spinner, TextArea } from '../components/ui';
@@ -427,8 +435,12 @@ export default function EntryEditor({
   const { storage, ready, touch, error: storageError } = useStorage();
   const unsavedWork = useUnsavedWorkGuard();
   const { navigate, navigateNextFrame } = useRouter();
+  // A capability, not a platform question: the editor asks whether a page can
+  // be read on this device and never asks which device it is.
+  const { scanner } = usePlatform();
 
   const [form, setForm] = useState<FormState | null>(null);
+  const [scanning, setScanning] = useState(false);
   const currentEntryId = useRef(entryId);
   currentEntryId.current = entryId;
   const mounted = useRef(false);
@@ -1320,6 +1332,59 @@ export default function EntryEditor({
    * dirty check, Save, search and the archive all see a value the reader
    * chose — indistinguishable from one they typed, because that is what it is.
    */
+  /**
+   * Put approved transcription where the person said it should go.
+   *
+   * This is the only path by which a scan reaches an entry, and it runs once,
+   * from a button press. Everything before it — capturing, recognising,
+   * editing, choosing — changed a scan session and nothing else.
+   *
+   * Provided notes keeps `format: 'txt'`, which is honest (it is recognised
+   * plain text) and deliberate: the format union is a closed set the web
+   * companion validates identically, so inventing a value here would make
+   * entries this app writes unreadable there. No church, speaker or date is
+   * ever guessed from a page.
+   */
+  const acceptScanned = (acceptance: ScanAcceptance) => {
+    setForm((current) => {
+      if (!current) return current;
+      if (acceptance.destination === 'notes') {
+        return { ...current, notes: applyToField(current.notes, acceptance) };
+      }
+      /*
+        Provided notes carries provenance, and provenance has to stay true to
+        what is in the field.
+
+        Appending leaves an earlier import's text in place, so its filename,
+        digest and whatever the file stated about church, speaker or date still
+        describe something that is there. Replacing does not: the imported text
+        is gone, and a digest of bytes that no longer appear in the field would
+        be a claim a reader could check and find false. So a replacement starts
+        the provenance over as what it now is — a page somebody photographed.
+      */
+      const previous = acceptance.placement === 'replace' ? undefined : current.sourceMaterial;
+      return {
+        ...current,
+        sourceMaterial: {
+          // Named field by field rather than spread: every required field is
+          // accounted for, and nothing is carried over by accident.
+          format: previous?.format ?? SCAN_SOURCE_FORMAT,
+          filename: previous?.filename ?? SCAN_SOURCE_FILENAME,
+          importedAt: previous?.importedAt ?? new Date().toISOString(),
+          parserVersion: previous?.parserVersion ?? SCAN_PARSER_VERSION,
+          ...(previous?.sha256 ? { sha256: previous.sha256 } : {}),
+          ...(previous?.church ? { church: previous.church } : {}),
+          ...(previous?.speaker ? { speaker: previous.speaker } : {}),
+          ...(previous?.date ? { date: previous.date } : {}),
+          // Carried, never derived: recognition does not read references out
+          // of a photographed page.
+          ...(previous?.scripture ? { scripture: previous.scripture } : {}),
+          body: applyToField(current.sourceMaterial?.body ?? '', acceptance),
+        },
+      };
+    });
+  };
+
   const chooseDetail = (field: DetailField, value: string) => update(field, value);
 
   const updateLink = (index: number, patch: Partial<LinkRow>) =>
@@ -2129,6 +2194,30 @@ export default function EntryEditor({
             say what each is for — an outer "Notes" heading above a field already
             labelled "Notes" said the same thing twice and bought nothing, and
             wrapping a bordered textarea in a bordered card was a box in a box. */}
+        {/*
+          One action, in one place: next to the writing a scan would join.
+          Repeating it under every field would be noise, and it belongs here
+          because this is where paper notes are being copied in.
+        */}
+        {scanner.supported && !scanning ? (
+          <div>
+            <Button variant="secondary" onClick={() => setScanning(true)}>
+              Scan notes
+            </Button>
+          </div>
+        ) : null}
+
+        {scanning ? (
+          <ScanNotes
+            existing={{
+              notes: form.notes.trim().length > 0,
+              providedNotes: (form.sourceMaterial?.body ?? '').trim().length > 0,
+            }}
+            onAccept={acceptScanned}
+            onClose={() => setScanning(false)}
+          />
+        ) : null}
+
         <div ref={notesBoxRef}>
           <MarkdownEditor
             label="Notes"
