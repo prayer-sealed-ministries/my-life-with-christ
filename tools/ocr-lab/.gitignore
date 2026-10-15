@@ -1,0 +1,6 @@
+# Generated, and deterministically regenerable from OcrLab.swift:
+#   swiftc -O tools/ocr-lab/OcrLab.swift -o /tmp/ocrlab && /tmp/ocrlab render tools/ocr-lab/corpus
+# 21 MB of PNGs has no business in a repository whose whole point is that an
+# archive stays small and readable. The generator is the artefact worth keeping.
+corpus/
+results/
