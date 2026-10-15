@@ -3,10 +3,15 @@
 Measured, not surveyed. Everything below comes from running real recognisers
 over a reproducible corpus, or from measuring real artifacts.
 
-**Verdict: OCR is feasible with a platform asymmetry. Printed notes are ready on
-iOS at zero package cost. Android carries a real package cost or an offline
-compromise, and Android accuracy was not measured in this lane. Handwriting
-remains unproven.**
+**Verdict (updated by the dual-platform addendum at the end of this document):
+printed OCR is ready on BOTH platforms — median CER 0.00% on each. Android costs
+12.0 MB on a modern phone and works fully offline. Handwriting remains unproven
+on both.**
+
+> The sections immediately below were written before Android was measured and
+> say Android accuracy is unknown. That is no longer true: see the
+> **Dual-platform addendum**, which supersedes them. They are kept as the record
+> of what was known when, not rewritten.
 
 ## What was measured, and what was not
 
@@ -15,8 +20,8 @@ remains unproven.**
 | Apple Vision accuracy, 26 samples, 4 configurations | **measured** (104 recognition runs) |
 | Apple Vision latency | **measured** |
 | ML Kit package payload | **measured** (artifacts from Google Maven) |
-| ML Kit offline behaviour | **determined from artifact structure** |
-| ML Kit accuracy | **NOT MEASURED** — no Android emulator available |
+| ML Kit offline behaviour | **MEASURED** — airplane mode, 26/26 recognised |
+| ML Kit accuracy | **MEASURED** — see addendum (my earlier "no emulator" was a PATH error) |
 | Real handwriting accuracy | **NOT MEASURED** — no legally usable corpus obtained |
 | Physical device behaviour | **NOT TESTED** |
 | Review-before-commit UI prototype | **NOT BUILT** |
@@ -216,3 +221,124 @@ review model rather than inventing a parallel path.
 - No review UI was built; the flow above is a recommendation, not a prototype
   result.
 - Latency measured on a Mac, not a phone.
+
+---
+
+# Dual-platform addendum — 15 October 2026
+
+Android accuracy is no longer unmeasured. The previous lane reported "no Android
+emulator available"; that was **my measurement error** — `command -v emulator`
+fails because the SDK is not on `PATH`, but
+`~/Library/Android/sdk/emulator/emulator` was present all along, with an
+`android-35` system image and working `avdmanager`.
+
+## Method
+
+A dedicated AVD, `lwc-ocr-bench`: Android 15 (API 35), **google_apis — not
+google_apis_playstore**, arm64-v8a, Pixel 7 profile, 4 GB RAM, 1080×2400 @420dpi.
+The non-Play-Store image is deliberate: on a Play image, Play Services could
+supply an *unbundled* model and quietly invalidate any claim about the bundled
+one.
+
+Recognition runs in `tools/ocr-lab/android/`, an isolated Gradle project that is
+**not part of the application build** — so benchmarking can never add ML Kit to
+the shipping app. It declares **no permissions at all**, and images arrive by
+`adb push`. Both engines consume the identical corpus.
+
+## Printed results, same 21 samples, both engines
+
+| Tier | iOS median CER | Android median CER | iOS worst | Android worst |
+| --- | --- | --- | --- | --- |
+| **Easy (15)** | **0.00%** | **0.00%** | 1.52% | 1.91% |
+| **Hard (6)** | 5.33% | 8.31% | 77.74% | 93.49% |
+
+Median WER was **0.00% on both** for the easy tier; 16.22% (iOS) vs 16.72%
+(Android) on the hard tier.
+
+Per sample, hard tier:
+
+| Sample | iOS CER | Android CER |
+| --- | --- | --- |
+| Q-low-res (0.28×) | 0.00% | 0.17% |
+| R-jpeg (q=0.12) | 0.00% | 0.00% |
+| S-very-dim + shadow | 0.00% | 0.17% |
+| T-severe-skew | 16.44% | 16.44% |
+| U-hard-small | 10.67% | **40.00%** |
+| P-hard-blur | 77.74% | **93.49%** |
+
+**On ordinary printed material the two engines are equivalent.** They diverge
+only where the image is already badly degraded, and both fail on heavy motion
+blur. Small-and-degraded text is where Android is materially worse.
+
+Scripture references: iOS **43/54** exact, Android **42/54**.
+
+## Synthetic handwriting (fonts — still not real handwriting)
+
+| Sample | iOS CER | Android CER |
+| --- | --- | --- |
+| HS1 neat print style | 0.89% | 1.33% |
+| HS2 casual print | 0.67% | 5.33% |
+| HS3 marker | 0.00% | 1.03% |
+| **HS4 cursive** | **1.33%** | **14.22%** |
+| HS5 rounded hand | 0.00% | 0.00% |
+| **median** | **0.67%** | **1.33%** |
+
+Vision is roughly **ten times better on cursive letterforms**. That is a real
+directional signal about the engines — but it is still a *font*, and it is still
+not evidence that either platform reads a human's notebook.
+
+## Latency
+
+| | median | worst |
+| --- | --- | --- |
+| iOS Vision (Mac harness) | 179ms | 477ms |
+| Android ML Kit (emulator) | 56–65ms | 98ms |
+
+Not comparable hardware: a Mac harness against an emulator on the same Apple
+silicon. Both are far inside interactive budget; neither is a phone measurement.
+ML Kit cold first recognition was **234ms**.
+
+## Android package cost — measured from a real built APK
+
+| ABI | `libmlkit_google_ocr_pipeline.so` |
+| --- | --- |
+| **arm64-v8a** | 11,064,544 bytes (10.6 MB) |
+| armeabi-v7a | 6,781,940 bytes (6.5 MB) |
+| x86 | 11,561,048 bytes (11.0 MB) |
+| x86_64 | 11,626,128 bytes (11.1 MB) |
+
+Plus 1,486,803 bytes (1.42 MB) of model assets.
+
+**What an arm64 phone actually receives from Play: 12,551,347 bytes — 12.0 MB.**
+The universal all-ABI debug APK is 44.2 MB, which is the number that stopped
+this work in September. Three independent measurements now agree on ~12 MB
+per-ABI: the September note, the Maven artifact inspection, and this APK.
+
+## Offline — verified, not assumed
+
+Airplane mode on, `svc wifi disable`, `svc data disable`, `ping` confirming
+"Network is unreachable" — and **all 26 samples still recognised**. On a
+non-Play-Store image, so no unbundled model could have been substituted. The
+bundled Latin model is genuinely local.
+
+The harness declares **no permissions**, including no `INTERNET`, and
+recognition works. That is the strongest available evidence that ML Kit's
+bundled path sends nothing.
+
+## Go/no-go
+
+**Printed OCR passes on both platforms.** Median CER 0.00% on both, worst-case
+on ordinary pages 1.52% / 1.91%, Scripture essentially equal, both comfortably
+interactive, both fully offline, 12 MB Android cost on a modern phone.
+
+**Handwriting does not pass on either platform**, because it has not been
+tested on either platform. No real handwritten page has been through either
+engine. Synthetic fonts are not evidence.
+
+## What is still NOT built
+
+The production Scan Notes feature — capture, picker, review screen, destination
+choice, App Lock boundary, temp-file lifecycle — **was not implemented**. The
+measurement lane consumed the available capacity. No production code was
+touched, and the feature remains behind a development boundary, which is what
+the lane prescribes when it is not ready to ship.
