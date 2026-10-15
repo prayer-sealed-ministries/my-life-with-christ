@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
         // recovery path all live natively, so none of it is reachable from the
         // web layer except through these methods.
         registerPlugin(AppLockPlugin.class);
+        registerPlugin(ScanNotesPlugin.class);
         super.onCreate(savedInstanceState);
 
         // A cold share: the intent this process was created for.

@@ -1,0 +1,5 @@
+org.prayersealed.ocrlab.test.app-core-1.6.1-0 /Users/gmcas/.gradle/caches/8.14.3/transforms/b6ba2bb297ccd161482b09660f1ae75f/transformed/core-1.6.1/res
+org.prayersealed.ocrlab.test.app-androidTest-1 /Users/gmcas/repos/my-life-with-christ/tools/ocr-lab/android/app/build/generated/res/resValues/androidTest/debug
+org.prayersealed.ocrlab.test.app-mergeDebugAndroidTestResources-2 /Users/gmcas/repos/my-life-with-christ/tools/ocr-lab/android/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/merged.dir
+org.prayersealed.ocrlab.test.app-mergeDebugAndroidTestResources-3 /Users/gmcas/repos/my-life-with-christ/tools/ocr-lab/android/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/stripped.dir
+org.prayersealed.ocrlab.test.app-debugAndroidTest-4 /Users/gmcas/repos/my-life-with-christ/tools/ocr-lab/android/app/build/intermediates/merged_res/debugAndroidTest/mergeDebugAndroidTestResources

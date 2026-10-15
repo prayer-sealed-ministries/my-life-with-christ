@@ -1,0 +1,3 @@
+org.prayersealed.ocrlab.test
+style WhiteBackgroundDialogTheme
+style WhiteBackgroundTheme

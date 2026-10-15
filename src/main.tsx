@@ -12,6 +12,7 @@ import { ThemeProvider } from './app/theme';
 import { closeOverlay, overlayOpen } from './app/overlay';
 import { bindAndroidBack, browserHistoryHost } from './platform/native-back';
 import { bindLaunchActions, locationHost } from './platform/native-launch';
+import { cleanupStaleScans } from './platform/native-scan';
 import { PlatformProvider } from './platform/provider';
 import { registerOfflineApp } from './platform/offline';
 import { AppLockGate, AppLockProvider } from './app/app-lock';
@@ -58,6 +59,14 @@ if (import.meta.env.VITE_NATIVE_CONFORMANCE) {
     .then((harness) => harness.runNativeContract())
     .catch((error: unknown) => console.log('NATIVE_CONTRACT_RESULT_ERROR', String(error)));
 }
+
+// Temporary scans a crashed run left behind, swept once at startup.
+//
+// A photograph of somebody's notebook is the most sensitive thing this app
+// ever writes to disk, and the review sheet deletes its copy on every exit
+// path — but not if the process died first. A no-op off native, and a failure
+// here is not a reason to refuse to start.
+void cleanupStaleScans().catch(() => undefined);
 
 // A launcher shortcut, widget or quick action naming a destination. Bound
 // before the first render so the hash is already the destination when the

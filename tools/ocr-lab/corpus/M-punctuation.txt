@@ -1,0 +1,6 @@
+FICTIONAL-COMPAT Punctuation Check
+
+He asked, "Is this the whole of it?" — and then waited.
+Notes (taken quickly): comma, semicolon; colon: dash — ellipsis ...
+Quotes: 'single' and "double". Apostrophes: don't, it's, Lord's.
+Numbers: 1, 2, 3; 10:31; 119:11; 2026.

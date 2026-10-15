@@ -31,6 +31,15 @@ repositories {
 }
 
 dependencies {
+    // Scan notes: on-device text recognition.
+    //
+    // BUNDLED Latin model, deliberately. Recognition works the moment the app
+    // is installed, with no network and no Play Services dependency. The
+    // unbundled variant (play-services-mlkit-text-recognition) is 78 KB rather
+    // than ~12 MB but downloads its model on first use, which would break the
+    // offline promise. Measured arm64 delivery cost: 12,551,347 bytes.
+    implementation "com.google.mlkit:text-recognition:16.0.1"
+
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"

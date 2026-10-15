@@ -133,6 +133,15 @@ lose anything by being read here.
 - **No runtime network calls.** Scripture, section data and topics are vendored
   into the build. Nothing is fetched at runtime, there is no analytics or
   telemetry, and imported documents are parsed entirely on the device.
+- **Scanned pages are read on the device.** The phone apps can photograph a
+  page of notes and turn it into text using the recogniser built into the
+  operating system — Apple Vision on iOS, a model bundled inside the app on
+  Android. There is no cloud recognition and no fallback to one: if the device
+  cannot read a page, it says so. The photograph is a temporary copy the app
+  deletes, nothing is uploaded, and no recognised text is ever logged. You read
+  the transcription, correct it, and choose which field it goes in before
+  anything reaches your journal. Printed notes usually work best; clear
+  handwriting may also be recognized.
 - **No ads and no data mining**, now or as part of the intended product.
 - **Sharing is one entry at a time, through your own device.** From a saved
   entry you can send that page — and only that page — to the operating

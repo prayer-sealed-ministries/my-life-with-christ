@@ -144,6 +144,21 @@ export function FieldRow({ children, className = '' }: { children: ReactNode; cl
 }
 
 /**
+ * The id a field's label points at.
+ *
+ * `useId()` generates one, and a caller may supply their own. Both have to end
+ * up on the control AND in the label's `htmlFor`, which is the part that was
+ * wrong: `{...rest}` spreads after `id={id}`, so a caller-supplied id replaced
+ * the control's id while the label went on pointing at the generated one. The
+ * label then referenced nothing — a control with no accessible name on a real
+ * screen, which is exactly what the accessibility suite exists to catch, and
+ * what it could only have caught once some caller passed an id.
+ */
+function fieldId(provided: string | undefined, generated: string): string {
+  return provided ?? generated;
+}
+
+/**
  * A labelled text field.
  *
  * The label is always rendered and always associated — a placeholder is not a
@@ -156,7 +171,7 @@ export function Field({
   className = '',
   ...rest
 }: { label: string; hint?: string; below?: ReactNode; ref?: Ref<HTMLInputElement> } & InputHTMLAttributes<HTMLInputElement>) {
-  const id = useId();
+  const id = fieldId(rest.id, useId());
   const hintId = `${id}-hint`;
 
   return (
@@ -168,7 +183,8 @@ export function Field({
       below={below}
       className={className}
     >
-      <input id={id} aria-describedby={hint ? hintId : undefined} className={`${CONTROL} ${FOCUS}`} {...rest} />
+      {/* `id` last: the label points at it, so a spread must not replace it. */}
+      <input aria-describedby={hint ? hintId : undefined} className={`${CONTROL} ${FOCUS}`} {...rest} id={id} />
     </FieldShell>
   );
 }
@@ -181,12 +197,12 @@ export function Select({
   children,
   ...rest
 }: { label: string; hint?: string } & SelectHTMLAttributes<HTMLSelectElement>) {
-  const id = useId();
+  const id = fieldId(rest.id, useId());
   const hintId = `${id}-hint`;
 
   return (
     <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
-      <select id={id} aria-describedby={hint ? hintId : undefined} className={`${CONTROL} ${FOCUS}`} {...rest}>
+      <select aria-describedby={hint ? hintId : undefined} className={`${CONTROL} ${FOCUS}`} {...rest} id={id}>
         {children}
       </select>
     </FieldShell>
@@ -220,7 +236,7 @@ export function TextArea({
   autoGrow?: boolean;
   maxRows?: number;
 } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const id = useId();
+  const id = fieldId(rest.id, useId());
   const hintId = `${id}-hint`;
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -250,7 +266,6 @@ export function TextArea({
     <FieldShell label={label} hint={hint} htmlFor={id} hintId={hintId} className={className}>
       <textarea
         ref={ref}
-        id={id}
         value={value}
         aria-describedby={hint ? hintId : undefined}
         onChange={(event) => {
@@ -259,6 +274,7 @@ export function TextArea({
         }}
         className={`resize-y py-3 leading-relaxed ${CONTROL} ${FOCUS}`}
         {...rest}
+        id={id}
       />
     </FieldShell>
   );

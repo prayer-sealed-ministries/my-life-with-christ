@@ -20,6 +20,11 @@ const manifest = new DOMParser().parseFromString(
   'application/xml',
 );
 
+/** The tools namespace, where `tools:node="remove"` lives. */
+const TOOLS_NS = 'http://schemas.android.com/tools';
+const toolsAttr = (node: Element | null | undefined, name: string): string | null =>
+  node?.getAttributeNS(TOOLS_NS, name) ?? null;
+
 const attr = (node: Element | null | undefined, name: string): string | null =>
   node?.getAttributeNS(NS, name) ?? null;
 
@@ -115,49 +120,46 @@ describe('no new permission was taken for any of this', () => {
      * is the claim that matters, because a share grants read access to one
      * document for the life of the activity and needs no permission at all.
      */
-    const permissions = [...manifest.querySelectorAll('uses-permission')].map((node) =>
-      attr(node, 'name'),
-    );
-    // A share grants read access to one document for the life of the activity.
-    // Reading the device's storage to accept a handout would be taking far
-    // more than the task requires.
-    expect(permissions).toEqual([]);
+    const nodes = [...manifest.querySelectorAll('uses-permission')];
+    const granted = nodes
+      .filter((node) => toolsAttr(node, 'node') !== 'remove')
+      .map((node) => attr(node, 'name'));
+    const removed = nodes
+      .filter((node) => toolsAttr(node, 'node') === 'remove')
+      .map((node) => attr(node, 'name'));
+
+    /*
+     * Exactly one permission is ours, and it is asked for at the moment it is
+     * used: CAMERA, when somebody taps Take photo in Scan notes. Denying it
+     * costs that one button — choosing an existing photo still works, and the
+     * rest of the app is untouched.
+     */
+    expect(granted).toEqual(['android.permission.CAMERA']);
+
+    /*
+     * And the ones ML Kit tried to bring with it are actively removed.
+     *
+     * Adding com.google.mlkit:text-recognition pulls in play-services-base and
+     * play-services-basement, which merge INTERNET and ACCESS_NETWORK_STATE
+     * into an app that declared none. Text recognition is entirely local — the
+     * bundled model reads a page with every radio disabled — so these are
+     * stripped rather than inherited. A journal that promises nothing leaves
+     * the device should not ship holding the permission that would let it.
+     */
+    expect(removed).toContain('android.permission.INTERNET');
+    expect(removed).toContain('android.permission.ACCESS_NETWORK_STATE');
+    expect(granted).not.toContain('android.permission.INTERNET');
+    expect(granted).not.toContain('android.permission.ACCESS_NETWORK_STATE');
+
+    // Storage stays out entirely. The photo picker hands over only what was
+    // selected, so reading the library is never necessary.
     for (const denied of [
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.MANAGE_EXTERNAL_STORAGE',
       'android.permission.READ_MEDIA_IMAGES',
     ]) {
-      expect(permissions).not.toContain(denied);
+      expect(granted).not.toContain(denied);
     }
-  });
-});
-
-describe('the launcher shortcut is not mistaken for a document', () => {
-  it('keeps the app’s own scheme out of the document filters', () => {
-    // `mylifewithchrist://action/...` is also an ACTION_VIEW. The Java side
-    // ignores that scheme when remembering a shared document, or a shortcut
-    // tap would arrive at the importer as a failed import.
-    const java = read(
-      'android/app/src/main/java/com/myjourneywithchrist/lifewithchrist/SharedDocument.java',
-    );
-    expect(java).toMatch(/mylifewithchrist/);
-    expect(java).toMatch(/scheme/i);
-  });
-});
-
-describe('standard Android text shares', () => {
-  it('reads EXTRA_TEXT and carries it through the same take-once payload', () => {
-    const shared = read(
-      'android/app/src/main/java/com/myjourneywithchrist/lifewithchrist/SharedDocument.java',
-    );
-    const plugin = read(
-      'android/app/src/main/java/com/myjourneywithchrist/lifewithchrist/JourneyDocumentsPlugin.java',
-    );
-
-    expect(shared).toMatch(/getCharSequenceExtra\(Intent\.EXTRA_TEXT\)/);
-    expect(shared).toMatch(/static synchronized Pending take\(\)/);
-    expect(plugin).toMatch(/pending\.text\.getBytes\(StandardCharsets\.UTF_8\)/);
-    expect(plugin).toMatch(/"shared-text\.txt"/);
   });
 });

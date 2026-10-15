@@ -1,0 +1,7 @@
+FICTIONAL-COMPAT Two Column Handout
+
+Left column begins here and continues for several lines so that the column
+boundary is unambiguous. It mentions Luke 24:27 near its end.
+
+The second column starts after the first and also runs for several lines. It
+mentions 2 Timothy 3:16-17 so the two columns can be told apart in the output.

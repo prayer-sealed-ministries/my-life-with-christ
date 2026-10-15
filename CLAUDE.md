@@ -49,6 +49,7 @@ npm run fetch:kjv        # re-vendor the KJV (rarely needed; output is committed
 | `src/data/kjv/versification.json` | verse counts per chapter |
 | `data/sections-ingest-report.md` | every heading the parser could not read strictly |
 | `src/lib/canon.ts` | book names/order, generated from `scripts/lib/books.mjs` |
+| `docs/ocr/handwriting-benchmark-sheet.pdf` | the printable benchmark kit, generated from the `.md` beside it by `node scripts/benchmark-sheet.mjs` |
 
 **Hand-edited — the ingest reads these and never writes them.**
 
