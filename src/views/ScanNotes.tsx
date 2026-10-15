@@ -27,6 +27,12 @@ import {
   type ScanDestination,
   type ScanSession,
 } from '../scan/session';
+import {
+  forgetPendingScan,
+  rememberPendingScan,
+  resumablePendingScan,
+  type ScanOwner,
+} from '../scan/pending';
 
 interface ScanNotesProps {
   /** Applied only when a person presses Use text. */
@@ -34,6 +40,14 @@ interface ScanNotesProps {
   onClose(): void;
   /** Whether each destination already holds writing, so we can say so. */
   existing: { notes: boolean; providedNotes: boolean };
+  /**
+   * Which editor this sheet belongs to.
+   *
+   * A photograph that comes back while the app is locked waits under this
+   * identity, and is only ever offered back to the same one. See
+   * `src/scan/pending.ts`.
+   */
+  owner: ScanOwner;
 }
 
 const DESTINATIONS: Array<{ value: ScanDestination; label: string; hint: string }> = [
@@ -41,15 +55,31 @@ const DESTINATIONS: Array<{ value: ScanDestination; label: string; hint: string 
   { value: 'providedNotes', label: 'Provided notes', hint: 'A handout or someone else’s material.' },
 ];
 
-export function ScanNotes({ onAccept, onClose, existing }: ScanNotesProps) {
+export function ScanNotes({ onAccept, onClose, existing, owner }: ScanNotesProps) {
   const { scanner } = usePlatform();
   const [session, setSession] = useState<ScanSession>(newScanSession);
   const [busy, setBusy] = useState(false);
   const [ignoreBlur, setIgnoreBlur] = useState(false);
   const accepted = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  /** The page the cleanup effect should throw away. A ref, so it is current. */
-  const held = useRef<ScannedPage | undefined>(undefined);
+  /** True once this sheet has a page of its own, so resume runs at most once. */
+  const started = useRef(false);
+  /**
+   * Whether this sheet is still on screen.
+   *
+   * The camera outlives it. On Android the app is backgrounded while the
+   * camera is open, so App Lock can unmount this entire subtree before the
+   * photograph comes back — and the promise still resolves afterwards, into a
+   * component that no longer exists. Every continuation checks this before
+   * touching state or starting recognition.
+   */
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
 
   // Opening the sheet moves focus to its heading, so a screen reader announces
   // where it has arrived rather than leaving focus behind on the editor.
@@ -57,48 +87,71 @@ export function ScanNotes({ onAccept, onClose, existing }: ScanNotesProps) {
     heading.current?.focus();
   }, []);
 
-  // Kept in an effect rather than assigned during render: a ref written while
-  // rendering is a lie under StrictMode's double invocation, and this one
-  // decides whether a file is deleted.
-  useEffect(() => {
-    held.current = session.page;
-  }, [session.page]);
-
   /*
-    Whatever else happens, the photograph goes.
+    There is deliberately no discard-on-unmount.
 
-    Cancel and Use text both discard explicitly, but neither runs when the tree
-    is torn down underneath this sheet — and that is not a hypothetical. App
-    Lock does exactly that: on Android, opening the camera backgrounds the app,
-    and a lock timeout of "Immediately" means the gate unmounts everything
-    before the person is back. Without this, a photograph of somebody's
-    notebook would sit in the cache until the next cold start swept it.
+    The sheet can be taken down without an answer, and the photograph has to
+    outlive that: App Lock at "Immediately" unmounts this whole subtree the
+    moment the camera opens. That is the lock doing its job and must not
+    change. What changed is where the page lives — outside the tree, in
+    `src/scan/pending.ts`, offered back only after a successful unlock.
+
+    Cancel, Use text and taking another page all delete explicitly. An
+    unclaimed page is deleted when it expires, when the editor next opens, or
+    by the sweep at the next cold start. Nothing is deleted merely because the
+    screen went away, because that is precisely what a lock looks like.
   */
-  useEffect(
-    () => () => {
-      if (held.current) void scanner.discard(held.current);
-    },
-    [scanner],
-  );
+
+  /** Stop holding a page and delete it. The two always happen together. */
+  const dispose = (page?: ScannedPage) => {
+    const held = forgetPendingScan();
+    if (page) void scanner.discard(page);
+    if (held && held.page.handle !== page?.handle) void scanner.discard(held.page);
+  };
+
+  /** Read a page already in hand. The only place recognition is started. */
+  const read = async (page: ScannedPage, generation: number) => {
+    const recognition = await scanner.recognise(page);
+    if (!live.current) return;
+    setBusy(false);
+    setSession((current) =>
+      isScanFailure(recognition)
+        ? reduceScan(current, { type: 'failed', failure: recognition, generation })
+        : reduceScan(current, { type: 'recognised', recognition, generation }),
+    );
+  };
 
   /**
-   * Throw our temporary copy away whenever a page stops being the one in hand.
+   * A page that came back while the app was locked.
    *
-   * Also forgets it, so the cleanup effect above does not discard the same
-   * page a second time on the way out. `discard` is documented as safe to call
-   * twice and this is not a correctness fix — it is so that "how many times was
-   * a photograph deleted" has one obvious answer.
+   * Recognition did not run then — it waits until somebody has unlocked, so no
+   * transcription of anyone's notes ever sits behind the lock screen. This
+   * picks up where the lock interrupted: the page is in hand, and reading it
+   * begins now.
    */
-  const release = (page: ScannedPage | undefined) => {
-    if (page) void scanner.discard(page);
-    held.current = undefined;
-  };
+  useEffect(() => {
+    if (started.current) return;
+    const waiting = resumablePendingScan(owner, Date.now());
+    if (!waiting) return;
+    started.current = true;
+    void (async () => {
+      setBusy(true);
+      let next = reduceScan(newScanSession(), { type: 'acquiring' });
+      next = reduceScan(next, { type: 'acquired', page: waiting.page, generation: next.generation });
+      setSession(next);
+      await read(waiting.page, next.generation);
+    })();
+    // The owner is fixed for the life of an editor mount. Re-running this when
+    // it changed would re-read a page the person had already moved on from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const acquire = async (how: 'capture' | 'choose') => {
     if (busy) return;
     setBusy(true);
     setIgnoreBlur(false);
-    release(session.page);
+    started.current = true;
+    dispose(session.page);
 
     // Bump the generation first: anything still in flight for the previous page
     // is now stale and will be ignored when it lands.
@@ -108,25 +161,40 @@ export function ScanNotes({ onAccept, onClose, existing }: ScanNotesProps) {
 
     const result = how === 'capture' ? await scanner.capture() : await scanner.choose();
     if (isScanFailure(result)) {
+      // A camera somebody backed out of leaves nothing behind: there is no
+      // page, so there is nothing to hold and nothing to delete.
+      if (!live.current) return;
       setBusy(false);
       setSession((current) => reduceScan(current, { type: 'failed', failure: result, generation }));
       return;
     }
 
+    /*
+      Held outside the tree before anything else happens to it.
+
+      If App Lock engaged while the camera was open, this component is already
+      gone and this line is the only reason the photograph still exists. It
+      comes before the liveness check on purpose — checking first and holding
+      second would lose exactly the page this whole mechanism is for.
+    */
+    const displaced = rememberPendingScan({
+      page: result,
+      source: how === 'capture' ? 'camera' : 'picker',
+      owner,
+      acquiredAt: Date.now(),
+    });
+    if (displaced) void scanner.discard(displaced.page);
+
+    // Locked, or otherwise gone. Recognition does not run behind the lock.
+    if (!live.current) return;
+
     next = reduceScan(next, { type: 'acquired', page: result, generation });
     setSession(next);
-
-    const recognition = await scanner.recognise(result);
-    setBusy(false);
-    setSession((current) =>
-      isScanFailure(recognition)
-        ? reduceScan(current, { type: 'failed', failure: recognition, generation })
-        : reduceScan(current, { type: 'recognised', recognition, generation }),
-    );
+    await read(result, generation);
   };
 
   const cancel = () => {
-    release(session.page);
+    dispose(session.page);
     setSession(newScanSession());
     onClose();
   };
@@ -137,7 +205,7 @@ export function ScanNotes({ onAccept, onClose, existing }: ScanNotesProps) {
     const acceptance = acceptScan(session);
     if (!acceptance) return;
     accepted.current = true;
-    release(session.page);
+    dispose(session.page);
     onAccept(acceptance);
     onClose();
   };

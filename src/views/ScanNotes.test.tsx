@@ -12,11 +12,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ScanNotes } from './ScanNotes';
+import { forgetPendingScan, peekPendingScan } from '../scan/pending';
 import { PlatformProvider } from '../platform/provider';
 import { webPlatform } from '../platform/web';
 import type { PageScanner, Recognition, ScannedPage } from '../platform/ports';
 
 const FICTIONAL_TEXT = 'FICTIONAL-SCAN\nTrust and obey\nJhn 3:16';
+
+/** One editor, for the tests that are not about which editor. */
+const OWNER = { entryId: 'fictional-entry', route: '#/entry/fictional-entry' };
 
 const page = (over: Partial<ScannedPage> = {}): ScannedPage => ({
   handle: 'fictional-handle',
@@ -69,6 +73,7 @@ const mount = (scanner: PageScanner, props: Partial<Parameters<typeof ScanNotes>
   const view = render(
     <PlatformProvider platform={{ ...webPlatform, scanner }}>
       <ScanNotes
+        owner={OWNER}
         onAccept={onAccept}
         onClose={onClose}
         existing={{ notes: false, providedNotes: false }}
@@ -83,7 +88,12 @@ const takePhoto = () => fireEvent.click(screen.getByRole('button', { name: 'Take
 const transcription = () => screen.getByLabelText('Transcription') as HTMLTextAreaElement;
 const reviewReady = () => waitFor(() => expect(transcription()).toBeTruthy());
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // The pending page lives outside React on purpose, so it outlives a render.
+  // Each test starts from nothing waiting.
+  forgetPendingScan();
+});
 
 describe('scanning a page and reviewing it', () => {
   it('shows the photograph and the recognised text, and nothing has been accepted', async () => {
@@ -190,12 +200,13 @@ describe('scanning a page and reviewing it', () => {
   });
 });
 
-describe('a photograph is never left behind', () => {
-  it('is thrown away when the sheet is torn down without an answer', async () => {
+describe('a photograph that outlives the screen', () => {
+  it('waits for the person rather than being deleted with the sheet', async () => {
     const scanner = fakeScanner();
     const view = render(
       <PlatformProvider platform={{ ...webPlatform, scanner }}>
         <ScanNotes
+          owner={OWNER}
           onAccept={() => {}}
           onClose={() => {}}
           existing={{ notes: false, providedNotes: false }}
@@ -204,16 +215,85 @@ describe('a photograph is never left behind', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
     await waitFor(() => expect(screen.getByLabelText('Transcription')).toBeTruthy());
-    expect(scanner.discarded).toEqual([]);
 
     /*
       Nobody pressed Cancel and nobody pressed Use text — the tree simply went
-      away. On Android that is what App Lock does after the camera backgrounds
-      the app: with a timeout of "Immediately", the gate unmounts everything
-      before the person has finished looking at the photograph.
+      away. On Android that is what App Lock does: the camera backgrounds the
+      app, and with a timeout of "Immediately" the gate unmounts everything
+      before the person is back with their photograph.
+
+      Deleting it here is what used to happen, and it is what made the feature
+      unusable with App Lock on. The page waits instead.
     */
     view.unmount();
+    expect(scanner.discarded).toEqual([]);
+    expect(peekPendingScan()?.page.handle).toBe('fictional-handle');
+  });
+
+  it('is offered back to the same editor, and read only then', async () => {
+    const scanner = fakeScanner();
+    const first = render(
+      <PlatformProvider platform={{ ...webPlatform, scanner }}>
+        <ScanNotes
+          owner={OWNER}
+          onAccept={() => {}}
+          onClose={() => {}}
+          existing={{ notes: false, providedNotes: false }}
+        />
+      </PlatformProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await waitFor(() => expect(screen.getByLabelText('Transcription')).toBeTruthy());
+    first.unmount();
+
+    // The sheet comes back the way it does after an unlock: a fresh mount,
+    // with nothing in React state, finding the page waiting outside it.
+    const { onAccept } = mount(scanner);
+    await waitFor(() => expect(screen.getByLabelText('Transcription')).toBeTruthy());
+    expect((screen.getByLabelText('Transcription') as HTMLTextAreaElement).value).toBe(
+      FICTIONAL_TEXT,
+    );
+    expect(screen.getByRole('img', { name: /scanned page/i })).toBeTruthy();
+    // Resuming is not accepting. Nothing has been written anywhere.
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('is not offered to a different entry', async () => {
+    const scanner = fakeScanner();
+    const first = render(
+      <PlatformProvider platform={{ ...webPlatform, scanner }}>
+        <ScanNotes
+          owner={OWNER}
+          onAccept={() => {}}
+          onClose={() => {}}
+          existing={{ notes: false, providedNotes: false }}
+        />
+      </PlatformProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await waitFor(() => expect(screen.getByLabelText('Transcription')).toBeTruthy());
+    first.unmount();
+
+    // A different entry entirely. A page photographed for one entry must never
+    // be presented over another, even though nothing could be written without
+    // somebody choosing a destination and pressing Use text.
+    mount(scanner, {
+      owner: { entryId: 'fictional-other-entry', route: '#/entry/fictional-other-entry' },
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Take photo' })).toBeTruthy());
+    expect(screen.queryByLabelText('Transcription')).toBeNull();
+  });
+
+  it('is deleted once the person has answered', async () => {
+    const scanner = fakeScanner();
+    mount(scanner);
+    fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await waitFor(() => expect(screen.getByLabelText('Transcription')).toBeTruthy());
+    expect(peekPendingScan()).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(scanner.discarded).toEqual(['fictional-handle']));
+    expect(peekPendingScan()).toBeNull();
   });
 });
 

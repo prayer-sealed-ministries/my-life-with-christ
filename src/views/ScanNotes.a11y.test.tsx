@@ -20,6 +20,7 @@ import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ScanNotes } from './ScanNotes';
+import { forgetPendingScan } from '../scan/pending';
 import { PlatformProvider } from '../platform/provider';
 import { webPlatform } from '../platform/web';
 import type { PageScanner, Recognition, ScannedPage } from '../platform/ports';
@@ -66,13 +67,19 @@ async function check(container: HTMLElement) {
   return results.violations.map((violation) => `${violation.id}: ${violation.help}`);
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // A photographed page deliberately outlives the component that took it, so
+  // one test's page is waiting for the next one unless it is cleared here.
+  forgetPendingScan();
+});
 
 const mount = () =>
   render(
     <main>
       <PlatformProvider platform={{ ...webPlatform, scanner }}>
         <ScanNotes
+          owner={{ route: '#/entry/fictional-a11y' }}
           onAccept={() => {}}
           onClose={() => {}}
           existing={{ notes: true, providedNotes: false }}

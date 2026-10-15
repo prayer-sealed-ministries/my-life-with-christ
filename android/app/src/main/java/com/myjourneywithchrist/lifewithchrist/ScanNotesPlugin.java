@@ -61,7 +61,6 @@ public class ScanNotesPlugin extends Plugin {
     /** Our own corner of the cache. Never external storage, never shared. */
     private static final String DIRECTORY = "scan-notes";
     /** A scan older than this is certainly abandoned. */
-    private static final long STALE_AFTER_MS = 6L * 60 * 60 * 1000;
     /** Beyond this the working image is downscaled; see decodeBounded. */
     private static final int MAX_WORKING_DIMENSION = 2600;
     /** Refuse absurd input before decoding it. */
@@ -301,14 +300,28 @@ public class ScanNotesPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Delete every temporary scan, at launch.
+     *
+     * Called once from the app's entry point, before anything can photograph a
+     * page. Nothing in this directory can belong to the process that is
+     * starting: a scan waiting to be claimed lives in memory, and memory is
+     * what a cold start does not have. So everything here is an orphan from a
+     * run that crashed, was killed, or was swiped away.
+     *
+     * This used to spare anything under six hours old, which was a safety
+     * margin against a question nobody had asked. It matters more now: a page
+     * is deliberately NOT deleted when the screen goes away, because that is
+     * what App Lock looks like and the person is coming back for it. The cost
+     * of that decision is more orphans, and this is where they are paid for.
+     */
     @PluginMethod
     public void cleanupStale(PluginCall call) {
         int removed = 0;
         File[] entries = scanDirectory().listFiles();
         if (entries != null) {
-            long now = System.currentTimeMillis();
             for (File entry : entries) {
-                if (now - entry.lastModified() > STALE_AFTER_MS && entry.delete()) removed += 1;
+                if (entry.delete()) removed += 1;
             }
         }
         JSObject result = new JSObject();

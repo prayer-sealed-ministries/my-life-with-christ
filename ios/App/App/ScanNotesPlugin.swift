@@ -43,7 +43,6 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Our own corner of the cache. Never the shared container, never Documents.
     private static let directoryName = "scan-notes"
     /// A scan older than this is certainly abandoned.
-    private static let staleAfter: TimeInterval = 60 * 60 * 6
     /// Beyond this the image is downscaled before recognition; see `normalise`.
     private static let maxWorkingDimension: CGFloat = 2600
     /// Refuse absurd input before decoding it.
@@ -219,16 +218,26 @@ public class ScanNotesPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
 
+    /**
+     Delete every temporary scan, at launch.
+
+     Called once from the app's entry point, before anything can photograph a
+     page. Nothing in this directory can belong to the process that is starting:
+     a scan waiting to be claimed lives in memory, and memory is what a cold
+     start does not have. Everything here is an orphan from a run that crashed
+     or was swiped away.
+
+     This used to spare anything under six hours old. It matters more now that a
+     page is deliberately not deleted when the screen goes away — that is what a
+     lock looks like, and the person is coming back for it.
+     */
     @objc func cleanupStale(_ call: CAPPluginCall) {
         var removed = 0
         if let directory = try? scanDirectory(),
            let entries = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) {
-            for entry in entries {
-                let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                if let modified, Date().timeIntervalSince(modified) > Self.staleAfter {
-                    if (try? FileManager.default.removeItem(at: entry)) != nil { removed += 1 }
-                }
+                at: directory, includingPropertiesForKeys: nil) {
+            for entry in entries where (try? FileManager.default.removeItem(at: entry)) != nil {
+                removed += 1
             }
         }
         call.resolve(["removed": removed])
