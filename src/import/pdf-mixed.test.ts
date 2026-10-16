@@ -217,6 +217,26 @@ describe('the church-notes reader, end to end', () => {
     expect(proposal.material.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('records which reader produced the words', async () => {
+    /*
+      The same PDF that once produced nothing — or only its typed pages — now
+      produces those pages plus a reading of the photocopied ones. That is
+      exactly what a parser version is for: a later improvement to recognition
+      can find the rows an earlier one wrote, and somebody comparing two
+      imports of the same handout has an answer for why they differ.
+
+      Asserted as a literal on purpose. A bump should be a decision somebody
+      made, not something that drifts; changing this number should require
+      changing this line and thinking about why.
+    */
+    const { SERMON_NOTES_PARSER_VERSION } = await import('./sermon-notes');
+    expect(SERMON_NOTES_PARSER_VERSION).toBe(2);
+
+    const document = latin1(pdf([typed('FICTIONAL-EXACT-PAGE one')]));
+    const proposal = await readSermonNotes(document, 'handout.pdf');
+    expect(proposal.material.parserVersion).toBe(2);
+  });
+
   it('counts every page once, however it was read', async () => {
     /*
       A recognised page carried no text layer AND is now a page with text, so
