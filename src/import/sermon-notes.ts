@@ -71,8 +71,21 @@ export const SERMON_NOTES_FORMAT = 'my-life-with-christ-sermon-notes';
 /** The only version this build understands. */
 export const SERMON_NOTES_VERSION = 1;
 
-/** Bumped whenever extraction changes in a way that alters `body`. */
-export const SERMON_NOTES_PARSER_VERSION = 1;
+/**
+ * Bumped whenever extraction changes in a way that alters `body`.
+ *
+ * 2 — the scanned pages of a PDF are now read on the device. The same file
+ * that produced nothing, or produced only its typed pages, now produces those
+ * pages plus a reading of the photocopied ones. That is the whole purpose of
+ * this number: a later improvement to recognition can find the rows an earlier
+ * one wrote, and a person comparing two imports of the same handout has an
+ * answer for why they differ.
+ *
+ * It is not an interchange change. `parserVersion` is a number in
+ * `SourceMaterial` and the companion validates it as one, so nothing about the
+ * journal format moves — only the record of which reader produced the words.
+ */
+export const SERMON_NOTES_PARSER_VERSION = 2;
 
 /**
  * The provided text, after parsing.
