@@ -20,6 +20,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		DDEE000100000000000000A5 /* ShareAcceptanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDEE000100000000000000A4 /* ShareAcceptanceUITests.swift */; };
+		DDEE000100000000000000B5 /* ScannedPdfAcceptanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDEE000100000000000000B4 /* ScannedPdfAcceptanceUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		DDEE000100000000000000A2 /* ShareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ShareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DDEE000100000000000000A4 /* ShareAcceptanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareAcceptanceUITests.swift; sourceTree = "<group>"; };
+		DDEE000100000000000000B4 /* ScannedPdfAcceptanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannedPdfAcceptanceUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				DDEE000100000000000000A4 /* ShareAcceptanceUITests.swift */,
+				DDEE000100000000000000B4 /* ScannedPdfAcceptanceUITests.swift */,
 			);
 			path = ShareUITests;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DDEE000100000000000000A5 /* ShareAcceptanceUITests.swift in Sources */,
+				DDEE000100000000000000B5 /* ScannedPdfAcceptanceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
