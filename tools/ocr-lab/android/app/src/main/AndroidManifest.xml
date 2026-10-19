@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No permissions at all, deliberately. The benchmark reads images that adb
+  pushed into app-private storage and recognises them locally. If ML Kit needed
+  the network for the bundled model, this manifest would make that visible.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="LWC OCR Bench" android:usesCleartextTraffic="false" />
+</manifest>

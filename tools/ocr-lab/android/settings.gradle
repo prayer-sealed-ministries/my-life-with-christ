@@ -1,0 +1,12 @@
+// Isolated OCR benchmark. Deliberately NOT part of the application's Gradle
+// build: nothing here can reach production code, production code cannot reach
+// it, and ML Kit is never added to the shipping app by this project.
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "lwc-ocr-bench"
+include(":app")
